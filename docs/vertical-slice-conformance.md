@@ -26,8 +26,8 @@ That script:
 1. Creates AVD `cenix-api35` if needed
 2. Installs the debug APK and takes the HOME role
 3. Checks the search field is present
-4. Installs/uninstalls `com.caniko.cenix.fixture` and checks the list updates
-5. Sends `FORCE_NATIVE_FAILURE` and checks the emergency banner
+4. Installs `com.caniko.cenix.fixture`, checks the list, launches it, then uninstalls
+5. Sends `FORCE_NATIVE_FAILURE`, checks the banner, force-stops Cenix, checks the banner after restart
 6. Installs a `-PomitNative` APK (no `libcenix_ffi.so`) and checks emergency HOME still searches
 
 If the image, emulator binary, or boot fails, the script writes `docs/emulator-blocker.md` and exits non-zero.

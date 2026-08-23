@@ -25,3 +25,5 @@ Impure debug APK: `nix build .#apk-debug` (`mkAndroidApk`, sandbox off).
 - `android/app/src/main/java/com/caniko/cenix/uniffi` — committed generated Kotlin
 
 `minSdk`/`compileSdk`/`targetSdk` are 35. Room is the only durable store. Emergency mode never imports generated UniFFI types.
+
+Decisions: `docs/adr/`. Feature classes: `docs/parity-capabilities.md`.
