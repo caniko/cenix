@@ -94,8 +94,8 @@ class HomeActivity : AppCompatActivity() {
     private fun reload() {
         apps.clear()
         apps.addAll(catalog.load())
-        applyChrome()
         applyFilter()
+        applyChrome()
     }
 
     private fun applyChrome() {
