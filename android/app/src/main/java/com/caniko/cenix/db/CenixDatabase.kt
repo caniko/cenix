@@ -17,22 +17,11 @@ import com.caniko.cenix.StartupStore
 @Entity(tableName = "launcher_metadata")
 data class MetadataEntity(
     @PrimaryKey val singletonId: Int = 1,
-    val generation: Long,
     val startupInProgress: Boolean,
     val startupFailures: Int,
     val lastFailureAt: Long,
     val emergency: Boolean,
     val updatedAt: Long,
-)
-
-@Entity(tableName = "app_snapshot")
-data class AppSnapshotEntity(
-    @PrimaryKey val id: String,
-    val packageName: String,
-    val className: String,
-    val profileSerial: Long,
-    val label: String,
-    val generation: Long,
 )
 
 @Dao
@@ -43,27 +32,10 @@ interface CenixDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertMetadata(entity: MetadataEntity)
 
-    @Query("SELECT * FROM app_snapshot ORDER BY label, packageName, className, profileSerial")
-    fun snapshot(): List<AppSnapshotEntity>
-
-    @Query("DELETE FROM app_snapshot")
-    fun clearSnapshot()
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertSnapshot(apps: List<AppSnapshotEntity>)
-
     @Transaction
     fun saveStartup(state: StartupState, now: Long) {
-        val current = metadata() ?: MetadataEntity(
-            generation = 0,
-            startupInProgress = false,
-            startupFailures = 0,
-            lastFailureAt = 0,
-            emergency = false,
-            updatedAt = now,
-        )
         upsertMetadata(
-            current.copy(
+            MetadataEntity(
                 startupInProgress = state.inProgress,
                 startupFailures = state.failures,
                 lastFailureAt = state.lastFailureAt,
@@ -71,23 +43,6 @@ interface CenixDao {
                 updatedAt = now,
             ),
         )
-    }
-
-    @Transaction
-    fun replaceSnapshot(apps: List<AppSnapshotEntity>, now: Long): Long {
-        val current = metadata() ?: MetadataEntity(
-            generation = 0,
-            startupInProgress = false,
-            startupFailures = 0,
-            lastFailureAt = 0,
-            emergency = false,
-            updatedAt = now,
-        )
-        val generation = current.generation + 1
-        upsertMetadata(current.copy(generation = generation, updatedAt = now))
-        clearSnapshot()
-        insertSnapshot(apps.map { it.copy(generation = generation) })
-        return generation
     }
 }
 
@@ -108,7 +63,7 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
 }
 
 @Database(
-    entities = [MetadataEntity::class, AppSnapshotEntity::class],
+    entities = [MetadataEntity::class],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
@@ -130,7 +85,6 @@ abstract class CenixDatabase : RoomDatabase() {
         if (dao().metadata() == null) {
             dao().upsertMetadata(
                 MetadataEntity(
-                    generation = 0,
                     startupInProgress = false,
                     startupFailures = 0,
                     lastFailureAt = 0,

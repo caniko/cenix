@@ -19,7 +19,6 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.caniko.cenix.db.AppSnapshotEntity
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
@@ -93,42 +92,11 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun reload() {
-        val live = catalog.load()
         apps.clear()
-        if (live.isNotEmpty()) {
-            apps.addAll(live)
-            persistSnapshot(live)
-        } else {
-            apps.addAll(loadSnapshot())
-        }
+        apps.addAll(catalog.load())
         applyChrome()
         applyFilter()
     }
-
-    private fun persistSnapshot(live: List<LaunchableApp>) {
-        val rows = live.map { item ->
-            AppSnapshotEntity(
-                id = "${item.packageName}/${item.className}/${item.profileId}",
-                packageName = item.packageName,
-                className = item.className,
-                profileSerial = item.profileId,
-                label = item.label,
-                generation = 0,
-            )
-        }
-        app.database?.dao()?.replaceSnapshot(rows, System.currentTimeMillis())
-    }
-
-    private fun loadSnapshot(): List<LaunchableApp> =
-        app.database?.dao()?.snapshot().orEmpty().map { row ->
-            LaunchableApp.fromSnapshot(
-                row.packageName,
-                row.className,
-                row.profileSerial,
-                row.label,
-                catalog.userForSerial(row.profileSerial),
-            )
-        }
 
     private fun applyChrome() {
         val emergency = app.emergency

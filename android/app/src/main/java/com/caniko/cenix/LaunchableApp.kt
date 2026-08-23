@@ -26,21 +26,5 @@ data class LaunchableApp(
                 icon = info.getBadgedIcon(0),
             )
         }
-
-        fun fromSnapshot(
-            packageName: String,
-            className: String,
-            serial: Long,
-            label: String,
-            user: UserHandle?,
-        ) = LaunchableApp(
-            packageName = packageName,
-            className = className,
-            profileId = serial,
-            label = label,
-            normalizedLabel = EmergencyFilter.normalize(label),
-            user = user,
-            icon = null,
-        )
     }
 }
