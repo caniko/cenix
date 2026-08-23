@@ -108,6 +108,14 @@
       in {
         default = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
+          androidSdk = cfg.androidSdk;
+          ndkVersion = androidNdkVersion;
+          rustToolchain = cfg.rustToolchain;
+          base = cfg.rustShells.default;
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+        };
+        emulator = harbor-android.lib.mkAndroidDevShell {
+          inherit (cfg) pkgs;
           androidSdk = cfg.emulatorSdk;
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
