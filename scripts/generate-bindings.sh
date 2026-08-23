@@ -13,4 +13,5 @@ cargo run --manifest-path "$root/Cargo.toml" -p uniffi-bindgen -- generate \
   --language kotlin \
   --no-format \
   --out-dir "$out"
+find "$out/com/caniko/cenix/uniffi" -name '*.kt' -exec sed -i 's/[[:space:]]\+$//' {} +
 echo "generated UniFFI Kotlin under $out/com/caniko/cenix/uniffi"

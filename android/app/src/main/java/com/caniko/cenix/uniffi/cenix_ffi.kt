@@ -714,16 +714,16 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 // For large crates we prevent `MethodTooLargeException` (see #2340)
-// N.B. the name of the extension is very misleading, since it is 
-// rather `InterfaceTooLargeException`, caused by too many methods 
+// N.B. the name of the extension is very misleading, since it is
+// rather `InterfaceTooLargeException`, caused by too many methods
 // in the interface for large crates.
 //
 // By splitting the otherwise huge interface into two parts
-// * UniffiLib 
+// * UniffiLib
 // * IntegrityCheckingUniffiLib (this)
 // we allow for ~2x as many methods in the UniffiLib interface.
-// 
-// The `ffi_uniffi_contract_version` method and all checksum methods are put 
+//
+// The `ffi_uniffi_contract_version` method and all checksum methods are put
 // into `IntegrityCheckingUniffiLib` and these methods are called only once,
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
@@ -742,8 +742,8 @@ internal interface UniffiLib : Library {
         internal val INSTANCE: UniffiLib by lazy {
             val componentName = "cenix_ffi"
             // For large crates we prevent `MethodTooLargeException` (see #2340)
-            // N.B. the name of the extension is very misleading, since it is 
-            // rather `InterfaceTooLargeException`, caused by too many methods 
+            // N.B. the name of the extension is very misleading, since it is
+            // rather `InterfaceTooLargeException`, caused by too many methods
             // in the interface for large crates.
             //
             // By splitting the otherwise huge interface into two parts
@@ -751,7 +751,7 @@ internal interface UniffiLib : Library {
             // * IntegrityCheckingUniffiLib
             // And all checksum methods are put into `IntegrityCheckingUniffiLib`
             // we allow for ~2x as many methods in the UniffiLib interface.
-            // 
+            //
             // Thus we first load the library with `loadIndirect` as `IntegrityCheckingUniffiLib`
             // so that we can (optionally!) call `uniffiCheckApiChecksums`...
             loadIndirect<IntegrityCheckingUniffiLib>(componentName)
@@ -766,24 +766,24 @@ internal interface UniffiLib : Library {
             // to trigger this issue, the performance impact is negligible, running on
             // a macOS M1 machine the `loadIndirect` call takes ~50ms.
             val lib = loadIndirect<UniffiLib>(componentName)
-            // No need to check the contract version and checksums, since 
+            // No need to check the contract version and checksums, since
             // we already did that with `IntegrityCheckingUniffiLib` above.
             // Loading of library with integrity check done.
             lib
         }
-        
+
     }
 
     // FFI functions
-    fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_cenix_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
-fun ffi_cenix_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -791,7 +791,7 @@ fun ffi_cenix_ffi_rust_future_cancel_u8(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_u8(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun ffi_cenix_ffi_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -799,7 +799,7 @@ fun ffi_cenix_ffi_rust_future_cancel_i8(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_i8(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun ffi_cenix_ffi_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -807,7 +807,7 @@ fun ffi_cenix_ffi_rust_future_cancel_u16(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_u16(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Short
 fun ffi_cenix_ffi_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -815,7 +815,7 @@ fun ffi_cenix_ffi_rust_future_cancel_i16(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_i16(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Short
 fun ffi_cenix_ffi_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -823,7 +823,7 @@ fun ffi_cenix_ffi_rust_future_cancel_u32(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_u32(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Int
 fun ffi_cenix_ffi_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -831,7 +831,7 @@ fun ffi_cenix_ffi_rust_future_cancel_i32(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_i32(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Int
 fun ffi_cenix_ffi_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -839,7 +839,7 @@ fun ffi_cenix_ffi_rust_future_cancel_u64(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_u64(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Long
 fun ffi_cenix_ffi_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -847,7 +847,7 @@ fun ffi_cenix_ffi_rust_future_cancel_i64(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_i64(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Long
 fun ffi_cenix_ffi_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -855,7 +855,7 @@ fun ffi_cenix_ffi_rust_future_cancel_f32(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_f32(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Float
 fun ffi_cenix_ffi_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -863,7 +863,7 @@ fun ffi_cenix_ffi_rust_future_cancel_f64(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_f64(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Double
 fun ffi_cenix_ffi_rust_future_poll_pointer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -871,7 +871,7 @@ fun ffi_cenix_ffi_rust_future_cancel_pointer(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_pointer(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Pointer
 fun ffi_cenix_ffi_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -879,7 +879,7 @@ fun ffi_cenix_ffi_rust_future_cancel_rust_buffer(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_rust_buffer(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -887,7 +887,7 @@ fun ffi_cenix_ffi_rust_future_cancel_void(`handle`: Long,
 ): Unit
 fun ffi_cenix_ffi_rust_future_free_void(`handle`: Long,
 ): Unit
-fun ffi_cenix_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_cenix_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 
 }
@@ -978,7 +978,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-/** 
+/**
  * Used to instantiate an interface without an actual pointer, for fakes in tests, mostly.
  *
  * @suppress
@@ -1068,12 +1068,12 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 
 data class App (
-    var `package`: kotlin.String, 
-    var `class`: kotlin.String, 
-    var `profileId`: kotlin.ULong, 
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong,
     var `label`: kotlin.String
 ) {
-    
+
     companion object
 }
 
@@ -1108,11 +1108,11 @@ public object FfiConverterTypeApp: FfiConverterRustBuffer<App> {
 
 
 data class AppId (
-    var `package`: kotlin.String, 
-    var `class`: kotlin.String, 
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
     var `profileId`: kotlin.ULong
 ) {
-    
+
     companion object
 }
 
@@ -1146,29 +1146,29 @@ public object FfiConverterTypeAppId: FfiConverterRustBuffer<AppId> {
 
 
 sealed class EngineException: kotlin.Exception() {
-    
+
     class Malformed(
-        
+
         val `reason`: kotlin.String
         ) : EngineException() {
         override val message
             get() = "reason=${ `reason` }"
     }
-    
+
     class Bounds(
-        
+
         val `reason`: kotlin.String
         ) : EngineException() {
         override val message
             get() = "reason=${ `reason` }"
     }
-    
+
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<EngineException> {
         override fun lift(error_buf: RustBuffer.ByValue): EngineException = FfiConverterTypeEngineError.lift(error_buf)
     }
 
-    
+
 }
 
 /**
@@ -1176,7 +1176,7 @@ sealed class EngineException: kotlin.Exception() {
  */
 public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineException> {
     override fun read(buf: ByteBuffer): EngineException {
-        
+
 
         return when(buf.getInt()) {
             1 -> EngineException.Malformed(
@@ -1312,6 +1312,6 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
 }
     )
     }
-    
+
 
 
