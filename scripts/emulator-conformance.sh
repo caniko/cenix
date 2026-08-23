@@ -76,8 +76,24 @@ start_home() {
   fi
 }
 
+search_for() {
+  local xml x1 y1 x2 y2
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(printf '%s\n' "$xml" | sed -n 's/.*searchField[^>]*bounds="\[\([0-9]*\),\([0-9]*\)]\[\([0-9]*\),\([0-9]*\)]".*/\1 \2 \3 \4/p')
+  if [[ -z "${x1:-}" ]]; then
+    echo "search field bounds missing" >&2
+    exit 1
+  fi
+  "$adb" shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+  sleep 0.3
+  "$adb" shell input text "$1"
+  sleep 1
+}
+
 "$root/scripts/assemble-debug.sh"
 "$root/scripts/audit-apk.sh"
+"$adb" uninstall com.caniko.cenix >/dev/null 2>&1 || true
+"$adb" uninstall com.caniko.cenix.fixture >/dev/null 2>&1 || true
 "$root/scripts/install-debug.sh"
 "$adb" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
 holders="$("$adb" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r')"
@@ -88,10 +104,14 @@ echo "$ui" | grep -q 'Search apps' || { echo "search field missing from HOME UI"
 echo "$ui" | grep -qi 'emergency mode' && { echo "native APK started in emergency" >&2; exit 1; }
 
 "$adb" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+"$adb" shell am force-stop com.caniko.cenix
 start_home
+search_for "Fixture"
 dump_ui | grep -q 'Cenix Fixture' || { echo "fixture app missing after install" >&2; exit 1; }
 "$adb" uninstall com.caniko.cenix.fixture >/dev/null
+"$adb" shell am force-stop com.caniko.cenix
 start_home
+search_for "Fixture"
 dump_ui | grep -q 'Cenix Fixture' && { echo "fixture app still listed after uninstall" >&2; exit 1; }
 
 "$adb" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true
@@ -102,6 +122,7 @@ export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 (cd "$root/android" && ./gradlew :app:assembleDebug -PomitNative)
 omit_apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
 CENIX_OMIT_NATIVE=1 "$root/scripts/audit-apk.sh" "$omit_apk"
+"$adb" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" install -r -t "$omit_apk"
 start_home
 dump_ui | grep -qi 'emergency mode' || { echo "no-native APK did not enter emergency" >&2; exit 1; }
