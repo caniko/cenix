@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Cenix</string>
+    <string name="search_hint">Search apps</string>
+    <string name="emergency_banner">Emergency mode: native filtering is unavailable. Local search still works.</string>
+    <string name="retry_native">Retry native mode</string>
+    <string name="reset_state">Reset local state</string>
+    <string name="set_default_home">Set as default HOME</string>
+    <string name="empty_apps">No applications</string>
+    <string name="launch_failed">Could not launch that application</string>
+    <string name="status_ready">Cenix</string>
+    <string name="status_emergency">Cenix · emergency</string>
+    <string name="profile_personal">Personal</string>
+    <string name="profile_work">Work</string>
+    <string name="profile_private">Private</string>
+    <string name="profile_other">Profile</string>
+</resources>

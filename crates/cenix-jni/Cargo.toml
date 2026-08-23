@@ -1,0 +1,18 @@
+[package]
+name = "cenix-jni"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "JNI boundary for Cenix"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+cenix-core.workspace = true
+jni.workspace = true
+serde_json.workspace = true
