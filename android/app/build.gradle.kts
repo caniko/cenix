@@ -64,8 +64,10 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.room:room-runtime:$room")
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
     ksp("androidx.room:room-compiler:$room")
 
+    testImplementation("net.java.dev.jna:jna:5.19.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")

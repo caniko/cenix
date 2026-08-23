@@ -2,11 +2,10 @@ package com.caniko.cenix.db
 
 import android.app.Application
 import androidx.room.Room
-import androidx.sqlite.db.SupportSQLiteDatabase
-import androidx.sqlite.db.SupportSQLiteOpenHelper
-import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
+import com.caniko.cenix.StartupState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,54 +16,42 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class CenixDatabaseTest {
     @Test
-    fun generationIncrementsOnReload() {
+    fun snapshotReplaceBumpsGeneration() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val db = Room.inMemoryDatabaseBuilder(context, CenixDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         db.ensureSeed()
-        val first = db.dao().bumpGeneration(1)
-        val second = db.dao().bumpGeneration(2)
+        val first = db.dao().replaceSnapshot(
+            listOf(
+                AppSnapshotEntity("a/A/0", "a", "A", 0, "Alpha", 0),
+            ),
+            1,
+        )
+        val second = db.dao().replaceSnapshot(
+            listOf(
+                AppSnapshotEntity("b/B/0", "b", "B", 0, "Bravo", 0),
+            ),
+            2,
+        )
         assertEquals(first + 1, second)
-        db.dao().markHealthy(second, 3)
-        assertEquals(second, db.dao().metadata()?.lastHealthyGeneration)
+        assertEquals(listOf("b"), db.dao().snapshot().map { it.packageName })
         db.close()
     }
 
     @Test
-    fun migratesV1ToV2() {
+    fun startupStateRoundTrip() {
         val context = ApplicationProvider.getApplicationContext<Application>()
-        val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(null)
-                .callback(
-                    object : SupportSQLiteOpenHelper.Callback(1) {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            db.execSQL(
-                                """
-                                CREATE TABLE launcher_metadata (
-                                  singletonId INTEGER NOT NULL PRIMARY KEY,
-                                  schemaVersion INTEGER NOT NULL,
-                                  generation INTEGER NOT NULL,
-                                  createdAt INTEGER NOT NULL,
-                                  updatedAt INTEGER NOT NULL
-                                )
-                                """.trimIndent(),
-                            )
-                            db.execSQL("INSERT INTO launcher_metadata VALUES (1, 1, 4, 10, 20)")
-                        }
-
-                        override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                    },
-                )
-                .build(),
-        )
-        val db = helper.writableDatabase
-        CenixDatabase.MIGRATION_1_2.migrate(db)
-        val cursor = db.query("SELECT lastHealthyGeneration FROM launcher_metadata WHERE singletonId = 1")
-        cursor.moveToFirst()
-        assertEquals(0, cursor.getLong(0))
-        cursor.close()
+        val db = Room.inMemoryDatabaseBuilder(context, CenixDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        db.ensureSeed()
+        val store = RoomStartupStore(db)
+        store.save(StartupState(inProgress = true, failures = 2, lastFailureAt = 9, emergency = false))
+        val loaded = store.load()
+        assertEquals(2, loaded.failures)
+        assertFalse(loaded.emergency)
+        assertNotNull(db.dao().metadata())
         db.close()
     }
 

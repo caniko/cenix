@@ -11,24 +11,28 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.caniko.cenix.StartupState
+import com.caniko.cenix.StartupStore
 
 @Entity(tableName = "launcher_metadata")
 data class MetadataEntity(
     @PrimaryKey val singletonId: Int = 1,
-    val schemaVersion: Int,
     val generation: Long,
-    val createdAt: Long,
+    val startupInProgress: Boolean,
+    val startupFailures: Int,
+    val lastFailureAt: Long,
+    val emergency: Boolean,
     val updatedAt: Long,
-    val lastHealthyGeneration: Long,
 )
 
-@Entity(tableName = "launcher_setting")
-data class SettingEntity(
-    @PrimaryKey val key: String,
-    val value: String,
-    val updatedGeneration: Long,
+@Entity(tableName = "app_snapshot")
+data class AppSnapshotEntity(
+    @PrimaryKey val id: String,
+    val packageName: String,
+    val className: String,
+    val profileSerial: Long,
+    val label: String,
+    val generation: Long,
 )
 
 @Dao
@@ -39,38 +43,72 @@ interface CenixDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertMetadata(entity: MetadataEntity)
 
-    @Query("SELECT * FROM launcher_setting WHERE `key` = :key")
-    fun setting(key: String): SettingEntity?
+    @Query("SELECT * FROM app_snapshot ORDER BY label, packageName, className, profileSerial")
+    fun snapshot(): List<AppSnapshotEntity>
+
+    @Query("DELETE FROM app_snapshot")
+    fun clearSnapshot()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertSetting(entity: SettingEntity)
-
-    @Query("DELETE FROM launcher_setting")
-    fun clearSettings()
+    fun insertSnapshot(apps: List<AppSnapshotEntity>)
 
     @Transaction
-    fun bumpGeneration(now: Long): Long {
+    fun saveStartup(state: StartupState, now: Long) {
         val current = metadata() ?: MetadataEntity(
-            schemaVersion = CenixDatabase.VERSION,
             generation = 0,
-            createdAt = now,
+            startupInProgress = false,
+            startupFailures = 0,
+            lastFailureAt = 0,
+            emergency = false,
             updatedAt = now,
-            lastHealthyGeneration = 0,
         )
-        val next = current.copy(generation = current.generation + 1, updatedAt = now)
-        upsertMetadata(next)
-        return next.generation
+        upsertMetadata(
+            current.copy(
+                startupInProgress = state.inProgress,
+                startupFailures = state.failures,
+                lastFailureAt = state.lastFailureAt,
+                emergency = state.emergency,
+                updatedAt = now,
+            ),
+        )
     }
 
     @Transaction
-    fun markHealthy(generation: Long, now: Long) {
-        val current = metadata() ?: return
-        upsertMetadata(current.copy(lastHealthyGeneration = generation, updatedAt = now))
+    fun replaceSnapshot(apps: List<AppSnapshotEntity>, now: Long): Long {
+        val current = metadata() ?: MetadataEntity(
+            generation = 0,
+            startupInProgress = false,
+            startupFailures = 0,
+            lastFailureAt = 0,
+            emergency = false,
+            updatedAt = now,
+        )
+        val generation = current.generation + 1
+        upsertMetadata(current.copy(generation = generation, updatedAt = now))
+        clearSnapshot()
+        insertSnapshot(apps.map { it.copy(generation = generation) })
+        return generation
+    }
+}
+
+class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
+    override fun load(): StartupState {
+        val metadata = db.dao().metadata() ?: return StartupState()
+        return StartupState(
+            inProgress = metadata.startupInProgress,
+            failures = metadata.startupFailures,
+            lastFailureAt = metadata.lastFailureAt,
+            emergency = metadata.emergency,
+        )
+    }
+
+    override fun save(state: StartupState) {
+        db.dao().saveStartup(state, System.currentTimeMillis())
     }
 }
 
 @Database(
-    entities = [MetadataEntity::class, SettingEntity::class],
+    entities = [MetadataEntity::class, AppSnapshotEntity::class],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
@@ -79,20 +117,10 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 2
-        const val EMERGENCY_KEY = "emergency"
-
-        val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE launcher_metadata ADD COLUMN lastHealthyGeneration INTEGER NOT NULL DEFAULT 0",
-                )
-            }
-        }
+        const val VERSION = 1
 
         fun open(context: Context): CenixDatabase =
             Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2)
                 .allowMainThreadQueries()
                 .build()
                 .also { it.ensureSeed() }
@@ -100,28 +128,16 @@ abstract class CenixDatabase : RoomDatabase() {
 
     fun ensureSeed() {
         if (dao().metadata() == null) {
-            val now = System.currentTimeMillis()
             dao().upsertMetadata(
                 MetadataEntity(
-                    schemaVersion = VERSION,
-                    generation = 1,
-                    createdAt = now,
-                    updatedAt = now,
-                    lastHealthyGeneration = 0,
+                    generation = 0,
+                    startupInProgress = false,
+                    startupFailures = 0,
+                    lastFailureAt = 0,
+                    emergency = false,
+                    updatedAt = System.currentTimeMillis(),
                 ),
             )
         }
-    }
-
-    fun isEmergency(): Boolean = dao().setting(EMERGENCY_KEY)?.value == "1"
-
-    fun setEmergency(value: Boolean) {
-        dao().upsertSetting(
-            SettingEntity(
-                key = EMERGENCY_KEY,
-                value = if (value) "1" else "0",
-                updatedGeneration = dao().metadata()?.generation ?: 0,
-            ),
-        )
     }
 }

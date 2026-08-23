@@ -8,7 +8,7 @@ class CrashLoopGuardTest {
     @Test
     fun threeInterruptedStartupsEnterEmergency() {
         var now = 1_000L
-        val guard = CrashLoopGuard(MemoryStore(), clock = { now })
+        val guard = CrashLoopGuard(MemoryStartupStore(), clock = { now })
         assertTrue(guard.beginStartup())
         now += 1
         assertTrue(guard.beginStartup())
@@ -21,7 +21,7 @@ class CrashLoopGuardTest {
     @Test
     fun healthyStartupResetsTheWindow() {
         var now = 1_000L
-        val guard = CrashLoopGuard(MemoryStore(), clock = { now })
+        val guard = CrashLoopGuard(MemoryStartupStore(), clock = { now })
         assertTrue(guard.beginStartup())
         guard.markHealthy()
         now += 1
@@ -34,10 +34,10 @@ class CrashLoopGuardTest {
 
     @Test
     fun userEmergencySticksUntilCleared() {
-        val guard = CrashLoopGuard(MemoryStore())
+        val guard = CrashLoopGuard(MemoryStartupStore())
         guard.requestEmergency()
         assertFalse(guard.beginStartup())
-        guard.clearUserEmergency()
+        guard.clearEmergency()
         assertTrue(guard.beginStartup())
     }
 }

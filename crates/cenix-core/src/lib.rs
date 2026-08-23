@@ -1,54 +1,30 @@
 #![forbid(unsafe_code)]
 
-use serde::{Deserialize, Serialize};
-
-pub const PROTOCOL_VERSION: u32 = 1;
-pub const MAX_MESSAGE_BYTES: usize = 1_048_576;
 pub const MAX_APPLICATIONS: usize = 10_000;
 pub const MAX_LABEL_CHARS: usize = 256;
 pub const MAX_IDENT_CHARS: usize = 256;
 pub const MAX_QUERY_CHARS: usize = 256;
 pub const MAX_VISIBLE_PROFILES: usize = 64;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FilterRequest {
-    pub protocol_version: u32,
-    pub request_id: String,
-    pub query: String,
-    pub visible_profile_ids: Vec<u64>,
-    pub applications: Vec<Application>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Application {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct App {
     pub package: String,
     pub class: String,
     pub profile_id: u64,
     pub label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ComponentIdentity {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppId {
     pub package: String,
     pub class: String,
     pub profile_id: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FilterResponse {
-    pub protocol_version: u32,
-    pub request_id: String,
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub matches: Option<Vec<ComponentIdentity>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<ProtocolError>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProtocolError {
-    pub code: String,
-    pub message: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineError {
+    Malformed(&'static str),
+    Bounds(&'static str),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -59,90 +35,48 @@ enum Rank {
     Substring = 3,
 }
 
-pub fn filter_and_order(bytes: &[u8]) -> Vec<u8> {
-    encode(&filter_and_order_result(bytes).unwrap_or_else(|response| response))
+pub fn filter_and_order_apps(
+    apps: Vec<App>,
+    query: &str,
+    visible_profile_ids: &[u64],
+) -> Result<Vec<AppId>, EngineError> {
+    validate(&apps, query, visible_profile_ids)?;
+    Ok(rank_apps(&apps, query, visible_profile_ids))
 }
 
-pub fn filter_and_order_result(bytes: &[u8]) -> Result<FilterResponse, FilterResponse> {
-    if bytes.len() > MAX_MESSAGE_BYTES {
-        return Err(error_response(
-            String::new(),
-            "BOUNDS",
-            "request exceeds maximum message size",
-        ));
+fn validate(apps: &[App], query: &str, visible_profile_ids: &[u64]) -> Result<(), EngineError> {
+    if apps.len() > MAX_APPLICATIONS {
+        return Err(EngineError::Bounds("too many applications"));
     }
-    let request: FilterRequest = serde_json::from_slice(bytes)
-        .map_err(|_| error_response(String::new(), "MALFORMED", "request is not valid JSON"))?;
-    if request.protocol_version != PROTOCOL_VERSION {
-        return Err(error_response(
-            request.request_id,
-            "PROTOCOL_VERSION",
-            "unsupported protocol version",
-        ));
+    if visible_profile_ids.len() > MAX_VISIBLE_PROFILES {
+        return Err(EngineError::Bounds("too many visible profiles"));
     }
-    if let Err((code, message)) = validate(&request) {
-        return Err(error_response(request.request_id, code, message));
+    if query.chars().count() > MAX_QUERY_CHARS {
+        return Err(EngineError::Bounds("query exceeds maximum length"));
     }
-    Ok(FilterResponse {
-        protocol_version: PROTOCOL_VERSION,
-        request_id: request.request_id.clone(),
-        ok: true,
-        matches: Some(rank_apps(&request)),
-        error: None,
-    })
-}
-
-pub fn error_response(request_id: String, code: &str, message: &str) -> FilterResponse {
-    FilterResponse {
-        protocol_version: PROTOCOL_VERSION,
-        request_id,
-        ok: false,
-        matches: None,
-        error: Some(ProtocolError {
-            code: code.to_string(),
-            message: message.to_string(),
-        }),
-    }
-}
-
-pub fn encode(response: &FilterResponse) -> Vec<u8> {
-    serde_json::to_vec(response).unwrap_or_else(|_| {
-        br#"{"protocol_version":1,"request_id":"","ok":false,"error":{"code":"ENCODE","message":"response encode failed"}}"#.to_vec()
-    })
-}
-
-fn validate(request: &FilterRequest) -> Result<(), (&'static str, &'static str)> {
-    if request.applications.len() > MAX_APPLICATIONS {
-        return Err(("BOUNDS", "too many applications"));
-    }
-    if request.visible_profile_ids.len() > MAX_VISIBLE_PROFILES {
-        return Err(("BOUNDS", "too many visible profiles"));
-    }
-    if request.query.chars().count() > MAX_QUERY_CHARS {
-        return Err(("BOUNDS", "query exceeds maximum length"));
-    }
-    for app in &request.applications {
+    for app in apps {
         if app.package.chars().count() > MAX_IDENT_CHARS
             || app.class.chars().count() > MAX_IDENT_CHARS
         {
-            return Err(("BOUNDS", "package or class exceeds maximum length"));
+            return Err(EngineError::Bounds(
+                "package or class exceeds maximum length",
+            ));
         }
         if app.label.chars().count() > MAX_LABEL_CHARS {
-            return Err(("BOUNDS", "label exceeds maximum length"));
+            return Err(EngineError::Bounds("label exceeds maximum length"));
         }
         if app.package.is_empty() || app.class.is_empty() {
-            return Err(("MALFORMED", "package and class are required"));
+            return Err(EngineError::Malformed("package and class are required"));
         }
     }
     Ok(())
 }
 
-fn rank_apps(request: &FilterRequest) -> Vec<ComponentIdentity> {
-    let query = normalize(&request.query);
-    let mut scored: Vec<(Rank, String, &Application)> = request
-        .applications
+fn rank_apps(apps: &[App], query: &str, visible_profile_ids: &[u64]) -> Vec<AppId> {
+    let query = normalize(query);
+    let mut scored: Vec<(Rank, String, &App)> = apps
         .iter()
-        .filter(|app| request.visible_profile_ids.contains(&app.profile_id))
+        .filter(|app| visible_profile_ids.contains(&app.profile_id))
         .filter_map(|app| {
             let label = normalize(&app.label);
             let rank = if query.is_empty() {
@@ -162,7 +96,7 @@ fn rank_apps(request: &FilterRequest) -> Vec<ComponentIdentity> {
     });
     scored
         .into_iter()
-        .map(|(_, _, app)| ComponentIdentity {
+        .map(|(_, _, app)| AppId {
             package: app.package.clone(),
             class: app.class.clone(),
             profile_id: app.profile_id,
@@ -201,8 +135,8 @@ fn normalize(value: &str) -> String {
 mod tests {
     use super::*;
 
-    fn app(package: &str, class: &str, profile: u64, label: &str) -> Application {
-        Application {
+    fn app(package: &str, class: &str, profile: u64, label: &str) -> App {
+        App {
             package: package.to_string(),
             class: class.to_string(),
             profile_id: profile,
@@ -210,135 +144,87 @@ mod tests {
         }
     }
 
-    fn request(query: &str, profiles: &[u64], applications: Vec<Application>) -> FilterRequest {
-        FilterRequest {
-            protocol_version: PROTOCOL_VERSION,
-            request_id: "req-1".into(),
-            query: query.into(),
-            visible_profile_ids: profiles.to_vec(),
-            applications,
-        }
-    }
-
-    fn names(response: FilterResponse) -> Vec<String> {
-        response
-            .matches
-            .unwrap()
-            .into_iter()
-            .map(|item| item.package)
-            .collect()
+    fn names(ids: Vec<AppId>) -> Vec<String> {
+        ids.into_iter().map(|item| item.package).collect()
     }
 
     #[test]
     fn empty_query_returns_visible_apps_sorted() {
-        let req = request(
-            "",
-            &[0],
-            vec![
-                app("b.pkg", "B", 0, "Bravo"),
-                app("a.pkg", "A", 0, "Alpha"),
-                app("hidden.pkg", "H", 1, "Hidden"),
-            ],
+        let apps = vec![
+            app("b.pkg", "B", 0, "Bravo"),
+            app("a.pkg", "A", 0, "Alpha"),
+            app("hidden.pkg", "H", 1, "Hidden"),
+        ];
+        assert_eq!(
+            names(filter_and_order_apps(apps, "", &[0]).unwrap()),
+            ["a.pkg", "b.pkg"]
         );
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let response = filter_and_order_result(&bytes).unwrap();
-        assert_eq!(names(response), ["a.pkg", "b.pkg"]);
     }
 
     #[test]
     fn exact_match_outranks_prefix() {
-        let req = request(
-            "mail",
-            &[0],
-            vec![
-                app("prefix.pkg", "P", 0, "Mailbox"),
-                app("exact.pkg", "E", 0, "Mail"),
-            ],
+        let apps = vec![
+            app("prefix.pkg", "P", 0, "Mailbox"),
+            app("exact.pkg", "E", 0, "Mail"),
+        ];
+        assert_eq!(
+            names(filter_and_order_apps(apps, "mail", &[0]).unwrap()),
+            ["exact.pkg", "prefix.pkg"]
         );
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let response = filter_and_order_result(&bytes).unwrap();
-        assert_eq!(names(response), ["exact.pkg", "prefix.pkg"]);
     }
 
     #[test]
     fn prefix_and_token_and_substring() {
-        let req = request(
-            "cam",
-            &[0],
-            vec![
-                app("sub.pkg", "S", 0, "My Camera"),
-                app("pre.pkg", "P", 0, "Camera"),
-                app("tok.pkg", "T", 0, "Open Camera"),
-                app("mid.pkg", "M", 0, "Webcam"),
-            ],
-        );
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let response = filter_and_order_result(&bytes).unwrap();
+        let apps = vec![
+            app("sub.pkg", "S", 0, "My Camera"),
+            app("pre.pkg", "P", 0, "Camera"),
+            app("tok.pkg", "T", 0, "Open Camera"),
+            app("mid.pkg", "M", 0, "Webcam"),
+        ];
         assert_eq!(
-            names(response),
+            names(filter_and_order_apps(apps, "cam", &[0]).unwrap()),
             ["pre.pkg", "sub.pkg", "tok.pkg", "mid.pkg"]
         );
     }
 
     #[test]
     fn deterministic_ties_use_package_then_class() {
-        let req = request(
-            "same",
-            &[0],
-            vec![
-                app("z.pkg", "Z", 0, "Same"),
-                app("a.pkg", "B", 0, "Same"),
-                app("a.pkg", "A", 0, "Same"),
-            ],
-        );
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let first = names(filter_and_order_result(&bytes).unwrap());
-        let second = names(filter_and_order_result(&bytes).unwrap());
+        let apps = vec![
+            app("z.pkg", "Z", 0, "Same"),
+            app("a.pkg", "B", 0, "Same"),
+            app("a.pkg", "A", 0, "Same"),
+        ];
+        let first = names(filter_and_order_apps(apps.clone(), "same", &[0]).unwrap());
+        let second = names(filter_and_order_apps(apps, "same", &[0]).unwrap());
         assert_eq!(first, ["a.pkg", "a.pkg", "z.pkg"]);
         assert_eq!(first, second);
     }
 
     #[test]
     fn hidden_profiles_are_excluded() {
-        let req = request(
-            "",
-            &[0],
-            vec![
-                app("vis.pkg", "V", 0, "Visible"),
-                app("hid.pkg", "H", 9, "Hidden"),
-            ],
+        let apps = vec![
+            app("vis.pkg", "V", 0, "Visible"),
+            app("hid.pkg", "H", 9, "Hidden"),
+        ];
+        assert_eq!(
+            names(filter_and_order_apps(apps, "", &[0]).unwrap()),
+            ["vis.pkg"]
         );
-        let bytes = serde_json::to_vec(&req).unwrap();
-        assert_eq!(names(filter_and_order_result(&bytes).unwrap()), ["vis.pkg"]);
-    }
-
-    #[test]
-    fn oversized_message_is_rejected() {
-        let bytes = vec![b'{'; MAX_MESSAGE_BYTES + 1];
-        let err = filter_and_order_result(&bytes).unwrap_err();
-        assert_eq!(err.error.unwrap().code, "BOUNDS");
     }
 
     #[test]
     fn oversized_query_is_rejected() {
-        let req = request(&"q".repeat(MAX_QUERY_CHARS + 1), &[0], vec![]);
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let err = filter_and_order_result(&bytes).unwrap_err();
-        assert_eq!(err.error.unwrap().code, "BOUNDS");
+        let err =
+            filter_and_order_apps(vec![], &"q".repeat(MAX_QUERY_CHARS + 1), &[0]).unwrap_err();
+        assert_eq!(err, EngineError::Bounds("query exceeds maximum length"));
     }
 
     #[test]
-    fn malformed_request_is_rejected() {
-        let err = filter_and_order_result(b"not-json").unwrap_err();
-        assert_eq!(err.error.unwrap().code, "MALFORMED");
-    }
-
-    #[test]
-    fn unsupported_protocol_version_is_rejected() {
-        let mut req = request("", &[0], vec![]);
-        req.protocol_version = 99;
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let err = filter_and_order_result(&bytes).unwrap_err();
-        assert_eq!(err.error.unwrap().code, "PROTOCOL_VERSION");
+    fn empty_id_is_rejected() {
+        let err = filter_and_order_apps(vec![app("", "C", 0, "X")], "", &[0]).unwrap_err();
+        assert_eq!(
+            err,
+            EngineError::Malformed("package and class are required")
+        );
     }
 }

@@ -2,7 +2,7 @@ package com.caniko.cenix
 
 import android.app.Application
 import com.caniko.cenix.db.CenixDatabase
-import java.io.File
+import com.caniko.cenix.db.RoomStartupStore
 
 class CenixApplication : Application() {
     lateinit var crashLoop: CrashLoopGuard
@@ -10,77 +10,70 @@ class CenixApplication : Application() {
     var database: CenixDatabase? = null
         private set
     var emergency = false
+    var filterFactory: () -> AppFilter = {
+        Class.forName("com.caniko.cenix.NativeAppFilter").getDeclaredConstructor().newInstance() as AppFilter
+    }
 
     override fun onCreate() {
         super.onCreate()
-        crashLoop = CrashLoopGuard(PrefStore(getSharedPreferences("cenix", MODE_PRIVATE)))
-        if (!crashLoop.beginStartup()) {
-            emergency = true
-        }
         database = openDatabase()
-        if (database == null) {
-            emergency = true
-        } else if (database!!.isEmergency()) {
-            emergency = true
-        }
-        if (!NativeBridge.loaded) {
+        val store = database?.let(::RoomStartupStore) ?: MemoryStartupStore()
+        crashLoop = CrashLoopGuard(store)
+        if (database == null || !crashLoop.beginStartup() || crashLoop.isEmergency()) {
             emergency = true
         }
         if (emergency) {
-            database?.setEmergency(true)
+            crashLoop.requestEmergency()
+        }
+    }
+
+    fun activeFilter(): AppFilter {
+        if (emergency) return EmergencyAppFilter
+        return try {
+            filterFactory()
+        } catch (_: Throwable) {
+            requestEmergency()
+            EmergencyAppFilter
         }
     }
 
     fun markHealthy() {
         crashLoop.markHealthy()
-        database?.let { db ->
-            val generation = db.dao().metadata()?.generation ?: 0
-            db.dao().markHealthy(generation, System.currentTimeMillis())
-        }
     }
 
     fun requestEmergency() {
         emergency = true
         crashLoop.requestEmergency()
-        database?.setEmergency(true)
     }
 
     fun retryNative(): Boolean {
-        if (!NativeBridge.loaded) return false
-        crashLoop.clearUserEmergency()
-        database?.setEmergency(false)
-        emergency = false
-        crashLoop.markHealthy()
-        return true
+        return try {
+            filterFactory()
+            crashLoop.clearEmergency()
+            emergency = false
+            crashLoop.markHealthy()
+            true
+        } catch (_: Throwable) {
+            requestEmergency()
+            false
+        }
     }
 
     fun resetLocalState() {
         database?.close()
         deleteDatabase(CenixDatabase.NAME)
-        getSharedPreferences("cenix", MODE_PRIVATE).edit().clear().apply()
-        crashLoop = CrashLoopGuard(PrefStore(getSharedPreferences("cenix", MODE_PRIVATE)))
         database = openDatabase()
-        emergency = !NativeBridge.loaded
-        if (!crashLoop.beginStartup()) {
-            emergency = true
+        val store = database?.let(::RoomStartupStore) ?: MemoryStartupStore()
+        crashLoop = CrashLoopGuard(store)
+        emergency = database == null || !crashLoop.beginStartup()
+        if (emergency) {
+            crashLoop.requestEmergency()
         }
     }
 
-    private fun openDatabase(): CenixDatabase? {
-        val file = getDatabasePath(CenixDatabase.NAME)
-        val backup = File(file.path + ".bak")
-        return try {
-            CenixDatabase.open(this)
-        } catch (_: Throwable) {
-            if (file.exists()) {
-                file.copyTo(backup, overwrite = true)
-            }
-            try {
-                deleteDatabase(CenixDatabase.NAME)
-                CenixDatabase.open(this)
-            } catch (_: Throwable) {
-                null
-            }
-        }
+    private fun openDatabase(): CenixDatabase? = try {
+        CenixDatabase.open(this)
+    } catch (_: Throwable) {
+        null
     }
 }

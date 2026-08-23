@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/cenix-core", "crates/cenix-jni"]
+members = ["crates/cenix-core", "crates/cenix-ffi", "crates/uniffi-bindgen"]
 
 [workspace.package]
 edition = "2024"
@@ -10,9 +10,8 @@ version = "0.1.0"
 
 [workspace.dependencies]
 cenix-core = { path = "crates/cenix-core" }
-jni = "0.21"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+thiserror = "2"
+uniffi = "0.29.5"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

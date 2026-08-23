@@ -1,56 +1,67 @@
 package com.caniko.cenix
 
+data class StartupState(
+    val inProgress: Boolean = false,
+    val failures: Int = 0,
+    val lastFailureAt: Long = 0,
+    val emergency: Boolean = false,
+)
+
+interface StartupStore {
+    fun load(): StartupState
+    fun save(state: StartupState)
+}
+
+class MemoryStartupStore : StartupStore {
+    private var state = StartupState()
+    override fun load() = state
+    override fun save(state: StartupState) {
+        this.state = state
+    }
+}
+
 class CrashLoopGuard(
-    private val store: KeyValueStore,
+    private val store: StartupStore,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val threshold: Int = 3,
     private val windowMs: Long = 60_000,
 ) {
     fun beginStartup(): Boolean {
-        if (store.getBoolean(USER_EMERGENCY, false)) return false
-        if (store.getBoolean(IN_PROGRESS, false)) {
-            recordFailure()
+        var state = store.load()
+        if (state.emergency) return false
+        if (state.inProgress) {
+            state = recordFailure(state)
         }
-        if (failureCountInWindow() >= threshold) return false
-        store.putBoolean(IN_PROGRESS, true)
+        if (failureCountInWindow(state) >= threshold) {
+            store.save(state)
+            return false
+        }
+        store.save(state.copy(inProgress = true))
         return true
     }
 
     fun markHealthy() {
-        store.putBoolean(IN_PROGRESS, false)
-        store.putInt(FAILURES, 0)
-    }
-
-    fun recordFailure() {
-        val now = clock()
-        val last = store.getLong(LAST_FAILURE, 0)
-        val count = if (now - last > windowMs) 1 else store.getInt(FAILURES, 0) + 1
-        store.putInt(FAILURES, count)
-        store.putLong(LAST_FAILURE, now)
-        store.putBoolean(IN_PROGRESS, false)
+        store.save(store.load().copy(inProgress = false, failures = 0))
     }
 
     fun requestEmergency() {
-        store.putBoolean(USER_EMERGENCY, true)
-        store.putBoolean(IN_PROGRESS, false)
+        store.save(store.load().copy(emergency = true, inProgress = false))
     }
 
-    fun clearUserEmergency() {
-        store.putBoolean(USER_EMERGENCY, false)
-        store.putInt(FAILURES, 0)
-        store.putBoolean(IN_PROGRESS, false)
+    fun clearEmergency() {
+        store.save(StartupState())
     }
 
-    fun failureCountInWindow(): Int {
-        val last = store.getLong(LAST_FAILURE, 0)
-        if (clock() - last > windowMs) return 0
-        return store.getInt(FAILURES, 0)
+    fun isEmergency(): Boolean = store.load().emergency
+
+    private fun recordFailure(state: StartupState): StartupState {
+        val now = clock()
+        val count = if (now - state.lastFailureAt > windowMs) 1 else state.failures + 1
+        return state.copy(failures = count, lastFailureAt = now, inProgress = false)
     }
 
-    companion object {
-        const val IN_PROGRESS = "startup_in_progress"
-        const val FAILURES = "startup_failures"
-        const val LAST_FAILURE = "startup_last_failure"
-        const val USER_EMERGENCY = "user_emergency"
+    private fun failureCountInWindow(state: StartupState): Int {
+        if (clock() - state.lastFailureAt > windowMs) return 0
+        return state.failures
     }
 }

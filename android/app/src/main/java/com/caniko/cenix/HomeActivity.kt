@@ -1,7 +1,11 @@
 package com.caniko.cenix
 
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.os.Bundle
+import android.os.UserHandle
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -15,6 +19,7 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.caniko.cenix.db.AppSnapshotEntity
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
@@ -25,7 +30,16 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var appList: ListView
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
-    private var requestSeq = 0L
+
+    private val packageCallback = object : LauncherApps.Callback() {
+        override fun onPackageAdded(packageName: String, user: UserHandle) = reload()
+        override fun onPackageRemoved(packageName: String, user: UserHandle) = reload()
+        override fun onPackageChanged(packageName: String, user: UserHandle) = reload()
+        override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = reload()
+        override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = reload()
+        override fun onPackagesSuspended(packageNames: Array<out String>, user: UserHandle) = reload()
+        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: UserHandle) = reload()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +73,16 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        catalog.register(packageCallback)
+    }
+
+    override fun onStop() {
+        catalog.unregister(packageCallback)
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -69,12 +93,42 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun reload() {
+        val live = catalog.load()
         apps.clear()
-        apps.addAll(catalog.load())
-        app.database?.dao()?.bumpGeneration(System.currentTimeMillis())
+        if (live.isNotEmpty()) {
+            apps.addAll(live)
+            persistSnapshot(live)
+        } else {
+            apps.addAll(loadSnapshot())
+        }
         applyChrome()
         applyFilter()
     }
+
+    private fun persistSnapshot(live: List<LaunchableApp>) {
+        val rows = live.map { item ->
+            AppSnapshotEntity(
+                id = "${item.packageName}/${item.className}/${item.profileId}",
+                packageName = item.packageName,
+                className = item.className,
+                profileSerial = item.profileId,
+                label = item.label,
+                generation = 0,
+            )
+        }
+        app.database?.dao()?.replaceSnapshot(rows, System.currentTimeMillis())
+    }
+
+    private fun loadSnapshot(): List<LaunchableApp> =
+        app.database?.dao()?.snapshot().orEmpty().map { row ->
+            LaunchableApp.fromSnapshot(
+                row.packageName,
+                row.className,
+                row.profileSerial,
+                row.label,
+                catalog.userForSerial(row.profileSerial),
+            )
+        }
 
     private fun applyChrome() {
         val emergency = app.emergency
@@ -85,21 +139,12 @@ class HomeActivity : AppCompatActivity() {
     private fun applyFilter() {
         val query = searchField.text?.toString().orEmpty()
         val profiles = catalog.visibleProfiles()
-        val matches = if (app.emergency || !NativeBridge.loaded) {
-            EmergencyFilter.filter(apps, query, profiles)
-        } else {
-            val requestId = (++requestSeq).toString()
-            val outcome = NativeBridge.filter(FilterProtocol.encodeRequest(requestId, query, profiles, apps))
-            if (!outcome.ok) {
-                app.requestEmergency()
-                applyChrome()
-                EmergencyFilter.filter(apps, query, profiles)
-            } else {
-                val index = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
-                outcome.matches.mapNotNull { match ->
-                    index[Triple(match.packageName, match.className, match.profileId)]
-                }
-            }
+        val matches = try {
+            app.activeFilter().filter(apps, query, profiles)
+        } catch (_: Throwable) {
+            app.requestEmergency()
+            applyChrome()
+            EmergencyAppFilter.filter(apps, query, profiles)
         }
         visible.clear()
         visible.addAll(matches)
@@ -107,9 +152,14 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun launch(appItem: LaunchableApp) {
+        val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
+        if (user == null) {
+            Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
         try {
-            val launcher = getSystemService(android.content.pm.LauncherApps::class.java)
-            launcher.startMainActivity(android.content.ComponentName(appItem.packageName, appItem.className), appItem.user, null, null)
+            val launcher = getSystemService(LauncherApps::class.java)
+            launcher.startMainActivity(ComponentName(appItem.packageName, appItem.className), user, null, null)
         } catch (_: Throwable) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         }
@@ -128,7 +178,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun promptDefaultHome() {
-        startActivity(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))
+        startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
     }
 
     private inner class AppAdapter : ArrayAdapter<LaunchableApp>(this, 0, visible) {
@@ -146,7 +196,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun profileLabel(profileId: Long): String {
-        val personal = android.os.Process.myUserHandle().hashCode().toLong()
+        val personal = catalog.serial(android.os.Process.myUserHandle())
         return when (profileId) {
             personal -> getString(R.string.profile_personal)
             else -> getString(R.string.profile_other)

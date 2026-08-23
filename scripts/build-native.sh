@@ -8,5 +8,5 @@ fi
 outdir="$root/android/app/src/main/jniLibs"
 rm -rf "$outdir"
 # Harbor cargo config forces host mold on android triples. cargo-ndk needs NDK lld.
-env -u CARGO_HOME cargo ndk -t arm64-v8a -t x86_64 -o "$outdir" -P 35 build -p cenix-jni --release
-echo "jni libraries written to $outdir"
+env -u CARGO_HOME cargo ndk -t arm64-v8a -t x86_64 -o "$outdir" -P 35 build -p cenix-ffi --release
+echo "native libraries written to $outdir"

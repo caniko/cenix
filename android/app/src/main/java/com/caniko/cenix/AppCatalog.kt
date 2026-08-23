@@ -2,22 +2,31 @@ package com.caniko.cenix
 
 import android.content.Context
 import android.content.pm.LauncherApps
-import android.os.Process
+import android.os.UserHandle
 import android.os.UserManager
 
 class AppCatalog(context: Context) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val userManager = context.getSystemService(UserManager::class.java)
 
-    fun visibleProfiles(): Set<Long> {
-        val users = userManager.userProfiles ?: listOf(Process.myUserHandle())
-        return users.map { it.hashCode().toLong() }.toSet()
+    fun profiles(): List<UserHandle> = launcherApps.profiles
+
+    fun serial(user: UserHandle): Long = userManager.getSerialNumberForUser(user)
+
+    fun userForSerial(serial: Long): UserHandle? = userManager.getUserForSerialNumber(serial)
+
+    fun visibleProfiles(): Set<Long> = profiles().map(::serial).toSet()
+
+    fun load(): List<LaunchableApp> =
+        profiles().flatMap { user ->
+            launcherApps.getActivityList(null, user).map { LaunchableApp.from(it, serial(user)) }
+        }
+
+    fun register(callback: LauncherApps.Callback) {
+        launcherApps.registerCallback(callback)
     }
 
-    fun load(): List<LaunchableApp> {
-        val users = userManager.userProfiles ?: listOf(Process.myUserHandle())
-        return users.flatMap { user ->
-            launcherApps.getActivityList(null, user).map(LaunchableApp::from)
-        }
+    fun unregister(callback: LauncherApps.Callback) {
+        launcherApps.unregisterCallback(callback)
     }
 }

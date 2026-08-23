@@ -1,18 +1,19 @@
 [package]
-name = "cenix-jni"
+name = "cenix-ffi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "JNI boundary for Cenix"
+description = "UniFFI boundary for Cenix"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+name = "cenix_ffi"
+crate-type = ["cdylib", "lib"]
 
 [lints]
 workspace = true
 
 [dependencies]
 cenix-core.workspace = true
-jni.workspace = true
-serde_json.workspace = true
+thiserror.workspace = true
+uniffi.workspace = true

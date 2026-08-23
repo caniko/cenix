@@ -1,0 +1,4 @@
+[bindings.kotlin]
+package_name = "com.caniko.cenix.uniffi"
+android = true
+cdylib_name = "cenix_ffi"
