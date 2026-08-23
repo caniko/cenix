@@ -67,7 +67,7 @@ class HomeActivity : AppCompatActivity() {
         findViewById<Button>(R.id.setDefaultHome).setOnClickListener { promptDefaultHome() }
         workspaceGrid.numColumns = grid.cols
         workspaceGrid.layoutParams = workspaceGrid.layoutParams.apply {
-            val cell = (56 * resources.displayMetrics.density).toInt()
+            val cell = (64 * resources.displayMetrics.density).toInt()
             val maxH = (resources.displayMetrics.heightPixels * 2) / 5
             height = minOf(grid.rows * cell, maxH)
         }
@@ -216,7 +216,8 @@ class HomeActivity : AppCompatActivity() {
             val item = slots.getOrNull(position)
             view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
             view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
-            view.contentDescription = item?.label ?: getString(R.string.workspace_empty)
+            view.contentDescription = item?.let { "${it.label}|${it.packageName}|${it.profileId}" }
+                ?: getString(R.string.workspace_empty)
             return view
         }
     }

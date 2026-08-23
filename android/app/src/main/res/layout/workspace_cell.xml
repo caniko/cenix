@@ -3,14 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center"
-    android:minHeight="56dp"
+    android:minHeight="64dp"
     android:orientation="vertical"
-    android:padding="4dp">
+    android:padding="2dp">
 
     <ImageView
         android:id="@+id/cellIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
         android:contentDescription="@null" />
 
     <TextView
