@@ -63,8 +63,18 @@ if ! "$adb" devices | awk 'NR>1 && $2=="device"{found=1} END{exit found?0:1}'; t
 fi
 
 dump_ui() {
-  "$adb" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null
-  "$adb" shell cat /sdcard/cenix-ui.xml
+  local i
+  "$adb" shell rm -f /sdcard/cenix-ui.xml
+  for i in $(seq 1 15); do
+    "$adb" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
+    if "$adb" shell test -s /sdcard/cenix-ui.xml; then
+      "$adb" shell cat /sdcard/cenix-ui.xml
+      return 0
+    fi
+    sleep 1
+  done
+  echo "uiautomator dump failed" >&2
+  exit 1
 }
 
 start_home() {
@@ -90,6 +100,18 @@ search_for() {
   sleep 1
 }
 
+tap_label() {
+  local xml x1 y1 x2 y2
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(printf '%s\n' "$xml" | tr '>' '\n' | grep -F "text=\"$1\"" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)]\[\([0-9]*\),\([0-9]*\)]".*/\1 \2 \3 \4/p' | head -n1)
+  if [[ -z "${x1:-}" ]]; then
+    echo "bounds missing for $1" >&2
+    exit 1
+  fi
+  "$adb" shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+  sleep 1
+}
+
 "$root/scripts/assemble-debug.sh"
 "$root/scripts/audit-apk.sh"
 "$adb" uninstall com.caniko.cenix >/dev/null 2>&1 || true
@@ -108,6 +130,10 @@ echo "$ui" | grep -qi 'emergency mode' && { echo "native APK started in emergenc
 start_home
 search_for "Fixture"
 dump_ui | grep -q 'Cenix Fixture' || { echo "fixture app missing after install" >&2; exit 1; }
+tap_label "Cenix Fixture"
+"$adb" shell dumpsys activity activities | grep -q 'com.caniko.cenix.fixture/.FixtureActivity' || { echo "fixture did not launch" >&2; exit 1; }
+"$adb" shell am force-stop com.caniko.cenix.fixture
+start_home
 "$adb" uninstall com.caniko.cenix.fixture >/dev/null
 "$adb" shell am force-stop com.caniko.cenix
 start_home
@@ -117,6 +143,9 @@ dump_ui | grep -q 'Cenix Fixture' && { echo "fixture app still listed after unin
 "$adb" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true
 sleep 2
 dump_ui | grep -qi 'emergency mode' || { echo "forced native failure did not show emergency" >&2; exit 1; }
+"$adb" shell am force-stop com.caniko.cenix
+start_home
+dump_ui | grep -qi 'emergency mode' || { echo "emergency did not survive process death" >&2; exit 1; }
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 (cd "$root/android" && ./gradlew :app:assembleDebug -PomitNative)
@@ -128,4 +157,4 @@ start_home
 dump_ui | grep -qi 'emergency mode' || { echo "no-native APK did not enter emergency" >&2; exit 1; }
 dump_ui | grep -q 'Search apps' || { echo "emergency HOME lost search" >&2; exit 1; }
 
-echo "emulator conformance: HOME, search, package callbacks, crash extra, no-native emergency"
+echo "emulator conformance: HOME, search, launch, package callbacks, crash extra, process death, no-native emergency"
