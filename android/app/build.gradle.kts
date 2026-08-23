@@ -25,6 +25,7 @@ android {
         release {
             isMinifyEnabled = false
             isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isDebuggable = true
@@ -56,7 +57,7 @@ android {
         jniLibs {
             useLegacyPackaging = true
             if (project.hasProperty("omitNative")) {
-                excludes += setOf("**/*.so")
+                excludes += setOf("**/libcenix_ffi.so")
             }
         }
     }

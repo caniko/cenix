@@ -10,9 +10,9 @@ A missing `.so`, a UniFFI load failure, or a crash loop must not brick HOME.
 
 ## Decision
 
-`CrashLoopGuard` persists `emergency` in Room. Threshold: 3 incomplete startups in 60s. `activeFilter()` returns `EmergencyAppFilter` and never constructs `NativeAppFilter` / UniFFI types while emergency. `loadNative()` constructs then probes `filter(emptyList(), "", emptySet())`. Factory or probe throw → persist emergency.
+User-forced and native-load failures persist `emergency` in Room until retry-native succeeds or the user resets. Crash-loop (3 incomplete startups in 60s) uses emergency for the current process only; expired failures do not persist. `activeFilter()` returns `EmergencyAppFilter` and never constructs `NativeAppFilter` / UniFFI types while emergency. `loadNative()` constructs then probes `filter(emptyList(), "", emptySet())`. Factory or probe throw → persist emergency. Database-open failure uses a memory store (nonpersistent emergency) and never deletes the DB.
 
-Debug: `FORCE_NATIVE_FAILURE`. Release/debug packaging: `-PomitNative` excludes `*.so`. `reload()` applies filter then chrome so a failed probe still paints the banner.
+Debug: `FORCE_NATIVE_FAILURE`. `-PomitNative` omits `libcenix_ffi.so`. `reload()` marks healthy only after a list is rendered.
 
 ## Consequences
 

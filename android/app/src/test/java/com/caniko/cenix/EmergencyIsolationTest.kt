@@ -55,4 +55,23 @@ class EmergencyIsolationTest {
         assertTrue(app.emergency)
         assertSame(EmergencyAppFilter, app.activeFilter())
     }
+
+    @Test
+    fun retryNativeClearsEmergencyAfterProbeSucceeds() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        app.requestEmergency()
+        app.filterFactory = { AppFilter { apps, _, _ -> apps } }
+        assertTrue(app.retryNative())
+        assertFalse(app.emergency)
+        assertFalse(app.crashLoop.isEmergency())
+    }
+
+    @Test
+    fun resetClearsPersistedEmergency() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        app.requestEmergency()
+        app.resetLocalState()
+        assertFalse(app.emergency)
+        assertFalse(app.crashLoop.isEmergency())
+    }
 }

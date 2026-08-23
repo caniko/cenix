@@ -19,11 +19,8 @@ class CenixApplication : Application() {
         database = openDatabase()
         val store = database?.let(::RoomStartupStore) ?: MemoryStartupStore()
         crashLoop = CrashLoopGuard(store)
-        if (database == null || !crashLoop.beginStartup() || crashLoop.isEmergency()) {
+        if (database == null || !crashLoop.beginStartup()) {
             emergency = true
-        }
-        if (emergency) {
-            crashLoop.requestEmergency()
         }
     }
 
@@ -72,9 +69,6 @@ class CenixApplication : Application() {
         val store = database?.let(::RoomStartupStore) ?: MemoryStartupStore()
         crashLoop = CrashLoopGuard(store)
         emergency = database == null || !crashLoop.beginStartup()
-        if (emergency) {
-            crashLoop.requestEmergency()
-        }
     }
 
     private fun openDatabase(): CenixDatabase? = try {

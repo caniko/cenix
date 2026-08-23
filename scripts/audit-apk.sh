@@ -19,8 +19,9 @@ if [[ "$exported" -ne 1 ]]; then
   echo "exactly one exported component is allowed (HOME), found $exported" >&2
   exit 1
 fi
-if grep -R --include='*.kt' --include='*.xml' -n 'WebView' "$root/android/app/src" | grep -v '/uniffi/'; then
-  echo "WebView is forbidden" >&2
+if grep -R --include='*.kt' --include='*.xml' -nE 'WebView|cuscon|Cuscon|cenix_jni|FilterProtocol|NativeBridge|harbor-js' "$root/android" \
+  | grep -v '/uniffi/' | grep -v '/build/' | grep -q .; then
+  echo "forbidden dependency or leftover protocol reference" >&2
   exit 1
 fi
 apk="${1:-$root/android/app/build/outputs/apk/debug/app-debug.apk}"
@@ -38,8 +39,45 @@ if [[ "$omit" == "1" ]]; then
 else
   echo "$listing" | grep -q 'libcenix_ffi.so' || { echo "libcenix_ffi.so missing" >&2; exit 1; }
   echo "$listing" | grep -q 'libjnidispatch.so' || { echo "libjnidispatch.so missing" >&2; exit 1; }
+  echo "$listing" | grep -q 'lib/arm64-v8a/libcenix_ffi.so' || { echo "arm64-v8a libcenix_ffi.so missing" >&2; exit 1; }
+  echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so' || { echo "x86_64 libcenix_ffi.so missing" >&2; exit 1; }
 fi
-apk_strings="$(unzip -p "$apk" AndroidManifest.xml | strings || true)"
-echo "$apk_strings" | grep -q 'android.permission.INTERNET' && { echo "INTERNET permission string found in APK" >&2; exit 1; }
-echo "$apk_strings" | grep -q 'QUERY_ALL_PACKAGES' && { echo "QUERY_ALL_PACKAGES found in APK" >&2; exit 1; }
+echo "$listing" | grep -qiE 'cenix_jni|harbor-js|cuscon' && { echo "obsolete artifact in APK listing" >&2; exit 1; }
+
+sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+aapt_bin="$(echo "$sdk"/build-tools/*/aapt | awk '{print $1}')"
+if [[ ! -x "$aapt_bin" ]]; then
+  aapt_bin="$(command -v aapt || true)"
+fi
+if [[ ! -x "${aapt_bin:-}" ]]; then
+  echo "aapt is required to audit the merged manifest" >&2
+  exit 1
+fi
+badging="$("$aapt_bin" dump badging "$apk")"
+xmltree="$("$aapt_bin" dump xmltree "$apk" AndroidManifest.xml)"
+echo "$xmltree" | grep -q 'android.permission.INTERNET' && { echo "INTERNET in merged manifest" >&2; exit 1; }
+echo "$xmltree" | grep -q 'QUERY_ALL_PACKAGES' && { echo "QUERY_ALL_PACKAGES in merged manifest" >&2; exit 1; }
+echo "$xmltree" | grep -q 'android.intent.category.HOME' || { echo "HOME missing from merged manifest" >&2; exit 1; }
+echo "$badging" | grep -qiE 'cuscon|harbor-js|cenix_jni' && { echo "forbidden string in badging" >&2; exit 1; }
+if [[ "$apk" == *release* ]]; then
+  echo "$badging" | grep -q 'application-debuggable' && { echo "release APK is debuggable" >&2; exit 1; }
+fi
+
+if [[ "$omit" != "1" ]]; then
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  unzip -qo "$apk" 'lib/*/*.so' -d "$tmp"
+  mapfile -t sos < <(find "$tmp/lib" -name 'libcenix_ffi.so' -o -name 'libjnidispatch.so')
+  if [[ "${#sos[@]}" -eq 0 ]]; then
+    echo "no native libraries extracted from $apk" >&2
+    exit 1
+  fi
+  "$root/scripts/check-16k.sh" "${sos[@]}"
+fi
 echo "apk audit passed: $apk"
+if [[ $# -eq 0 ]]; then
+  release_apk="$root/android/app/build/outputs/apk/release/app-release.apk"
+  export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  (cd "$root/android" && ./gradlew :app:assembleRelease)
+  "$0" "$release_apk"
+fi

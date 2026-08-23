@@ -33,7 +33,7 @@ class CrashLoopGuard(
             state = recordFailure(state)
         }
         if (failureCountInWindow(state) >= threshold) {
-            store.save(state.copy(emergency = true, inProgress = false))
+            store.save(state.copy(inProgress = false))
             return false
         }
         store.save(state.copy(inProgress = true))

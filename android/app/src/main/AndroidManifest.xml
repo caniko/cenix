@@ -20,7 +20,7 @@
         <activity
             android:name=".HomeActivity"
             android:clearTaskOnLaunch="true"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
             android:resumeWhilePausing="true"
