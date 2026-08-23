@@ -13,4 +13,7 @@
     <string name="profile_work">Work</string>
     <string name="profile_private">Private</string>
     <string name="profile_other">Profile</string>
+    <string name="workspace">Workspace</string>
+    <string name="workspace_empty">Empty</string>
+    <string name="workspace_full">Workspace is full</string>
 </resources>

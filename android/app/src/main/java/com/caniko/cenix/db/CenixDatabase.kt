@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -11,6 +12,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.caniko.cenix.StartupState
 import com.caniko.cenix.StartupStore
 
@@ -24,6 +27,23 @@ data class MetadataEntity(
     val updatedAt: Long,
 )
 
+@Entity(
+    tableName = "workspace_items",
+    indices = [
+        Index(value = ["screen", "cellX", "cellY"], unique = true),
+        Index(value = ["packageName", "className", "profileId"], unique = true),
+    ],
+)
+data class WorkspaceItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val screen: Int,
+    val cellX: Int,
+    val cellY: Int,
+    val packageName: String,
+    val className: String,
+    val profileId: Long,
+)
+
 @Dao
 interface CenixDao {
     @Query("SELECT * FROM launcher_metadata WHERE singletonId = 1")
@@ -31,6 +51,15 @@ interface CenixDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertMetadata(entity: MetadataEntity)
+
+    @Query("SELECT * FROM workspace_items ORDER BY screen, cellY, cellX")
+    fun workspaceItems(): List<WorkspaceItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertWorkspace(entity: WorkspaceItemEntity): Long
+
+    @Query("DELETE FROM workspace_items WHERE packageName = :packageName AND className = :className AND profileId = :profileId")
+    fun deleteWorkspace(packageName: String, className: String, profileId: Long)
 
     @Transaction
     fun saveStartup(state: StartupState, now: Long) {
@@ -63,7 +92,7 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
 }
 
 @Database(
-    entities = [MetadataEntity::class],
+    entities = [MetadataEntity::class, WorkspaceItemEntity::class],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
@@ -72,10 +101,25 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 1
+        const val VERSION = 2
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `screen` INTEGER NOT NULL, `cellX` INTEGER NOT NULL, `cellY` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `className` TEXT NOT NULL, `profileId` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_items_screen_cellX_cellY` ON `workspace_items` (`screen`, `cellX`, `cellY`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_items_packageName_className_profileId` ON `workspace_items` (`packageName`, `className`, `profileId`)",
+                )
+            }
+        }
 
         fun open(context: Context): CenixDatabase =
             Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
+                .addMigrations(MIGRATION_1_2)
                 .allowMainThreadQueries()
                 .build()
                 .also { it.ensureSeed() }

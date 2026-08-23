@@ -43,8 +43,10 @@ class CenixDatabaseTest {
         now += 1
         assertFalse(first.beginStartup())
         val second = CrashLoopGuard(store, clock = { now })
-        assertTrue(second.isEmergency())
+        assertFalse(second.isEmergency())
         assertFalse(second.beginStartup())
+        now += 61_000
+        assertTrue(second.beginStartup())
         db.close()
     }
 
@@ -53,6 +55,38 @@ class CenixDatabaseTest {
         val db = openDb()
         assertNotNull(db.dao().metadata())
         db.close()
+    }
+
+    @Test
+    fun migratesV1ToV2KeepsMetadata() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val name = "cenix-migrate.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(file, null)
+        sqlite.execSQL(
+            "CREATE TABLE IF NOT EXISTS `launcher_metadata` (`singletonId` INTEGER NOT NULL, `startupInProgress` INTEGER NOT NULL, `startupFailures` INTEGER NOT NULL, `lastFailureAt` INTEGER NOT NULL, `emergency` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`singletonId`))",
+        )
+        sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+        sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4245c49e2ef1c5f9cb6826b6784234ad')")
+        sqlite.execSQL(
+            "INSERT INTO launcher_metadata VALUES (1, 0, 2, 9, 1, 100)",
+        )
+        sqlite.version = 1
+        sqlite.close()
+
+        val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
+            .addMigrations(CenixDatabase.MIGRATION_1_2)
+            .allowMainThreadQueries()
+            .build()
+        val metadata = db.dao().metadata()
+        assertNotNull(metadata)
+        assertEquals(2, metadata!!.startupFailures)
+        assertTrue(metadata.emergency)
+        assertTrue(db.dao().workspaceItems().isEmpty())
+        db.close()
+        context.deleteDatabase(name)
     }
 
     private fun openDb(): CenixDatabase {

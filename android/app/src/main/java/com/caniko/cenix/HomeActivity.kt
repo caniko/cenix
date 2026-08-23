@@ -12,8 +12,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.GridView
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
@@ -27,8 +29,12 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var emergencyBanner: TextView
     private lateinit var searchField: EditText
     private lateinit var appList: ListView
+    private lateinit var workspaceGrid: GridView
+    private lateinit var grid: PhoneGrid
+    private var workspace: Workspace? = null
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
+    private val slots = mutableListOf<LaunchableApp?>()
 
     private val packageCallback = object : LauncherApps.Callback() {
         override fun onPackageAdded(packageName: String, user: UserHandle) = reload()
@@ -44,6 +50,9 @@ class HomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         app = application as CenixApplication
         catalog = AppCatalog(this)
+        workspace = app.database?.let(::Workspace)
+        val dm = resources.displayMetrics
+        grid = PhoneGrid.pick(dm.widthPixels / dm.density, dm.heightPixels / dm.density)
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_FORCE_NATIVE_FAILURE, false)) {
             app.requestEmergency()
         }
@@ -52,11 +61,31 @@ class HomeActivity : AppCompatActivity() {
         emergencyBanner = findViewById(R.id.emergencyBanner)
         searchField = findViewById(R.id.searchField)
         appList = findViewById(R.id.appList)
+        workspaceGrid = findViewById(R.id.workspaceGrid)
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
         findViewById<Button>(R.id.setDefaultHome).setOnClickListener { promptDefaultHome() }
+        workspaceGrid.numColumns = grid.cols
+        workspaceGrid.layoutParams = workspaceGrid.layoutParams.apply {
+            val cell = (56 * resources.displayMetrics.density).toInt()
+            val maxH = (resources.displayMetrics.heightPixels * 2) / 5
+            height = minOf(grid.rows * cell, maxH)
+        }
+        workspaceGrid.adapter = WorkspaceAdapter()
+        workspaceGrid.setOnItemClickListener { _, _, position, _ -> slots[position]?.let(::launch) }
+        workspaceGrid.setOnItemLongClickListener { _, _, position, _ ->
+            slots[position]?.let {
+                workspace?.unpin(it)
+                bindWorkspace()
+            }
+            true
+        }
         appList.adapter = AppAdapter()
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
+        appList.setOnItemLongClickListener { _, _, position, _ ->
+            pin(visible[position])
+            true
+        }
         searchField.addTextChangedListener(
             object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -66,20 +95,18 @@ class HomeActivity : AppCompatActivity() {
                 }
             },
         )
+        catalog.register(packageCallback)
         reload()
-        if (!app.emergency) {
-            app.markHealthy()
-        }
     }
 
     override fun onStart() {
         super.onStart()
-        catalog.register(packageCallback)
+        reload()
     }
 
-    override fun onStop() {
+    override fun onDestroy() {
         catalog.unregister(packageCallback)
-        super.onStop()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -92,10 +119,40 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun reload() {
-        apps.clear()
-        apps.addAll(catalog.load())
-        applyFilter()
-        applyChrome()
+        try {
+            apps.clear()
+            apps.addAll(catalog.load())
+            workspace?.dropMissing(apps.map { Triple(it.packageName, it.className, it.profileId) }.toSet())
+            applyFilter()
+            bindWorkspace()
+            applyChrome()
+            app.markHealthy()
+        } catch (_: Throwable) {
+            app.requestEmergency()
+            applyChrome()
+        }
+    }
+
+    private fun bindWorkspace() {
+        val byCell = workspace?.items().orEmpty()
+            .filter { grid.inBounds(it.cellX, it.cellY) }
+            .associateBy { it.cellY * grid.cols + it.cellX }
+        val catalogIndex = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
+        slots.clear()
+        for (i in 0 until grid.cells) {
+            val item = byCell[i]
+            slots.add(item?.let { catalogIndex[Triple(it.packageName, it.className, it.profileId)] })
+        }
+        (workspaceGrid.adapter as WorkspaceAdapter).notifyDataSetChanged()
+    }
+
+    private fun pin(appItem: LaunchableApp) {
+        val store = workspace ?: return
+        if (!store.pin(appItem, grid)) {
+            Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show()
+            return
+        }
+        bindWorkspace()
     }
 
     private fun applyChrome() {
@@ -106,6 +163,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun applyFilter() {
         val query = searchField.text?.toString().orEmpty()
+        workspaceGrid.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
         val profiles = catalog.visibleProfiles()
         val matches = try {
             app.activeFilter().filter(apps, query, profiles)
@@ -134,19 +192,33 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun retryNative() {
-        if (app.retryNative()) {
-            applyChrome()
-            applyFilter()
-        }
+        app.retryNative()
+        applyChrome()
+        applyFilter()
     }
 
     private fun resetState() {
         app.resetLocalState()
+        workspace = app.database?.let(::Workspace)
         reload()
     }
 
     private fun promptDefaultHome() {
         startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+    }
+
+    private inner class WorkspaceAdapter : BaseAdapter() {
+        override fun getCount() = grid.cells
+        override fun getItem(position: Int) = slots.getOrNull(position)
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.workspace_cell, parent, false)
+            val item = slots.getOrNull(position)
+            view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
+            view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
+            view.contentDescription = item?.label ?: getString(R.string.workspace_empty)
+            return view
+        }
     }
 
     private inner class AppAdapter : ArrayAdapter<LaunchableApp>(this, 0, visible) {
@@ -158,7 +230,7 @@ class HomeActivity : AppCompatActivity() {
             view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.icon)
             view.findViewById<TextView>(R.id.appLabel).text = item.label
             view.findViewById<TextView>(R.id.appProfile).text = profileLabel(item.profileId)
-            view.contentDescription = item.label
+            view.contentDescription = "${item.label}|${item.packageName}|${item.profileId}"
             return view
         }
     }

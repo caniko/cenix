@@ -8,7 +8,7 @@ Evidence keys: `src` = Launcher3 source, `api` = public SDK, `emu` = AOSP emulat
 | --- | --- | --- | --- |
 | HOME registration | `INSTALLABLE_PUBLIC` | done | `src`+`api`+`emu` |
 | HOME role selection | `ROLE_HOME_GATED` | done | `RoleManager` / `cmd role`; `emu` |
-| Workspace | `INSTALLABLE_PUBLIC` | later | `src`; not in slice |
+| Workspace | `INSTALLABLE_PUBLIC` | done | one page; long-press pin; no drag |
 | Hotseat | `INSTALLABLE_PUBLIC` | later | `src`; GrapheneOS removed hotseat QSB |
 | All Apps list | `INSTALLABLE_PUBLIC` | done | `LauncherApps`; `emu` |
 | Local label search | `INSTALLABLE_PUBLIC` | done | `emu` |
@@ -26,7 +26,7 @@ Evidence keys: `src` = Launcher3 source, `api` = public SDK, `emu` = AOSP emulat
 | Private Space | `UNKNOWN_REQUIRES_SPIKE` | omitted | `src` UI; public API surface unclear for 3p HOME |
 | App locking | `SIGNATURE_OR_SYSTEM` | omitted | `LOCK_APPS` in `src` |
 | Wallpaper / dynamic colors | `USER_AUTHORIZED` | later | `SET_WALLPAPER`; WallpaperColors |
-| Grid migration | `INSTALLABLE_PUBLIC` | later | `src` grids; no Cenix workspace yet |
+| Grid migration | `INSTALLABLE_PUBLIC` | later | out-of-grid pins kept, not remapped |
 | Launcher backup | `INSTALLABLE_PUBLIC` | omitted for now | `src` backup agent; Cenix `allowBackup=false` |
 | Accessibility | `INSTALLABLE_PUBLIC` | partial | content descriptions; no TalkBack pass |
 | Secondary display | `INSTALLABLE_PUBLIC` | omitted | `SECONDARY_HOME`; not phone v1 |

@@ -6,6 +6,7 @@ import android.os.UserHandle
 import android.os.UserManager
 
 class AppCatalog(context: Context) {
+    private val selfPackage = context.packageName
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val userManager = context.getSystemService(UserManager::class.java)
 
@@ -19,7 +20,9 @@ class AppCatalog(context: Context) {
 
     fun load(): List<LaunchableApp> =
         profiles().flatMap { user ->
-            launcherApps.getActivityList(null, user).map { LaunchableApp.from(it, serial(user)) }
+            launcherApps.getActivityList(null, user)
+                .filter { it.componentName.packageName != selfPackage }
+                .map { LaunchableApp.from(it, serial(user)) }
         }
 
     fun register(callback: LauncherApps.Callback) {
