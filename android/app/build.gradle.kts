@@ -55,6 +55,9 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            if (project.hasProperty("omitNative")) {
+                excludes += setOf("**/*.so")
+            }
         }
     }
 }

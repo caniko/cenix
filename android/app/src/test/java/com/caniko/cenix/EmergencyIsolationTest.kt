@@ -1,34 +1,58 @@
 package com.caniko.cenix
 
-import org.junit.Assert.assertEquals
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = CenixApplication::class)
 class EmergencyIsolationTest {
     @Test
     fun emergencyPathDoesNotConstructNativeFilter() {
-        var constructed = 0
-        val filter = if (true) {
-            EmergencyAppFilter
-        } else {
-            constructed += 1
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        var called = false
+        app.emergency = true
+        app.filterFactory = {
+            called = true
             error("native filter must not load")
         }
-        assertSame(EmergencyAppFilter, filter)
-        assertEquals(0, constructed)
+        assertSame(EmergencyAppFilter, app.activeFilter())
+        assertFalse(called)
     }
 
     @Test
-    fun injectedFactoryIsSkippedWhenEmergency() {
-        var called = false
-        val emergency = true
-        val factory: () -> AppFilter = {
-            called = true
-            error("should not load")
+    fun factoryFailureEntersEmergency() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        app.emergency = false
+        app.filterFactory = { error("missing libcenix_ffi.so") }
+        assertSame(EmergencyAppFilter, app.activeFilter())
+        assertTrue(app.emergency)
+        assertTrue(app.crashLoop.isEmergency())
+    }
+
+    @Test
+    fun probeFailureEntersEmergency() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        app.emergency = false
+        app.filterFactory = {
+            AppFilter { _, _, _ -> error("uniffi load failed") }
         }
-        val filter = if (emergency) EmergencyAppFilter else factory()
-        assertSame(EmergencyAppFilter, filter)
-        assertTrue(!called)
+        assertSame(EmergencyAppFilter, app.activeFilter())
+        assertTrue(app.emergency)
+    }
+
+    @Test
+    fun retryNativeStaysEmergencyWhenProbeFails() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        app.requestEmergency()
+        app.filterFactory = { error("still missing") }
+        assertFalse(app.retryNative())
+        assertTrue(app.emergency)
+        assertSame(EmergencyAppFilter, app.activeFilter())
     }
 }

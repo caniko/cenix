@@ -30,7 +30,7 @@ class CenixApplication : Application() {
     fun activeFilter(): AppFilter {
         if (emergency) return EmergencyAppFilter
         return try {
-            filterFactory()
+            loadNative()
         } catch (_: Throwable) {
             requestEmergency()
             EmergencyAppFilter
@@ -48,7 +48,7 @@ class CenixApplication : Application() {
 
     fun retryNative(): Boolean {
         return try {
-            filterFactory()
+            loadNative()
             crashLoop.clearEmergency()
             emergency = false
             crashLoop.markHealthy()
@@ -57,6 +57,12 @@ class CenixApplication : Application() {
             requestEmergency()
             false
         }
+    }
+
+    private fun loadNative(): AppFilter {
+        val filter = filterFactory()
+        filter.filter(emptyList(), "", emptySet())
+        return filter
     }
 
     fun resetLocalState() {

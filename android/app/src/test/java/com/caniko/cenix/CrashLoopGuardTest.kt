@@ -40,4 +40,21 @@ class CrashLoopGuardTest {
         guard.clearEmergency()
         assertTrue(guard.beginStartup())
     }
+
+    @Test
+    fun thresholdPersistsEmergencyOnNewGuard() {
+        var now = 1_000L
+        val store = MemoryStartupStore()
+        val first = CrashLoopGuard(store, clock = { now })
+        assertTrue(first.beginStartup())
+        now += 1
+        assertTrue(first.beginStartup())
+        now += 1
+        assertTrue(first.beginStartup())
+        now += 1
+        assertFalse(first.beginStartup())
+        val second = CrashLoopGuard(store, clock = { now })
+        assertTrue(second.isEmergency())
+        assertFalse(second.beginStartup())
+    }
 }
