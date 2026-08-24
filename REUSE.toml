@@ -1,0 +1,11 @@
+version = 1
+
+[[annotations]]
+path = ["**"]
+SPDX-FileCopyrightText = "2026 Can"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["docs/**", "fastlane/**", "README.md"]
+SPDX-FileCopyrightText = "2026 Can"
+SPDX-License-Identifier = "CC-BY-4.0"

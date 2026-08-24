@@ -62,6 +62,18 @@
         abiVersions = ["x86_64"];
       };
       emulatorSdk = emulatorComposition.androidsdk or emulatorComposition;
+      emulatorAospComposition = harbor-android.lib.mkAndroidSdk {
+        inherit pkgs;
+        platformVersions = [androidPlatform];
+        buildToolsVersions = ["35.0.0"];
+        ndkVersions = [androidNdkVersion];
+        includeNDK = true;
+        includeEmulator = true;
+        includeSystemImages = true;
+        systemImageTypes = ["default"];
+        abiVersions = ["x86_64"];
+      };
+      emulatorAospSdk = emulatorAospComposition.androidsdk or emulatorAospComposition;
       rustShells = harbor-rs.lib.mkDevShells {
         inherit pkgs craneLib cross;
       };
@@ -79,7 +91,7 @@
         buildCommand = "nix build .#apk-debug";
       };
     in {
-      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk rustShells apkDebug;
+      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug;
       checks = {
         fmt = craneLib.cargoFmt {inherit src;};
         clippy = craneLib.cargoClippy {
@@ -117,6 +129,14 @@
         emulator = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
           androidSdk = cfg.emulatorSdk;
+          ndkVersion = androidNdkVersion;
+          rustToolchain = cfg.rustToolchain;
+          base = cfg.rustShells.default;
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+        };
+        emulator-aosp = harbor-android.lib.mkAndroidDevShell {
+          inherit (cfg) pkgs;
+          androidSdk = cfg.emulatorAospSdk;
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;

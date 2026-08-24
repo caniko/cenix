@@ -1,0 +1,14 @@
+name: host
+on:
+  push:
+  pull_request:
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - run: nix develop -c scripts/run-host-tests.sh
+      - run: nix develop -c scripts/check-foss.sh
+      - run: nix develop -c scripts/check-licenses.sh
+      - run: nix develop -c scripts/check-performance-static.sh
