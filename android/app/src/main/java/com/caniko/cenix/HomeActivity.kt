@@ -173,12 +173,7 @@ class HomeActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         scheduleReload("start")
-        if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_FORCE_NATIVE_FAILURE, false)) {
-            CenixExecutors.io {
-                if (app.awaitReady()) app.requestEmergency()
-                runOnUiThread { applyChrome() }
-            }
-        }
+        applyForceNativeFailure()
     }
 
     override fun onDestroy() {
@@ -190,21 +185,13 @@ class HomeActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_FORCE_NATIVE_FAILURE, false)) {
-            CenixExecutors.io {
-                if (app.awaitReady()) app.requestEmergency()
-                runOnUiThread { applyChrome() }
-            }
-        }
+        applyForceNativeFailure()
     }
 
     private fun scheduleReload(reason: String) {
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
-            if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_FORCE_NATIVE_FAILURE, false)) {
-                app.requestEmergency()
-            }
             workspace = app.database?.let { Workspace(it) { !app.emergency } }
             try {
                 val loaded = catalog.load()
@@ -410,6 +397,15 @@ class HomeActivity : AppCompatActivity() {
             launcher.startMainActivity(ComponentName(appItem.packageName, appItem.className), user, null, null)
         } catch (_: Throwable) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun applyForceNativeFailure() {
+        if (!BuildConfig.DEBUG || !intent.getBooleanExtra(EXTRA_FORCE_NATIVE_FAILURE, false)) return
+        intent.removeExtra(EXTRA_FORCE_NATIVE_FAILURE)
+        CenixExecutors.io {
+            if (app.awaitReady()) app.requestEmergency()
+            runOnUiThread { applyChrome() }
         }
     }
 
