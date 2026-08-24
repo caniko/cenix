@@ -23,12 +23,17 @@ nix develop .#emulator --command scripts/emulator-conformance.sh
 
 That script:
 
-1. Creates AVD `cenix-api35` if needed
+1. Creates AVD `cenix-api35` if needed (320×640 mdpi AOSP API 35 `google_apis` x86_64)
 2. Installs the debug APK and takes the HOME role
-3. Checks the search field is present
-4. Installs `com.caniko.cenix.fixture`, checks the list, launches it, then uninstalls
-5. Sends `FORCE_NATIVE_FAILURE`, checks the banner, force-stops Cenix, checks the banner after restart
-6. Installs a `-PomitNative` APK (no `libcenix_ffi.so`) and checks emergency HOME still searches
+3. Checks search, workspace grid, and hotseat are present
+4. Installs `com.caniko.cenix.fixture`, searches, launches it, returns HOME, then uninstalls
+5. Long-press pins Settings, long-press unpins, swipe changes workspace page
+6. Second long-press docks Settings; dock survives swipe; long-press undocks
+7. Force-stop + HOME stays healthy; landscape/portrait keep search and recovery controls
+8. Sends `FORCE_NATIVE_FAILURE`, checks the banner, force-stops Cenix, checks the banner after restart
+9. Installs a `-PomitNative` APK (no `libcenix_ffi.so`) and checks emergency HOME still searches
+
+Last green run: `/tmp/cenix-conformance.0r67O2` on `emulator-5554`.
 
 If the image, emulator binary, or boot fails, the script writes `docs/emulator-blocker.md` and exits non-zero.
 
