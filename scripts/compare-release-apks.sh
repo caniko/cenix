@@ -1,43 +1,81 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-a="$root/dist/repro-a"
-b="$root/dist/repro-b"
-rm -rf "$a" "$b"
-mkdir -p "$a" "$b"
-(cd "$root/android" && ./gradlew :app:assembleRelease)
-cp "$root/android/app/build/outputs/apk/release/app-release.apk" "$a/app-release.apk"
-(cd "$root/android" && ./gradlew clean :app:assembleRelease)
-cp "$root/android/app/build/outputs/apk/release/app-release.apk" "$b/app-release.apk"
-ha=$(sha256sum "$a/app-release.apk" | awk '{print $1}')
-hb=$(sha256sum "$b/app-release.apk" | awk '{print $1}')
+dist="$root/dist"
+seed="${CENIX_GRADLE_SEED_HOME:-${GRADLE_USER_HOME:-$HOME/.gradle}}"
+[[ -d "$seed/caches/modules-2" && -d "$seed/wrapper" ]] || {
+  echo "materialized Gradle seed cache required: $seed" >&2
+  exit 1
+}
+git -C "$root" diff --quiet && git -C "$root" diff --cached --quiet || {
+  echo "reproducibility requires a clean committed source tree" >&2
+  exit 1
+}
+commit="$(git -C "$root" rev-parse HEAD)"
+epoch="$(git -C "$root" show -s --format=%ct HEAD)"
+rm -rf "$dist/repro-a" "$dist/repro-b"
+mkdir -p "$dist/repro-a" "$dist/repro-b"
+
+build() {
+  local name="$1" base="$dist/repro-$name" src="$base/src" gradle="$base/gradle-home"
+  mkdir -p "$src" "$gradle" "$base/cargo-target" "$base/tmp" "$base/gradle-project"
+  git -C "$root" archive --format=tar HEAD | tar -xf - -C "$src"
+  cp -a --reflink=auto "$seed/caches" "$seed/wrapper" "$gradle/"
+  rm -rf "$gradle/caches/build-cache-"* "$gradle/daemon" "$gradle/native" "$gradle/workers"
+  env SOURCE_DATE_EPOCH="$epoch" CENIX_GIT_COMMIT="$commit" \
+    GRADLE_USER_HOME="$gradle" CARGO_TARGET_DIR="$base/cargo-target" TMPDIR="$base/tmp" \
+    "$src/scripts/build-native.sh"
+  env SOURCE_DATE_EPOCH="$epoch" CENIX_GIT_COMMIT="$commit" \
+    GRADLE_USER_HOME="$gradle" CARGO_TARGET_DIR="$base/cargo-target" TMPDIR="$base/tmp" \
+    "$src/android/gradlew" -p "$src/android" --offline --no-daemon \
+    --project-cache-dir "$base/gradle-project" :app:assembleRelease
+  cp "$src/android/app/build/outputs/apk/release/app-release-unsigned.apk" "$base/app-release-unsigned.apk"
+}
+
+build a
+build b
+a="$dist/repro-a/app-release-unsigned.apk"
+b="$dist/repro-b/app-release-unsigned.apk"
+ha="$(sha256sum "$a" | cut -d' ' -f1)"
+hb="$(sha256sum "$b" | cut -d' ' -f1)"
+status="mismatch"
+[[ "$ha" == "$hb" ]] && status="identical"
+python3 - "$dist/reproducibility.json" "$commit" "$epoch" "$ha" "$hb" "$status" <<'PY'
+import json, pathlib, sys
+out, commit, epoch, a, b, status = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "schemaVersion": 1, "commit": commit, "sourceDateEpoch": int(epoch),
+    "buildA": {"sha256": a}, "buildB": {"sha256": b}, "outcome": status,
+}, indent=2, sort_keys=True) + "\n")
+PY
 {
+  echo "commit=$commit"
+  echo "source_date_epoch=$epoch"
   echo "a=$ha"
   echo "b=$hb"
-} >"$root/dist/reproducibility.txt"
-if [[ "$ha" == "$hb" ]]; then
-  echo "release APKs are byte-identical"
+  echo "outcome=$status"
+} >"$dist/reproducibility.txt"
+
+if [[ "$status" == "identical" ]]; then
+  echo "unsigned release APKs are byte-identical: $ha"
   exit 0
 fi
-echo "release APKs differ; listing zip entries" | tee -a "$root/dist/reproducibility.txt"
-python3 - "$a/app-release.apk" "$b/app-release.apk" "$root/dist/reproducibility.txt" <<'PY'
-import hashlib, sys, zipfile
-from pathlib import Path
+
+python3 - "$a" "$b" "$dist/reproducibility.txt" <<'PY'
+import hashlib, pathlib, sys, zipfile
 def listing(path):
-    with zipfile.ZipFile(path) as z:
-        return {i.filename: (i.file_size, i.CRC, i.date_time) for i in z.infolist()}
+    with zipfile.ZipFile(path) as archive:
+        return {i.filename: (hashlib.sha256(archive.read(i)).hexdigest(), i.date_time, i.compress_type)
+                for i in archive.infolist()}
 a, b = listing(sys.argv[1]), listing(sys.argv[2])
-out = Path(sys.argv[3])
-keys = sorted(set(a)|set(b))
-lines = ["differing entries:"]
-for k in keys:
-    if a.get(k) != b.get(k):
-        lines.append(f"{k}: {a.get(k)} vs {b.get(k)}")
-out.write_text(out.read_text() + "\n".join(lines) + "\n")
-print("\n".join(lines[:40]))
-if len(lines) > 40:
-    print(f"... {len(lines)-40} more")
+lines = ["differing_entries:"]
+for name in sorted(set(a) | set(b)):
+    if a.get(name) != b.get(name): lines.append(f"{name}: {a.get(name)} != {b.get(name)}")
+with pathlib.Path(sys.argv[3]).open("a") as out: out.write("\n".join(lines) + "\n")
+print("\n".join(lines[:50]))
 PY
-echo "reproducibility not claimed; see dist/reproducibility.txt"
-exit 0
+if command -v diffoscope >/dev/null; then
+  diffoscope --text "$dist/reproducibility.diffoscope.txt" "$a" "$b" || true
+fi
+echo "unsigned release APKs differ; see dist/reproducibility.txt" >&2
+exit 1

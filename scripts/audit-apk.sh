@@ -40,7 +40,12 @@ else
   echo "$listing" | grep -q 'libcenix_ffi.so' || { echo "libcenix_ffi.so missing" >&2; exit 1; }
   echo "$listing" | grep -q 'libjnidispatch.so' || { echo "libjnidispatch.so missing" >&2; exit 1; }
   echo "$listing" | grep -q 'lib/arm64-v8a/libcenix_ffi.so' || { echo "arm64-v8a libcenix_ffi.so missing" >&2; exit 1; }
-  echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so' || { echo "x86_64 libcenix_ffi.so missing" >&2; exit 1; }
+  if [[ "$apk" != *release* ]]; then
+    echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so' || { echo "x86_64 libcenix_ffi.so missing" >&2; exit 1; }
+  elif echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so'; then
+    echo "release APK must contain only the arm64-v8a Cenix library" >&2
+    exit 1
+  fi
 fi
 echo "$listing" | grep -qiE 'cenix_jni|harbor-js|cuscon' && { echo "obsolete artifact in APK listing" >&2; exit 1; }
 
@@ -59,8 +64,22 @@ echo "$xmltree" | grep -q 'android.permission.INTERNET' && { echo "INTERNET in m
 echo "$xmltree" | grep -q 'QUERY_ALL_PACKAGES' && { echo "QUERY_ALL_PACKAGES in merged manifest" >&2; exit 1; }
 echo "$xmltree" | grep -q 'android.intent.category.HOME' || { echo "HOME missing from merged manifest" >&2; exit 1; }
 echo "$badging" | grep -qiE 'cuscon|harbor-js|cenix_jni' && { echo "forbidden string in badging" >&2; exit 1; }
+python3 - "$apk" <<'PY' || { echo "Play Services reference in APK" >&2; exit 1; }
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    bad = any(b"com/google/android/gms" in archive.read(name) for name in archive.namelist() if name.endswith(".dex"))
+raise SystemExit(1 if bad else 0)
+PY
 if [[ "$apk" == *release* ]]; then
   echo "$badging" | grep -q 'application-debuggable' && { echo "release APK is debuggable" >&2; exit 1; }
+  apksigner_bin="$sdk/build-tools/35.0.0/apksigner"
+  [[ -x "$apksigner_bin" ]] || { echo "apksigner 35.0.0 is required" >&2; exit 1; }
+  signature="$($apksigner_bin verify --print-certs "$apk" 2>&1 || true)"
+  echo "$signature" | grep -q 'CN=Android Debug' && { echo "release APK is debug-signed" >&2; exit 1; }
+  if [[ "${CENIX_ALLOW_SIGNED_RELEASE:-0}" != "1" ]] && "$apksigner_bin" verify "$apk" >/dev/null 2>&1; then
+    echo "production release must be unsigned before the external signing workflow" >&2
+    exit 1
+  fi
 fi
 
 if [[ "$omit" != "1" ]]; then
@@ -73,11 +92,12 @@ if [[ "$omit" != "1" ]]; then
     exit 1
   fi
   "$root/scripts/check-16k.sh" "${sos[@]}"
+  [[ "$apk" != *release* ]] || "$root/scripts/check-native-symbols.sh" "$apk"
 fi
 echo "apk audit passed: $apk"
 if [[ $# -eq 0 ]]; then
-  release_apk="$root/android/app/build/outputs/apk/release/app-release.apk"
+  release_apk="$root/android/app/build/outputs/apk/release/app-release-unsigned.apk"
   export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-  (cd "$root/android" && ./gradlew :app:assembleRelease)
+  (cd "$root/android" && ./gradlew --offline :app:assembleRelease)
   "$0" "$release_apk"
 fi

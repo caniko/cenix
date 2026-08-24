@@ -17,7 +17,7 @@ Builds:
     commit: unknown
     gradle:
       - yes
-    output: android/app/build/outputs/apk/release/app-release.apk
+    output: android/app/build/outputs/apk/release/app-release-unsigned.apk
     srclibs: []
     prebuild: echo "draft recipe; not submitted"
 

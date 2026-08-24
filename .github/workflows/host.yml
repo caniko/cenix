@@ -2,13 +2,33 @@ name: host
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   host:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - run: nix develop -c scripts/run-host-tests.sh
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
+      - run: git diff --check
+      - run: nix develop -c bash -lc 'cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug :fixture:assembleDebug'
+      - run: nix develop -c cargo fmt --check
+      - run: nix develop -c cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - run: nix develop -c cargo test --workspace --locked --offline
+      - run: nix develop -c cargo deny check
+      - run: nix develop -c scripts/check-bindings.sh
+      - run: nix develop -c scripts/check-gradle-dependencies.sh
       - run: nix develop -c scripts/check-foss.sh
       - run: nix develop -c scripts/check-licenses.sh
       - run: nix develop -c scripts/check-performance-static.sh
+      - run: nix develop -c scripts/build-native.sh
+      - run: nix develop -c bash -lc 'cd android && ./gradlew --offline :app:assembleRelease'
+      - run: nix develop -c scripts/audit-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - run: nix develop -c scripts/generate-sbom.sh
+      - run: nix develop -c scripts/compare-release-apks.sh
+      - run: nix flake check --no-update-lock-file
+  emulator-aosp:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: CENIX_REPEAT=5 nix develop .#emulator-aosp -c scripts/repeat-conformance.sh

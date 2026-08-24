@@ -3,7 +3,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-cargo build --manifest-path "$root/Cargo.toml" -p cenix-ffi
+cargo build --manifest-path "$root/Cargo.toml" -p cenix-ffi --locked --offline
 normalize_kt() {
   local f
   while IFS= read -r -d '' f; do
@@ -22,7 +22,7 @@ if grep -q '[[:space:]]$' "$committed"/*.kt; then
   echo "trailing whitespace in committed UniFFI Kotlin" >&2
   exit 1
 fi
-cargo run --manifest-path "$root/Cargo.toml" -p uniffi-bindgen -- generate \
+cargo run --manifest-path "$root/Cargo.toml" -p uniffi-bindgen --locked --offline -- generate \
   --library "$root/target/debug/libcenix_ffi.so" \
   --language kotlin \
   --no-format \

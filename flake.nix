@@ -124,7 +124,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
         };
         emulator = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -132,7 +132,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
         };
         emulator-aosp = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -140,7 +140,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
         };
       }
     );
