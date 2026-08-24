@@ -271,9 +271,7 @@ fn pin(
     let start = preferred_screen.clamp(0, snapshot.screens - 1);
     for i in 0..snapshot.screens {
         let screen = (start + i) % snapshot.screens;
-        if let Some((cell_x, cell_y)) =
-            first_empty(items, screen, snapshot.cols, snapshot.rows)
-        {
+        if let Some((cell_x, cell_y)) = first_empty(items, screen, snapshot.cols, snapshot.rows) {
             items.push(WorkspaceItem {
                 package: package.to_string(),
                 class: class.to_string(),
@@ -313,9 +311,7 @@ mod tests {
     }
 
     fn apply(items: Vec<WorkspaceItem>, command: WorkspaceCommand) -> Vec<WorkspaceItem> {
-        apply_workspace_command(snap(items), command)
-            .unwrap()
-            .items
+        apply_workspace_command(snap(items), command).unwrap().items
     }
 
     #[test]

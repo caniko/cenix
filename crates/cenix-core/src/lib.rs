@@ -3,8 +3,8 @@
 mod workspace;
 
 pub use workspace::{
-    apply_workspace_command, WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspaceSnapshot,
-    WorkspaceTransition, HOTSEAT, SCREENS,
+    HOTSEAT, SCREENS, WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspaceSnapshot,
+    WorkspaceTransition, apply_workspace_command,
 };
 
 pub const MAX_APPLICATIONS: usize = 10_000;
