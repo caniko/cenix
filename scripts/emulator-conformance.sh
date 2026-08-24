@@ -3,13 +3,25 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
-avd="${CENIX_AVD:-cenix-api35}"
-sysdir="$sdk/system-images/android-35/google_apis/x86_64"
+run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
 art="${CENIX_ARTIFACTS:-$(mktemp -d /tmp/cenix-conformance.XXXXXX)}"
 mkdir -p "$art"
+export CENIX_GIT_COMMIT="${CENIX_GIT_COMMIT:-$(git -C "$root" rev-parse HEAD)}"
+avd="${CENIX_AVD:-cenix-ci-$run_id}"
+if [[ "$avd" == "cenix-api35" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
+  echo "refusing shared AVD cenix-api35; set CENIX_ALLOW_SHARED_AVD=1 to override" >&2
+  exit 1
+fi
+sysdir="${CENIX_SYSTEM_IMAGE:-$sdk/system-images/android-35/google_apis/x86_64}"
+image_kind="google_apis"
+if [[ "$sysdir" == *"/default/"* || "$sysdir" == *"/aosp"* ]]; then
+  image_kind="aosp"
+fi
 echo "conformance artifacts: $art"
 echo "emulator suite must run through: nix develop .#emulator"
-echo "this AOSP API 35 google_apis x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
+echo "this AOSP API 35 $image_kind x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
+echo "git commit: $CENIX_GIT_COMMIT"
+echo "avd: $avd"
 
 if [[ -z "$sdk" ]]; then
   echo "ANDROID_SDK_ROOT is required; use: nix develop .#emulator" >&2
@@ -26,15 +38,20 @@ if [[ ! -x "$emulator_bin" ]]; then
   exit 1
 fi
 
-export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.config/.android/avd}"
-mkdir -p "$ANDROID_AVD_HOME"
+export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$art/avd}"
+export ANDROID_EMULATOR_HOME="${ANDROID_EMULATOR_HOME:-$art/emu-home}"
+mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_EMULATOR_HOME"
+image_pkg="system-images;android-35;google_apis;x86_64"
+if [[ "$image_kind" == "aosp" ]]; then
+  image_pkg="system-images;android-35;default;x86_64"
+fi
 if ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
   avdmanager="$(echo "$sdk"/cmdline-tools/*/bin/avdmanager | awk '{print $1}')"
   if [[ ! -x "$avdmanager" ]]; then
     echo "no avdmanager under $sdk/cmdline-tools; use: nix develop .#emulator" >&2
     exit 1
   fi
-  echo no | "$avdmanager" create avd -f -n "$avd" -k "system-images;android-35;google_apis;x86_64" >/dev/null
+  echo no | "$avdmanager" create avd -f -n "$avd" -k "$image_pkg" >/dev/null
 fi
 
 avd_serial() {
@@ -52,8 +69,13 @@ avd_serial() {
 
 started=0
 serial="$(avd_serial || true)"
+if [[ -n "$serial" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
+  echo "AVD $avd already has serial $serial; refuse to reuse" >&2
+  exit 1
+fi
+emu_port="${CENIX_EMU_PORT:-$((5570 + RANDOM % 20 * 2))}"
 if [[ -z "$serial" ]]; then
-  "$emulator_bin" -avd "$avd" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/emulator.log" 2>&1 &
+  "$emulator_bin" -avd "$avd" -port "$emu_port" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/emulator.log" 2>&1 &
   started=$!
   cleanup() { kill "$started" 2>/dev/null || true; }
   trap cleanup EXIT
@@ -99,6 +121,8 @@ fail() {
   "$adb" -s "$serial" shell dumpsys activity >"$art/activity.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell dumpsys package com.caniko.cenix >"$art/package.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME >"$art/role.txt" 2>/dev/null || true
+  "$adb" -s "$serial" shell dumpsys package com.caniko.cenix >"$art/package.txt" 2>/dev/null || true
+  printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
   echo "artifacts: $art" >&2
   exit 1
 }
@@ -255,14 +279,33 @@ role_holders() {
 
 "$root/scripts/assemble-debug.sh"
 "$root/scripts/audit-apk.sh"
+apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
+{
+  echo "commit=$CENIX_GIT_COMMIT"
+  echo "avd=$avd"
+  echo "serial=$serial"
+  echo "image=$sysdir"
+  echo "kind=$image_kind"
+  echo "api=35"
+  echo "abi=x86_64"
+  echo "density=mdpi"
+  echo "size=320x640"
+} >"$art/metadata.txt"
+sha256sum "$apk" >"$art/apk.sha256"
+printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
+strings "$apk" | grep -q "$CENIX_GIT_COMMIT" || fail "built APK is missing git commit $CENIX_GIT_COMMIT"
 
 "$adb" -s "$serial" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null 2>&1 || true
-"$adb" -s "$serial" install -r -t "$root/android/app/build/outputs/apk/debug/app-debug.apk"
+"$adb" -s "$serial" install -r -t "$apk"
 "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "Cenix is not HOME role holder: $holders"
 pass "HOME role holder is com.caniko.cenix ($holders)"
+
+export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+(cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
+pass "instrumentation: HomeConformanceTest"
 
 "$adb" -s "$serial" shell am start -a android.settings.SETTINGS >/dev/null
 wait_resumed 'com.android.settings'
@@ -459,4 +502,4 @@ sleep 1
 wait_ui 'Emergency mode' 1
 pass "retry-native does not report success while libcenix_ffi.so is absent"
 
-echo "emulator conformance passed on $serial (AOSP API 35 google_apis x86_64, not GrapheneOS/mustang)"
+echo "emulator conformance passed on $serial (AOSP API 35 $image_kind x86_64, not GrapheneOS/mustang)"
