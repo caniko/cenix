@@ -2,7 +2,7 @@
 
 Classifications use public Android 35 APIs plus GrapheneOS Launcher3 `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Source presence is not user-visible proof.
 
-Evidence keys: `src` = Launcher3 source, `api` = public SDK, `emu` = AOSP emulator slice, `dev` = mustang (none).
+Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolated AOSP emulator, `GOS_DEV` = mustang (none), `SYSTEM` = privileged.
 
 | Feature | Class | Slice | Evidence |
 | --- | --- | --- | --- |

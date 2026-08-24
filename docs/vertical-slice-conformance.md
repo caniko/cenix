@@ -23,7 +23,7 @@ nix develop .#emulator --command scripts/emulator-conformance.sh
 
 That script:
 
-1. Creates AVD `cenix-api35` if needed (320×640 mdpi AOSP API 35 `google_apis` x86_64)
+1. Creates isolated AVD `cenix-ci-$RUN_ID` (320×640 mdpi AOSP API 35; refuses shared `cenix-api35`)
 2. Installs the debug APK and takes the HOME role
 3. Checks search, workspace grid, and hotseat are present
 4. Installs `com.caniko.cenix.fixture`, searches, launches it, returns HOME, then uninstalls

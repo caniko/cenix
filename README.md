@@ -11,10 +11,11 @@ nix develop
 scripts/run-host-tests.sh
 scripts/assemble-debug.sh
 scripts/install-debug.sh   # optional, needs adb
-nix develop .#emulator --command scripts/emulator-conformance.sh  # AOSP API 35 x86_64, not GrapheneOS/mustang
+nix develop .#emulator --command scripts/emulator-conformance.sh  # isolated AVD, AOSP API 35, not GrapheneOS/mustang
 ```
 
 Impure debug APK: `nix build .#apk-debug` (`mkAndroidApk`, sandbox off).
+`.#emulator` uses `google_apis` (not FOSS). `.#emulator-aosp` tries `default` if harbor-android has it.
 
 ## Layout
 
