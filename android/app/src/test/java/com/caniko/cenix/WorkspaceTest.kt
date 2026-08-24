@@ -31,13 +31,36 @@ class WorkspaceTest {
     }
 
     @Test
-    fun fullGridRejectsPin() {
+    fun overflowGoesToSecondScreen() {
         val db = openDb()
         val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
         val workspace = Workspace(db)
         repeat(4) { i -> assertTrue(workspace.pin(app("p$i"), grid)) }
+        assertNull(workspace.firstEmpty(grid, 0))
+        assertTrue(workspace.pin(app("overflow"), grid))
+        assertEquals(1, workspace.items().last().screen)
+        db.close()
+    }
+
+    @Test
+    fun preferredScreenUsedWhenEmpty() {
+        val db = openDb()
+        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
+        val workspace = Workspace(db)
+        assertTrue(workspace.pin(app("second"), grid, preferred = 1))
+        assertEquals(1, workspace.items().single().screen)
+        db.close()
+    }
+
+    @Test
+    fun fullGridRejectsPin() {
+        val db = openDb()
+        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
+        val workspace = Workspace(db)
+        repeat(Workspace.SCREENS * 4) { i -> assertTrue(workspace.pin(app("p$i"), grid)) }
         assertEquals(false, workspace.pin(app("overflow"), grid))
-        assertNull(workspace.firstEmpty(grid))
+        assertNull(workspace.firstEmpty(grid, 0))
+        assertNull(workspace.firstEmpty(grid, 1))
         db.close()
     }
 

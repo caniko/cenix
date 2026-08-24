@@ -16,4 +16,4 @@ Do not implement `SIGNATURE_OR_SYSTEM`. Do not claim Recents/Quickstep.
 
 ## Consequences
 
-v1 is phone HOME + one-page workspace + All Apps + search + launch + emergency. Widgets and Recents stay out.
+v1 is phone HOME + two-page workspace + All Apps + search + launch + emergency. Widgets and Recents stay out.

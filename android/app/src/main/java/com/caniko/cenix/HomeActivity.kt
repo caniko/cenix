@@ -8,8 +8,11 @@ import android.os.UserHandle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.BaseAdapter
@@ -32,6 +35,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var workspaceGrid: GridView
     private lateinit var grid: PhoneGrid
     private var workspace: Workspace? = null
+    private var screen = 0
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
     private val slots = mutableListOf<LaunchableApp?>()
@@ -79,6 +83,21 @@ class HomeActivity : AppCompatActivity() {
                 bindWorkspace()
             }
             true
+        }
+        val fling = ViewConfiguration.get(this).scaledMinimumFlingVelocity
+        val pager = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                    if (kotlin.math.abs(vx) <= kotlin.math.abs(vy) || kotlin.math.abs(vx) < fling) return false
+                    turn(if (vx < 0) 1 else -1)
+                    return true
+                }
+            },
+        )
+        workspaceGrid.setOnTouchListener { _, event ->
+            pager.onTouchEvent(event)
+            false
         }
         appList.adapter = AppAdapter()
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
@@ -135,7 +154,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun bindWorkspace() {
         val byCell = workspace?.items().orEmpty()
-            .filter { grid.inBounds(it.cellX, it.cellY) }
+            .filter { it.screen == screen && grid.inBounds(it.cellX, it.cellY) }
             .associateBy { it.cellY * grid.cols + it.cellX }
         val catalogIndex = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
         slots.clear()
@@ -144,14 +163,25 @@ class HomeActivity : AppCompatActivity() {
             slots.add(item?.let { catalogIndex[Triple(it.packageName, it.className, it.profileId)] })
         }
         (workspaceGrid.adapter as WorkspaceAdapter).notifyDataSetChanged()
+        workspaceGrid.contentDescription = "${getString(R.string.workspace)} $screen"
+    }
+
+    private fun turn(delta: Int) {
+        val next = screen + delta
+        if (next !in 0 until Workspace.SCREENS) return
+        screen = next
+        bindWorkspace()
     }
 
     private fun pin(appItem: LaunchableApp) {
         val store = workspace ?: return
-        if (!store.pin(appItem, grid)) {
+        if (!store.pin(appItem, grid, screen)) {
             Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show()
             return
         }
+        store.items().firstOrNull {
+            it.packageName == appItem.packageName && it.className == appItem.className && it.profileId == appItem.profileId
+        }?.let { screen = it.screen }
         bindWorkspace()
     }
 
@@ -200,6 +230,7 @@ class HomeActivity : AppCompatActivity() {
     private fun resetState() {
         app.resetLocalState()
         workspace = app.database?.let(::Workspace)
+        screen = 0
         reload()
     }
 

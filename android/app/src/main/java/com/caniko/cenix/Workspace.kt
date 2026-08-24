@@ -6,20 +6,25 @@ import com.caniko.cenix.db.WorkspaceItemEntity
 class Workspace(private val db: CenixDatabase) {
     fun items(): List<WorkspaceItemEntity> = db.dao().workspaceItems()
 
-    fun pin(app: LaunchableApp, grid: PhoneGrid, screen: Int = 0): Boolean {
+    fun pin(app: LaunchableApp, grid: PhoneGrid, preferred: Int = 0): Boolean {
         if (items().any { it.sameApp(app) }) return true
-        val cell = firstEmpty(grid, screen) ?: return false
-        db.dao().insertWorkspace(
-            WorkspaceItemEntity(
-                screen = screen,
-                cellX = cell.first,
-                cellY = cell.second,
-                packageName = app.packageName,
-                className = app.className,
-                profileId = app.profileId,
-            ),
-        )
-        return true
+        val start = preferred.coerceIn(0, SCREENS - 1)
+        for (i in 0 until SCREENS) {
+            val screen = (start + i) % SCREENS
+            val cell = firstEmpty(grid, screen) ?: continue
+            db.dao().insertWorkspace(
+                WorkspaceItemEntity(
+                    screen = screen,
+                    cellX = cell.first,
+                    cellY = cell.second,
+                    packageName = app.packageName,
+                    className = app.className,
+                    profileId = app.profileId,
+                ),
+            )
+            return true
+        }
+        return false
     }
 
     fun unpin(app: LaunchableApp) {
@@ -43,4 +48,8 @@ class Workspace(private val db: CenixDatabase) {
 
     private fun WorkspaceItemEntity.sameApp(app: LaunchableApp) =
         packageName == app.packageName && className == app.className && profileId == app.profileId
+
+    companion object {
+        const val SCREENS = 2
+    }
 }

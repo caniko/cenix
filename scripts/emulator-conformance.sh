@@ -170,11 +170,27 @@ tap_pattern() {
 long_press_pattern() {
   local xml x1 y1 x2 y2 x y
   xml="$(dump_ui)"
-  read -r x1 y1 x2 y2 < <(bounds_of "$xml" "$1") || true
+  read -r x1 y1 x2 y2 < <(bounds_of "$xml" "$1")
   [[ -n "${x1:-}" ]] || fail "bounds missing for $1"
   x=$(((x1 + x2) / 2))
   y=$(((y1 + y2) / 2))
   "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
+}
+
+swipe_workspace() {
+  local xml x1 y1 x2 y2 midy from to
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(bounds_of "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
+  [[ -n "${x1:-}" ]] || fail "workspace grid bounds missing"
+  midy=$(((y1 + y2) / 2))
+  if [[ "$1" == "next" ]]; then
+    from=$((x1 + (x2 - x1) * 3 / 4))
+    to=$((x1 + (x2 - x1) / 4))
+  else
+    from=$((x1 + (x2 - x1) / 4))
+    to=$((x1 + (x2 - x1) * 3 / 4))
+  fi
+  "$adb" -s "$serial" shell input swipe "$from" "$midy" "$to" "$midy" 150
 }
 
 hide_keyboard() {
@@ -294,6 +310,12 @@ pass "workspace: long-press pins into grid"
 long_press_pattern 'content-desc="Settings\|com\.android\.settings\|'
 wait_ui 'content-desc="Settings|com.android.settings|' 0
 pass "workspace: long-press removes pin"
+swipe_workspace next
+wait_ui 'content-desc="Workspace 1"' 1
+pass "workspace: swipe opens second page"
+swipe_workspace prev
+wait_ui 'content-desc="Workspace 0"' 1
+pass "workspace: swipe returns to first page"
 
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
 go_home

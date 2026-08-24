@@ -11,4 +11,4 @@
 | [0007](0007-clean-room.md) | Behavior copy, not AOSP Java |
 | [0008](0008-no-cuscon.md) | No Cuscon / vendor icon assets |
 | [0009](0009-emergency.md) | Emergency HOME without native |
-| [0010](0010-workspace.md) | One-page phone workspace |
+| [0010](0010-workspace.md) | Two-page phone workspace |
