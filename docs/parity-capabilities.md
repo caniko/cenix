@@ -9,7 +9,7 @@ Evidence keys: `src` = Launcher3 source, `api` = public SDK, `emu` = AOSP emulat
 | HOME registration | `INSTALLABLE_PUBLIC` | done | `src`+`api`+`emu` |
 | HOME role selection | `ROLE_HOME_GATED` | done | `RoleManager` / `cmd role`; `emu` |
 | Workspace | `INSTALLABLE_PUBLIC` | done | two pages; long-press pin; no drag |
-| Hotseat | `INSTALLABLE_PUBLIC` | later | `src`; GrapheneOS removed hotseat QSB |
+| Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; no drag |
 | All Apps list | `INSTALLABLE_PUBLIC` | done | `LauncherApps`; `emu` |
 | Local label search | `INSTALLABLE_PUBLIC` | done | `emu` |
 | Folders | `INSTALLABLE_PUBLIC` | later | `src` |

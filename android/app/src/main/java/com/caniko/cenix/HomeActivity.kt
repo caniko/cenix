@@ -33,12 +33,14 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var searchField: EditText
     private lateinit var appList: ListView
     private lateinit var workspaceGrid: GridView
+    private lateinit var hotseatGrid: GridView
     private lateinit var grid: PhoneGrid
     private var workspace: Workspace? = null
     private var screen = 0
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
     private val slots = mutableListOf<LaunchableApp?>()
+    private val dock = mutableListOf<LaunchableApp?>()
 
     private val packageCallback = object : LauncherApps.Callback() {
         override fun onPackageAdded(packageName: String, user: UserHandle) = reload()
@@ -66,21 +68,34 @@ class HomeActivity : AppCompatActivity() {
         searchField = findViewById(R.id.searchField)
         appList = findViewById(R.id.appList)
         workspaceGrid = findViewById(R.id.workspaceGrid)
+        hotseatGrid = findViewById(R.id.hotseatGrid)
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
         findViewById<Button>(R.id.setDefaultHome).setOnClickListener { promptDefaultHome() }
+        val cell = (48 * resources.displayMetrics.density).toInt()
+        val reserved = (200 * resources.displayMetrics.density).toInt()
         workspaceGrid.numColumns = grid.cols
         workspaceGrid.layoutParams = workspaceGrid.layoutParams.apply {
-            val cell = (64 * resources.displayMetrics.density).toInt()
-            val maxH = (resources.displayMetrics.heightPixels * 2) / 5
-            height = minOf(grid.rows * cell, maxH)
+            val budget = (resources.displayMetrics.heightPixels - reserved - cell).coerceAtLeast(cell)
+            height = minOf(grid.rows * cell, budget / cell * cell)
         }
         workspaceGrid.adapter = WorkspaceAdapter()
         workspaceGrid.setOnItemClickListener { _, _, position, _ -> slots[position]?.let(::launch) }
         workspaceGrid.setOnItemLongClickListener { _, _, position, _ ->
             slots[position]?.let {
                 workspace?.unpin(it)
-                bindWorkspace()
+                bindPins()
+            }
+            true
+        }
+        hotseatGrid.numColumns = grid.cols
+        hotseatGrid.layoutParams = hotseatGrid.layoutParams.apply { height = cell }
+        hotseatGrid.adapter = HotseatAdapter()
+        hotseatGrid.setOnItemClickListener { _, _, position, _ -> dock[position]?.let(::launch) }
+        hotseatGrid.setOnItemLongClickListener { _, _, position, _ ->
+            dock[position]?.let {
+                workspace?.unpin(it)
+                bindPins()
             }
             true
         }
@@ -143,7 +158,7 @@ class HomeActivity : AppCompatActivity() {
             apps.addAll(catalog.load())
             workspace?.dropMissing(apps.map { Triple(it.packageName, it.className, it.profileId) }.toSet())
             applyFilter()
-            bindWorkspace()
+            bindPins()
             applyChrome()
             app.markHealthy()
         } catch (_: Throwable) {
@@ -166,6 +181,23 @@ class HomeActivity : AppCompatActivity() {
         workspaceGrid.contentDescription = "${getString(R.string.workspace)} $screen"
     }
 
+    private fun bindHotseat() {
+        val byCell = workspace?.items().orEmpty()
+            .filter { it.screen == Workspace.HOTSEAT && it.cellX in 0 until grid.cols }
+            .associateBy { it.cellX }
+        val catalogIndex = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
+        dock.clear()
+        for (x in 0 until grid.cols) {
+            dock.add(byCell[x]?.let { catalogIndex[Triple(it.packageName, it.className, it.profileId)] })
+        }
+        (hotseatGrid.adapter as HotseatAdapter).notifyDataSetChanged()
+    }
+
+    private fun bindPins() {
+        bindWorkspace()
+        bindHotseat()
+    }
+
     private fun turn(delta: Int) {
         val next = screen + delta
         if (next !in 0 until Workspace.SCREENS) return
@@ -175,14 +207,23 @@ class HomeActivity : AppCompatActivity() {
 
     private fun pin(appItem: LaunchableApp) {
         val store = workspace ?: return
-        if (!store.pin(appItem, grid, screen)) {
-            Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show()
-            return
+        val placed = store.items().firstOrNull {
+            it.packageName == appItem.packageName && it.className == appItem.className && it.profileId == appItem.profileId
+        }
+        when {
+            placed?.screen == Workspace.HOTSEAT -> {}
+            placed != null -> if (!store.dock(appItem, grid.cols)) {
+                Toast.makeText(this, R.string.hotseat_full, Toast.LENGTH_SHORT).show()
+            }
+            !store.pin(appItem, grid, screen) -> {
+                Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show()
+                return
+            }
         }
         store.items().firstOrNull {
             it.packageName == appItem.packageName && it.className == appItem.className && it.profileId == appItem.profileId
-        }?.let { screen = it.screen }
-        bindWorkspace()
+        }?.let { if (it.screen != Workspace.HOTSEAT) screen = it.screen }
+        bindPins()
     }
 
     private fun applyChrome() {
@@ -193,7 +234,9 @@ class HomeActivity : AppCompatActivity() {
 
     private fun applyFilter() {
         val query = searchField.text?.toString().orEmpty()
-        workspaceGrid.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
+        val showPins = query.isBlank()
+        workspaceGrid.visibility = if (showPins) View.VISIBLE else View.GONE
+        hotseatGrid.visibility = if (showPins) View.VISIBLE else View.GONE
         val profiles = catalog.visibleProfiles()
         val matches = try {
             app.activeFilter().filter(apps, query, profiles)
@@ -245,6 +288,21 @@ class HomeActivity : AppCompatActivity() {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.workspace_cell, parent, false)
             val item = slots.getOrNull(position)
+            view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
+            view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
+            view.contentDescription = item?.let { "${it.label}|${it.packageName}|${it.profileId}" }
+                ?: getString(R.string.workspace_empty)
+            return view
+        }
+    }
+
+    private inner class HotseatAdapter : BaseAdapter() {
+        override fun getCount() = grid.cols
+        override fun getItem(position: Int) = dock.getOrNull(position)
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.workspace_cell, parent, false)
+            val item = dock.getOrNull(position)
             view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
             view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
             view.contentDescription = item?.let { "${it.label}|${it.packageName}|${it.profileId}" }

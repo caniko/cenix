@@ -27,6 +27,26 @@ class Workspace(private val db: CenixDatabase) {
         return false
     }
 
+    fun dock(app: LaunchableApp, cols: Int): Boolean {
+        val existing = items().firstOrNull { it.sameApp(app) }
+        if (existing?.screen == HOTSEAT) return true
+        val cellX = (0 until cols).firstOrNull { x ->
+            items().none { it.screen == HOTSEAT && it.cellX == x }
+        } ?: return false
+        if (existing != null) unpin(app)
+        db.dao().insertWorkspace(
+            WorkspaceItemEntity(
+                screen = HOTSEAT,
+                cellX = cellX,
+                cellY = 0,
+                packageName = app.packageName,
+                className = app.className,
+                profileId = app.profileId,
+            ),
+        )
+        return true
+    }
+
     fun unpin(app: LaunchableApp) {
         db.dao().deleteWorkspace(app.packageName, app.className, app.profileId)
     }
@@ -51,5 +71,6 @@ class Workspace(private val db: CenixDatabase) {
 
     companion object {
         const val SCREENS = 2
+        const val HOTSEAT = -1
     }
 }

@@ -87,6 +87,7 @@ fi
 "$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
 "$adb" -s "$serial" shell settings put system accelerometer_rotation 0
 "$adb" -s "$serial" shell settings put system user_rotation 0
+sleep 1
 
 pass() { echo "PASS: $1"; }
 fail() {
@@ -103,7 +104,7 @@ fail() {
 }
 
 resumed() {
-  "$adb" -s "$serial" shell dumpsys activity activities | tr -d '\r' | grep -E 'mResumedActivity|topResumedActivity' || true
+  "$adb" -s "$serial" shell dumpsys activity activities | tr -d '\r' | grep 'topResumedActivity' || true
 }
 
 wait_resumed() {
@@ -118,14 +119,20 @@ wait_resumed() {
 }
 
 dump_ui() {
-  local i
-  "$adb" -s "$serial" shell rm -f /sdcard/cenix-ui.xml
+  local i xml keep_ime=0
+  [[ "${1:-}" == "ime" ]] && keep_ime=1
   for i in $(seq 1 15); do
+    "$adb" -s "$serial" shell rm -f /sdcard/cenix-ui.xml
     "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
-      "$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml
-      return 0
+      xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
+      if printf '%s\n' "$xml" | grep -q 'package="com.caniko.cenix"' &&
+        printf '%s\n' "$xml" | grep -q 'com.caniko.cenix:id/retryNative'; then
+        printf '%s\n' "$xml"
+        return 0
+      fi
     fi
+    [[ "$keep_ime" == 1 ]] || hide_keyboard
     sleep 1
   done
   fail "uiautomator dump failed"
@@ -154,6 +161,13 @@ bounds_of() {
   printf '%s\n' "$xml" | tr '>' '\n' | grep -E "$pattern" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)]\[\([0-9]*\),\([0-9]*\)]".*/\1 \2 \3 \4/p' | head -n1
 }
 
+read_bounds() {
+  local xml="$1" pattern="$2" x1 y1 x2 y2
+  read -r x1 y1 x2 y2 < <(bounds_of "$xml" "$pattern") || true
+  [[ -n "${x1:-}" ]] || fail "bounds missing for $pattern"
+  printf '%s %s %s %s\n' "$x1" "$y1" "$x2" "$y2"
+}
+
 tap_bounds() {
   local x1="$1" y1="$2" x2="$3" y2="$4"
   "$adb" -s "$serial" shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
@@ -162,16 +176,14 @@ tap_bounds() {
 tap_pattern() {
   local xml x1 y1 x2 y2
   xml="$(dump_ui)"
-  read -r x1 y1 x2 y2 < <(bounds_of "$xml" "$1") || true
-  [[ -n "${x1:-}" ]] || fail "bounds missing for $1"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   tap_bounds "$x1" "$y1" "$x2" "$y2"
 }
 
 long_press_pattern() {
   local xml x1 y1 x2 y2 x y
   xml="$(dump_ui)"
-  read -r x1 y1 x2 y2 < <(bounds_of "$xml" "$1")
-  [[ -n "${x1:-}" ]] || fail "bounds missing for $1"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   x=$(((x1 + x2) / 2))
   y=$(((y1 + y2) / 2))
   "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
@@ -180,8 +192,7 @@ long_press_pattern() {
 swipe_workspace() {
   local xml x1 y1 x2 y2 midy from to
   xml="$(dump_ui)"
-  read -r x1 y1 x2 y2 < <(bounds_of "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
-  [[ -n "${x1:-}" ]] || fail "workspace grid bounds missing"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
   midy=$(((y1 + y2) / 2))
   if [[ "$1" == "next" ]]; then
     from=$((x1 + (x2 - x1) * 3 / 4))
@@ -190,20 +201,18 @@ swipe_workspace() {
     from=$((x1 + (x2 - x1) / 4))
     to=$((x1 + (x2 - x1) * 3 / 4))
   fi
-  "$adb" -s "$serial" shell input swipe "$from" "$midy" "$to" "$midy" 150
+  "$adb" -s "$serial" shell input swipe "$from" "$midy" "$to" "$midy" 300
 }
 
 hide_keyboard() {
-  "$adb" -s "$serial" shell input tap 80 48
+  "$adb" -s "$serial" shell input keyevent KEYCODE_ESCAPE
   sleep 0.3
 }
 
 focus_search() {
   local xml x1 y1 x2 y2
-  hide_keyboard
   xml="$(dump_ui)"
-  read -r x1 y1 x2 y2 < <(bounds_of "$xml" 'resource-id="com.caniko.cenix:id/searchField"') || true
-  [[ -n "${x1:-}" ]] || fail "search field bounds missing"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/searchField"')
   tap_bounds "$x1" "$y1" "$x2" "$y2"
   sleep 0.2
 }
@@ -255,6 +264,7 @@ pass "KEYCODE_HOME resumes com.caniko.cenix/.HomeActivity"
 ui="$(dump_ui)"
 echo "$ui" | grep -q 'Search apps' || fail "search field missing"
 echo "$ui" | grep -q 'workspaceGrid' || fail "workspace grid missing"
+echo "$ui" | grep -q 'hotseatGrid' || fail "hotseat grid missing"
 echo "$ui" | grep -qi 'emergency mode' && fail "native APK started in emergency"
 echo "$ui" | grep -q '|com.caniko.cenix|' && fail "Cenix listed itself as a launch target"
 set_search "Settings"
@@ -287,7 +297,7 @@ pass "search: clear restores catalog"
 
 set_search "Fixture"
 wait_ui '|com.caniko.cenix.fixture|' 1
-tap_pattern 'text="Cenix Fixture"'
+tap_pattern 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
 wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
 pass "launch: fixture activity resumed"
 go_home
@@ -316,6 +326,22 @@ pass "workspace: swipe opens second page"
 swipe_workspace prev
 wait_ui 'content-desc="Workspace 0"' 1
 pass "workspace: swipe returns to first page"
+set_search "Settings"
+wait_ui '|com.android.settings|' 1
+long_press_pattern 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"'
+sleep 1
+long_press_pattern 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"'
+sleep 1
+clear_search
+hide_keyboard
+wait_ui 'resource-id="com.caniko.cenix:id/hotseatGrid"' 1
+wait_ui 'content-desc="Settings|com.android.settings|' 1
+swipe_workspace next
+wait_ui 'content-desc="Settings|com.android.settings|' 1
+pass "hotseat: second long-press docks and survives swipe"
+long_press_pattern 'content-desc="Settings\|com\.android\.settings\|'
+wait_ui 'content-desc="Settings|com.android.settings|' 0
+pass "hotseat: long-press removes dock pin"
 
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
 go_home
@@ -351,10 +377,10 @@ ui="$(dump_ui)"
 echo "$ui" | grep -q 'searchField' || fail "search missing in portrait"
 pass "configuration: landscape/portrait recreation keeps catalog and controls"
 
-tap_pattern 'resource-id="com.caniko.cenix:id/searchField"'
-sleep 1
-ui="$(dump_ui)"
-echo "$ui" | grep -q 'retryNative' || fail "retry control covered by keyboard"
+  tap_pattern 'resource-id="com.caniko.cenix:id/searchField"'
+  sleep 1
+  ui="$(dump_ui ime)"
+  echo "$ui" | grep -q 'retryNative' || fail "retry control covered by keyboard"
 echo "$ui" | grep -q 'resetState' || fail "reset control covered by keyboard"
 pass "configuration: search keyboard leaves recovery controls operable"
 

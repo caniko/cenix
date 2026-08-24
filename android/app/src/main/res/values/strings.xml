@@ -16,4 +16,6 @@
     <string name="workspace">Workspace</string>
     <string name="workspace_empty">Empty</string>
     <string name="workspace_full">Workspace is full</string>
+    <string name="hotseat">Hotseat</string>
+    <string name="hotseat_full">Hotseat is full</string>
 </resources>

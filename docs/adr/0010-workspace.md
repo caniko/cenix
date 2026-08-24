@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-HOME needs a grid, not only All Apps. Drag, hotseat, widgets, and folders stay out.
+HOME needs a grid, not only All Apps. Drag, widgets, and folders stay out.
 
 ## Decision
 

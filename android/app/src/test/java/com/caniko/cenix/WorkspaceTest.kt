@@ -65,6 +65,33 @@ class WorkspaceTest {
     }
 
     @Test
+    fun dockMovesOffWorkspace() {
+        val db = openDb()
+        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
+        val workspace = Workspace(db)
+        val item = app("docked")
+        assertTrue(workspace.pin(item, grid))
+        assertEquals(0, workspace.items().single().screen)
+        assertTrue(workspace.dock(item, grid.cols))
+        assertEquals(Workspace.HOTSEAT, workspace.items().single().screen)
+        assertEquals(0, workspace.items().single().cellX)
+        db.close()
+    }
+
+    @Test
+    fun fullDockRejectsAndLeavesWorkspacePin() {
+        val db = openDb()
+        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
+        val workspace = Workspace(db)
+        repeat(grid.cols) { i -> assertTrue(workspace.dock(app("d$i"), grid.cols)) }
+        val extra = app("extra")
+        assertTrue(workspace.pin(extra, grid))
+        assertEquals(false, workspace.dock(extra, grid.cols))
+        assertEquals(0, workspace.items().last().screen)
+        db.close()
+    }
+
+    @Test
     fun unpinAndDropMissing() {
         val db = openDb()
         val grid = PhoneGrid("3_by_3", 3, 3, 255f, 300f)

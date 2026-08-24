@@ -65,6 +65,16 @@
         android:stretchMode="columnWidth"
         android:verticalSpacing="4dp" />
 
+    <GridView
+        android:id="@+id/hotseatGrid"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/hotseat"
+        android:gravity="center"
+        android:horizontalSpacing="4dp"
+        android:stretchMode="columnWidth"
+        android:verticalSpacing="4dp" />
+
     <EditText
         android:id="@+id/searchField"
         android:layout_width="match_parent"

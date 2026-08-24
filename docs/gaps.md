@@ -2,7 +2,7 @@
 
 ## Still out
 
-- Hotseat, folders, widgets, shortcuts, drag-and-drop, more than two pages
+- Folders, widgets, shortcuts, drag-and-drop, more than two pages
 - Recents / Quickstep (privileged; do not claim)
 - Private Space chrome, app lock, launcher data provider
 - Icon packs / Cuscon
@@ -12,4 +12,4 @@
 
 ## Next milestone
 
-Hotseat. Attach a mustang before claiming device grid/fingerprint.
+Folders or drag. Attach a mustang before claiming device grid/fingerprint.

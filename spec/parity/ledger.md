@@ -9,7 +9,7 @@ Machine-oriented copy of `docs/parity-capabilities.md`. Classes:
 | home-register | INSTALLABLE_PUBLIC | done |
 | home-role | ROLE_HOME_GATED | done |
 | workspace | INSTALLABLE_PUBLIC | done |
-| hotseat | INSTALLABLE_PUBLIC | later |
+| hotseat | INSTALLABLE_PUBLIC | done |
 | all-apps | INSTALLABLE_PUBLIC | done |
 | search | INSTALLABLE_PUBLIC | done |
 | folders | INSTALLABLE_PUBLIC | later |
