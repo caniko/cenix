@@ -17,7 +17,10 @@ rm -rf "$dist/repro-a" "$dist/repro-b"
 mkdir -p "$dist/repro-a" "$dist/repro-b"
 
 build() {
-  local name="$1" base="$dist/repro-$name" src="$base/src" gradle="$base/gradle-home"
+  local name="$1" base src gradle
+  base="$dist/repro-$name"
+  src="$base/src"
+  gradle="$base/gradle-home"
   mkdir -p "$src" "$gradle" "$base/cargo-target" "$base/tmp" "$base/gradle-project"
   git -C "$root" archive --format=tar HEAD | tar -xf - -C "$src"
   cp -a --reflink=auto "$seed/caches" "$seed/wrapper" "$gradle/"
