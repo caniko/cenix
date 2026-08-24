@@ -4,6 +4,13 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val gitCommit: String = System.getenv("CENIX_GIT_COMMIT")
+    ?: providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+        workingDir = rootDir.parentFile
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().ifBlank { "unknown" }
+
 android {
     namespace = "com.caniko.cenix"
     compileSdk = 35
@@ -15,6 +22,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
             arg("room.incremental", "true")
@@ -26,9 +34,17 @@ android {
             isMinifyEnabled = false
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "REDACT_LOGS", "true")
         }
         debug {
             isDebuggable = true
+            buildConfigField("boolean", "REDACT_LOGS", "false")
+        }
+        create("dogfood") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".dogfood"
+            matchingFallbacks += "release"
+            buildConfigField("boolean", "REDACT_LOGS", "true")
         }
     }
 
@@ -79,5 +95,15 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation("androidx.room:room-testing:$room")
+}
+
+gradle.taskGraph.whenReady {
+    val publishing = gradle.taskGraph.allTasks.any { task ->
+        task.name.contains("Release", ignoreCase = true) || task.name.contains("Dogfood", ignoreCase = true)
+    }
+    if (publishing && project.hasProperty("omitNative")) {
+        throw GradleException("omitNative cannot be packaged into release or dogfood")
+    }
 }

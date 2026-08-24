@@ -64,6 +64,15 @@ interface CenixDao {
     @Query("UPDATE workspace_items SET screen = :screen, cellX = :cellX, cellY = :cellY WHERE packageName = :packageName AND className = :className AND profileId = :profileId")
     fun moveWorkspace(screen: Int, cellX: Int, cellY: Int, packageName: String, className: String, profileId: Long)
 
+    @Query("DELETE FROM workspace_items")
+    fun clearWorkspace()
+
+    @Transaction
+    fun replaceWorkspace(items: List<WorkspaceItemEntity>) {
+        clearWorkspace()
+        items.forEach { insertWorkspace(it.copy(id = 0)) }
+    }
+
     @Transaction
     fun saveStartup(state: StartupState, now: Long) {
         upsertMetadata(
@@ -120,12 +129,14 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
-        fun open(context: Context): CenixDatabase =
-            Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
+        fun open(context: Context): CenixDatabase {
+            val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
                 .addMigrations(MIGRATION_1_2)
-                .allowMainThreadQueries()
-                .build()
-                .also { it.ensureSeed() }
+            if (android.os.Build.FINGERPRINT == "robolectric") {
+                builder.allowMainThreadQueries()
+            }
+            return builder.build().also { it.ensureSeed() }
+        }
     }
 
     fun ensureSeed() {
