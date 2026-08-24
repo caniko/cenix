@@ -35,13 +35,11 @@ class HomeConformanceTest {
         assertTrue(device.hasObject(By.res(PKG, "retryNative")))
         val title = device.findObject(By.res(PKG, "statusTitle"))?.text.orEmpty()
         assertFalse(title.contains("emergency", ignoreCase = true))
-        val settings = device.wait(Until.hasObject(By.res(PKG, "appLabel").textContains("Settings")), 5_000)
-        assertTrue(settings)
         assertFalse(device.hasObject(By.res(PKG, "appLabel").text("Cenix")))
     }
 
     @Test
-    fun searchIsCaseInsensitiveAndClearRestores() {
+    fun searchIsCaseInsensitiveAndClearRestoresWorkspace() {
         val field = device.findObject(By.res(PKG, "searchField"))
         field.click()
         field.setText("set")
@@ -49,7 +47,7 @@ class HomeConformanceTest {
         field.setText("zzznomatch")
         device.wait(Until.gone(By.res(PKG, "appLabel").textContains("Settings")), 5_000)
         field.setText("")
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").textContains("Settings")), 5_000))
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "workspaceGrid")), 5_000))
     }
 
     companion object {

@@ -53,6 +53,17 @@ if ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
   fi
   echo no | "$avdmanager" create avd -f -n "$avd" -k "$image_pkg" >/dev/null
 fi
+cfg="$ANDROID_AVD_HOME/${avd}.avd/config.ini"
+if [[ -f "$cfg" ]]; then
+  for key in hw.lcd.width=320 hw.lcd.height=640 hw.lcd.density=160; do
+    k="${key%%=*}"
+    if grep -q "^$k=" "$cfg"; then
+      sed -i "s/^$k=.*/$key/" "$cfg"
+    else
+      printf '%s\n' "$key" >>"$cfg"
+    fi
+  done
+fi
 
 avd_serial() {
   local serial name
@@ -293,7 +304,12 @@ apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
 } >"$art/metadata.txt"
 sha256sum "$apk" >"$art/apk.sha256"
 printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
-strings "$apk" | grep -q "$CENIX_GIT_COMMIT" || fail "built APK is missing git commit $CENIX_GIT_COMMIT"
+python3 - "$apk" "$CENIX_GIT_COMMIT" <<'PY' || fail "built APK is missing git commit $CENIX_GIT_COMMIT"
+import sys, zipfile
+apk, commit = sys.argv[1], sys.argv[2].encode()
+with zipfile.ZipFile(apk) as z:
+    sys.exit(0 if any(name.endswith(".dex") and commit in z.read(name) for name in z.namelist()) else 1)
+PY
 
 "$adb" -s "$serial" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null 2>&1 || true
@@ -302,10 +318,6 @@ strings "$apk" | grep -q "$CENIX_GIT_COMMIT" || fail "built APK is missing git c
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "Cenix is not HOME role holder: $holders"
 pass "HOME role holder is com.caniko.cenix ($holders)"
-
-export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-(cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
-pass "instrumentation: HomeConformanceTest"
 
 "$adb" -s "$serial" shell am start -a android.settings.SETTINGS >/dev/null
 wait_resumed 'com.android.settings'
@@ -318,6 +330,17 @@ echo "$ui" | grep -q 'workspaceGrid' || fail "workspace grid missing"
 echo "$ui" | grep -q 'hotseatGrid' || fail "hotseat grid missing"
 echo "$ui" | grep -qi 'emergency mode' && fail "native APK started in emergency"
 echo "$ui" | grep -q '|com.caniko.cenix|' && fail "Cenix listed itself as a launch target"
+
+export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+(cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
+pass "instrumentation: HomeConformanceTest"
+"$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"
+"$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null || true
+holders="$(role_holders)"
+echo "$holders" | grep -q 'com.caniko.cenix' || fail "instrumentation dropped HOME role: $holders"
+go_home
+hide_keyboard
+
 set_search "Settings"
 wait_ui '|com.android.settings|' 1
 ui="$(dump_ui)"

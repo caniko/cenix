@@ -7,7 +7,7 @@ plugins {
 val gitCommit: String = System.getenv("CENIX_GIT_COMMIT")
     ?: providers.exec {
         commandLine("git", "rev-parse", "HEAD")
-        workingDir = rootDir.parentFile
+        workingDir = rootDir
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim().ifBlank { "unknown" }
 
