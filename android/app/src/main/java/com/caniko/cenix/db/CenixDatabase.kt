@@ -61,6 +61,9 @@ interface CenixDao {
     @Query("DELETE FROM workspace_items WHERE packageName = :packageName AND className = :className AND profileId = :profileId")
     fun deleteWorkspace(packageName: String, className: String, profileId: Long)
 
+    @Query("UPDATE workspace_items SET screen = :screen, cellX = :cellX, cellY = :cellY WHERE packageName = :packageName AND className = :className AND profileId = :profileId")
+    fun moveWorkspace(screen: Int, cellX: Int, cellY: Int, packageName: String, className: String, profileId: Long)
+
     @Transaction
     fun saveStartup(state: StartupState, now: Long) {
         upsertMetadata(

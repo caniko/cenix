@@ -13,3 +13,4 @@
 | [0009](0009-emergency.md) | Emergency HOME without native |
 | [0010](0010-workspace.md) | Two-page phone workspace |
 | [0011](0011-hotseat.md) | Persistent hotseat row |
+| [0012](0012-drag.md) | Native workspace drag |

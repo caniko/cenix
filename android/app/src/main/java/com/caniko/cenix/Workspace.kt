@@ -47,6 +47,30 @@ class Workspace(private val db: CenixDatabase) {
         return true
     }
 
+    fun place(app: LaunchableApp, screen: Int, cellX: Int, cellY: Int): Boolean {
+        val all = items()
+        val occupant = all.firstOrNull { it.screen == screen && it.cellX == cellX && it.cellY == cellY }
+        if (occupant != null && !occupant.sameApp(app)) return false
+        val existing = all.firstOrNull { it.sameApp(app) }
+        when {
+            existing == null ->
+                db.dao().insertWorkspace(
+                    WorkspaceItemEntity(
+                        screen = screen,
+                        cellX = cellX,
+                        cellY = cellY,
+                        packageName = app.packageName,
+                        className = app.className,
+                        profileId = app.profileId,
+                    ),
+                )
+            occupant?.sameApp(app) == true -> {}
+            else ->
+                db.dao().moveWorkspace(screen, cellX, cellY, app.packageName, app.className, app.profileId)
+        }
+        return true
+    }
+
     fun unpin(app: LaunchableApp) {
         db.dao().deleteWorkspace(app.packageName, app.className, app.profileId)
     }

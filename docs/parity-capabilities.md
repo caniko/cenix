@@ -8,12 +8,12 @@ Evidence keys: `src` = Launcher3 source, `api` = public SDK, `emu` = AOSP emulat
 | --- | --- | --- | --- |
 | HOME registration | `INSTALLABLE_PUBLIC` | done | `src`+`api`+`emu` |
 | HOME role selection | `ROLE_HOME_GATED` | done | `RoleManager` / `cmd role`; `emu` |
-| Workspace | `INSTALLABLE_PUBLIC` | done | two pages; long-press pin; no drag |
-| Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; no drag |
+| Workspace | `INSTALLABLE_PUBLIC` | done | two pages; long-press pin; drag move |
+| Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; drag |
 | All Apps list | `INSTALLABLE_PUBLIC` | done | `LauncherApps`; `emu` |
 | Local label search | `INSTALLABLE_PUBLIC` | done | `emu` |
 | Folders | `INSTALLABLE_PUBLIC` | later | `src` |
-| Drag and drop | `INSTALLABLE_PUBLIC` | later | `src` |
+| Drag and drop | `INSTALLABLE_PUBLIC` | done | pin move/unpin; no swap; no All Apps drag |
 | Widgets | `USER_AUTHORIZED` | later | `AppWidgetHost`; pin confirm is public |
 | Widget restore / ID remap | `USER_AUTHORIZED` | later | `APPWIDGET_HOST_RESTORED`; `src` |
 | Pinned shortcuts | `USER_AUTHORIZED` | later | `ShortcutManager` / `CONFIRM_PIN_SHORTCUT` |

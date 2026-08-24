@@ -1,5 +1,6 @@
 package com.caniko.cenix
 
+import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.LauncherApps
@@ -8,6 +9,7 @@ import android.os.UserHandle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.DragEvent
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -41,6 +43,11 @@ class HomeActivity : AppCompatActivity() {
     private val visible = mutableListOf<LaunchableApp>()
     private val slots = mutableListOf<LaunchableApp?>()
     private val dock = mutableListOf<LaunchableApp?>()
+    private var dragFromPin = false
+    private var dragLanded = false
+    private var dragStartScreen = 0
+    private var dragStartX = 0
+    private var dragStartY = 0
 
     private val packageCallback = object : LauncherApps.Callback() {
         override fun onPackageAdded(packageName: String, user: UserHandle) = reload()
@@ -81,23 +88,25 @@ class HomeActivity : AppCompatActivity() {
         }
         workspaceGrid.adapter = WorkspaceAdapter()
         workspaceGrid.setOnItemClickListener { _, _, position, _ -> slots[position]?.let(::launch) }
-        workspaceGrid.setOnItemLongClickListener { _, _, position, _ ->
-            slots[position]?.let {
-                workspace?.unpin(it)
-                bindPins()
-            }
+        workspaceGrid.setOnItemLongClickListener { _, view, position, _ ->
+            slots[position]?.let { beginDrag(view, it, fromPin = true) }
             true
         }
+        workspaceGrid.setOnDragListener { view, event ->
+            onGridDrag(view, event, screen, grid.cols, grid.rows)
+        }
+        statusTitle.setOnDragListener { _, event -> onOffGridDrag(event) }
+        searchField.setOnDragListener { _, event -> onOffGridDrag(event) }
         hotseatGrid.numColumns = grid.cols
         hotseatGrid.layoutParams = hotseatGrid.layoutParams.apply { height = cell }
         hotseatGrid.adapter = HotseatAdapter()
         hotseatGrid.setOnItemClickListener { _, _, position, _ -> dock[position]?.let(::launch) }
-        hotseatGrid.setOnItemLongClickListener { _, _, position, _ ->
-            dock[position]?.let {
-                workspace?.unpin(it)
-                bindPins()
-            }
+        hotseatGrid.setOnItemLongClickListener { _, view, position, _ ->
+            dock[position]?.let { beginDrag(view, it, fromPin = true) }
             true
+        }
+        hotseatGrid.setOnDragListener { view, event ->
+            onGridDrag(view, event, Workspace.HOTSEAT, grid.cols, 1)
         }
         val fling = ViewConfiguration.get(this).scaledMinimumFlingVelocity
         val pager = GestureDetector(
@@ -203,6 +212,67 @@ class HomeActivity : AppCompatActivity() {
         if (next !in 0 until Workspace.SCREENS) return
         screen = next
         bindWorkspace()
+    }
+
+    private fun beginDrag(view: View, item: LaunchableApp, fromPin: Boolean) {
+        dragFromPin = fromPin
+        dragLanded = false
+        val placed = workspace?.items().orEmpty().firstOrNull {
+            it.packageName == item.packageName && it.className == item.className && it.profileId == item.profileId
+        }
+        dragStartScreen = placed?.screen ?: 0
+        dragStartX = placed?.cellX ?: 0
+        dragStartY = placed?.cellY ?: 0
+        view.startDragAndDrop(ClipData.newPlainText(item.packageName, item.className), View.DragShadowBuilder(view), item, 0)
+    }
+
+    private fun onGridDrag(view: View, event: DragEvent, destScreen: Int, cols: Int, rows: Int): Boolean {
+        val item = event.localState as? LaunchableApp ?: return false
+        return when (event.action) {
+            DragEvent.ACTION_DRAG_STARTED -> true
+            DragEvent.ACTION_DROP -> {
+                dragLanded = true
+                val cw = (view.width / cols).coerceAtLeast(1)
+                val ch = (view.height / rows).coerceAtLeast(1)
+                val x = (event.x / cw).toInt().coerceIn(0, cols - 1)
+                val y = (event.y / ch).toInt().coerceIn(0, rows - 1)
+                if (destScreen == dragStartScreen && x == dragStartX && y == dragStartY) {
+                    workspace?.unpin(item)
+                } else {
+                    workspace?.place(item, destScreen, x, y)
+                }
+                bindPins()
+                true
+            }
+            DragEvent.ACTION_DRAG_ENDED -> endDrag(item)
+            else -> true
+        }
+    }
+
+    private fun onOffGridDrag(event: DragEvent): Boolean {
+        val item = event.localState as? LaunchableApp ?: return false
+        return when (event.action) {
+            DragEvent.ACTION_DRAG_STARTED -> true
+            DragEvent.ACTION_DROP -> {
+                dragLanded = true
+                if (dragFromPin) {
+                    workspace?.unpin(item)
+                    bindPins()
+                }
+                true
+            }
+            DragEvent.ACTION_DRAG_ENDED -> endDrag(item)
+            else -> true
+        }
+    }
+
+    private fun endDrag(item: LaunchableApp): Boolean {
+        if (dragFromPin && !dragLanded) {
+            workspace?.unpin(item)
+            bindPins()
+        }
+        dragFromPin = false
+        return true
     }
 
     private fun pin(appItem: LaunchableApp) {

@@ -92,6 +92,36 @@ class WorkspaceTest {
     }
 
     @Test
+    fun placeMovesAndRejectsOccupied() {
+        val db = openDb()
+        val workspace = Workspace(db)
+        val a = app("a")
+        val b = app("b")
+        assertTrue(workspace.place(a, 0, 0, 0))
+        assertTrue(workspace.place(b, 0, 1, 0))
+        assertEquals(false, workspace.place(a, 0, 1, 0))
+        assertTrue(workspace.place(a, 0, 0, 1))
+        val moved = workspace.items().first { it.packageName == "a" }
+        assertEquals(0, moved.cellX)
+        assertEquals(1, moved.cellY)
+        assertEquals(1, workspace.items().first { it.packageName == "b" }.cellX)
+        db.close()
+    }
+
+    @Test
+    fun placeOntoHotseat() {
+        val db = openDb()
+        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
+        val workspace = Workspace(db)
+        val item = app("docked")
+        assertTrue(workspace.pin(item, grid))
+        assertTrue(workspace.place(item, Workspace.HOTSEAT, 1, 0))
+        assertEquals(Workspace.HOTSEAT, workspace.items().single().screen)
+        assertEquals(1, workspace.items().single().cellX)
+        db.close()
+    }
+
+    @Test
     fun unpinAndDropMissing() {
         val db = openDb()
         val grid = PhoneGrid("3_by_3", 3, 3, 255f, 300f)

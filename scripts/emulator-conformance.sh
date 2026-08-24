@@ -189,6 +189,14 @@ long_press_pattern() {
   "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
 }
 
+drag_from_to() {
+  local xml x1 y1 x2 y2 tx1 ty1 tx2 ty2
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  read -r tx1 ty1 tx2 ty2 < <(read_bounds "$xml" "$2")
+  "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2)) 1600
+}
+
 swipe_workspace() {
   local xml x1 y1 x2 y2 midy from to
   xml="$(dump_ui)"
@@ -317,9 +325,12 @@ clear_search
 hide_keyboard
 wait_ui 'content-desc="Settings|com.android.settings|' 1
 pass "workspace: long-press pins into grid"
-long_press_pattern 'content-desc="Settings\|com\.android\.settings\|'
+drag_from_to 'content-desc="Settings\|com\.android\.settings\|' 'content-desc="Empty"'
+wait_ui 'content-desc="Settings|com.android.settings|' 1
+pass "workspace: drag moves pin"
+drag_from_to 'content-desc="Settings\|com\.android\.settings\|' 'resource-id="com.caniko.cenix:id/statusTitle"'
 wait_ui 'content-desc="Settings|com.android.settings|' 0
-pass "workspace: long-press removes pin"
+pass "workspace: drag off-grid unpins"
 swipe_workspace next
 wait_ui 'content-desc="Workspace 1"' 1
 pass "workspace: swipe opens second page"
@@ -341,7 +352,7 @@ wait_ui 'content-desc="Settings|com.android.settings|' 1
 pass "hotseat: second long-press docks and survives swipe"
 long_press_pattern 'content-desc="Settings\|com\.android\.settings\|'
 wait_ui 'content-desc="Settings|com.android.settings|' 0
-pass "hotseat: long-press removes dock pin"
+pass "hotseat: long-press same cell undocks"
 
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
 go_home

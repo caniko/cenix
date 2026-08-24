@@ -13,7 +13,7 @@ Machine-oriented copy of `docs/parity-capabilities.md`. Classes:
 | all-apps | INSTALLABLE_PUBLIC | done |
 | search | INSTALLABLE_PUBLIC | done |
 | folders | INSTALLABLE_PUBLIC | later |
-| drag-drop | INSTALLABLE_PUBLIC | later |
+| drag-drop | INSTALLABLE_PUBLIC | done |
 | widgets | USER_AUTHORIZED | later |
 | widget-restore | USER_AUTHORIZED | later |
 | pinned-shortcuts | USER_AUTHORIZED | later |
