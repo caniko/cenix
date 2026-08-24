@@ -1,5 +1,12 @@
 #![forbid(unsafe_code)]
 
+mod workspace;
+
+pub use workspace::{
+    apply_workspace_command, WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspaceSnapshot,
+    WorkspaceTransition, HOTSEAT, SCREENS,
+};
+
 pub const MAX_APPLICATIONS: usize = 10_000;
 pub const MAX_LABEL_CHARS: usize = 256;
 pub const MAX_IDENT_CHARS: usize = 256;

@@ -713,6 +713,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -728,7 +734,13 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
+    fun uniffi_cenix_ffi_checksum_func_apply_workspace_command(
+): Short
+fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
+): Short
+fun uniffi_cenix_ffi_checksum_func_init_diagnostics(
+): Short
+fun uniffi_cenix_ffi_checksum_func_native_panicked(
 ): Short
 fun ffi_cenix_ffi_uniffi_contract_version(
 ): Int
@@ -775,8 +787,14 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_cenix_ffi_fn_func_apply_workspace_command(`snapshot`: RustBuffer.ByValue,`command`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_init_diagnostics(`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Unit
+fun uniffi_cenix_ffi_fn_func_native_panicked(uniffi_out_err: UniffiRustCallStatus,
+): Byte
 fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -903,7 +921,16 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_cenix_ffi_checksum_func_apply_workspace_command() != 56944.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cenix_ffi_checksum_func_filter_and_order_apps() != 6283.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_init_diagnostics() != 51253.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_native_panicked() != 51392.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -988,6 +1015,29 @@ object NoPointer
 /**
  * @suppress
  */
+public object FfiConverterInt: FfiConverter<Int, Int> {
+    override fun lift(value: Int): Int {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Int {
+        return buf.getInt()
+    }
+
+    override fun lower(value: Int): Int {
+        return value
+    }
+
+    override fun allocationSize(value: Int) = 4UL
+
+    override fun write(value: Int, buf: ByteBuffer) {
+        buf.putInt(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterULong: FfiConverter<ULong, Long> {
     override fun lift(value: Long): ULong {
         return value.toULong()
@@ -1005,6 +1055,29 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
 
     override fun write(value: ULong, buf: ByteBuffer) {
         buf.putLong(value.toLong())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
+    override fun lift(value: Byte): Boolean {
+        return value.toInt() != 0
+    }
+
+    override fun read(buf: ByteBuffer): Boolean {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: Boolean): Byte {
+        return if (value) 1.toByte() else 0.toByte()
+    }
+
+    override fun allocationSize(value: Boolean) = 1UL
+
+    override fun write(value: Boolean, buf: ByteBuffer) {
+        buf.put(lower(value))
     }
 }
 
@@ -1143,6 +1216,154 @@ public object FfiConverterTypeAppId: FfiConverterRustBuffer<AppId> {
 
 
 
+data class DiagnosticsConfig (
+    var `level`: kotlin.String,
+    var `releaseRedaction`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDiagnosticsConfig: FfiConverterRustBuffer<DiagnosticsConfig> {
+    override fun read(buf: ByteBuffer): DiagnosticsConfig {
+        return DiagnosticsConfig(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DiagnosticsConfig) = (
+            FfiConverterString.allocationSize(value.`level`) +
+            FfiConverterBoolean.allocationSize(value.`releaseRedaction`)
+    )
+
+    override fun write(value: DiagnosticsConfig, buf: ByteBuffer) {
+            FfiConverterString.write(value.`level`, buf)
+            FfiConverterBoolean.write(value.`releaseRedaction`, buf)
+    }
+}
+
+
+
+data class WorkspaceItem (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong,
+    var `screen`: kotlin.Int,
+    var `cellX`: kotlin.Int,
+    var `cellY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceItem: FfiConverterRustBuffer<WorkspaceItem> {
+    override fun read(buf: ByteBuffer): WorkspaceItem {
+        return WorkspaceItem(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceItem) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterInt.allocationSize(value.`screen`) +
+            FfiConverterInt.allocationSize(value.`cellX`) +
+            FfiConverterInt.allocationSize(value.`cellY`)
+    )
+
+    override fun write(value: WorkspaceItem, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterInt.write(value.`screen`, buf)
+            FfiConverterInt.write(value.`cellX`, buf)
+            FfiConverterInt.write(value.`cellY`, buf)
+    }
+}
+
+
+
+data class WorkspaceSnapshot (
+    var `items`: List<WorkspaceItem>,
+    var `cols`: kotlin.Int,
+    var `rows`: kotlin.Int,
+    var `screens`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<WorkspaceSnapshot> {
+    override fun read(buf: ByteBuffer): WorkspaceSnapshot {
+        return WorkspaceSnapshot(
+            FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceSnapshot) = (
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterInt.allocationSize(value.`cols`) +
+            FfiConverterInt.allocationSize(value.`rows`) +
+            FfiConverterInt.allocationSize(value.`screens`)
+    )
+
+    override fun write(value: WorkspaceSnapshot, buf: ByteBuffer) {
+            FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterInt.write(value.`cols`, buf)
+            FfiConverterInt.write(value.`rows`, buf)
+            FfiConverterInt.write(value.`screens`, buf)
+    }
+}
+
+
+
+data class WorkspaceTransition (
+    var `items`: List<WorkspaceItem>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<WorkspaceTransition> {
+    override fun read(buf: ByteBuffer): WorkspaceTransition {
+        return WorkspaceTransition(
+            FfiConverterSequenceTypeWorkspaceItem.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceTransition) = (
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`)
+    )
+
+    override fun write(value: WorkspaceTransition, buf: ByteBuffer) {
+            FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+    }
+}
+
+
+
 
 
 sealed class EngineException: kotlin.Exception() {
@@ -1214,6 +1435,297 @@ public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineExcepti
             is EngineException.Bounds -> {
                 buf.putInt(2)
                 FfiConverterString.write(value.`reason`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+sealed class WorkspaceCommand {
+
+    data class Place(
+        val `package`: kotlin.String,
+        val `class`: kotlin.String,
+        val `profileId`: kotlin.ULong,
+        val `screen`: kotlin.Int,
+        val `cellX`: kotlin.Int,
+        val `cellY`: kotlin.Int) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Remove(
+        val `package`: kotlin.String,
+        val `class`: kotlin.String,
+        val `profileId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Dock(
+        val `package`: kotlin.String,
+        val `class`: kotlin.String,
+        val `profileId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Pin(
+        val `package`: kotlin.String,
+        val `class`: kotlin.String,
+        val `profileId`: kotlin.ULong,
+        val `preferredScreen`: kotlin.Int) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class DropMissing(
+        val `live`: List<AppId>) : WorkspaceCommand() {
+        companion object
+    }
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<WorkspaceCommand>{
+    override fun read(buf: ByteBuffer): WorkspaceCommand {
+        return when(buf.getInt()) {
+            1 -> WorkspaceCommand.Place(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterInt.read(buf),
+                FfiConverterInt.read(buf),
+                FfiConverterInt.read(buf),
+                )
+            2 -> WorkspaceCommand.Remove(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            3 -> WorkspaceCommand.Dock(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            4 -> WorkspaceCommand.Pin(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterInt.read(buf),
+                )
+            5 -> WorkspaceCommand.DropMissing(
+                FfiConverterSequenceTypeAppId.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: WorkspaceCommand) = when(value) {
+        is WorkspaceCommand.Place -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`package`)
+                + FfiConverterString.allocationSize(value.`class`)
+                + FfiConverterULong.allocationSize(value.`profileId`)
+                + FfiConverterInt.allocationSize(value.`screen`)
+                + FfiConverterInt.allocationSize(value.`cellX`)
+                + FfiConverterInt.allocationSize(value.`cellY`)
+            )
+        }
+        is WorkspaceCommand.Remove -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`package`)
+                + FfiConverterString.allocationSize(value.`class`)
+                + FfiConverterULong.allocationSize(value.`profileId`)
+            )
+        }
+        is WorkspaceCommand.Dock -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`package`)
+                + FfiConverterString.allocationSize(value.`class`)
+                + FfiConverterULong.allocationSize(value.`profileId`)
+            )
+        }
+        is WorkspaceCommand.Pin -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`package`)
+                + FfiConverterString.allocationSize(value.`class`)
+                + FfiConverterULong.allocationSize(value.`profileId`)
+                + FfiConverterInt.allocationSize(value.`preferredScreen`)
+            )
+        }
+        is WorkspaceCommand.DropMissing -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterSequenceTypeAppId.allocationSize(value.`live`)
+            )
+        }
+    }
+
+    override fun write(value: WorkspaceCommand, buf: ByteBuffer) {
+        when(value) {
+            is WorkspaceCommand.Place -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`package`, buf)
+                FfiConverterString.write(value.`class`, buf)
+                FfiConverterULong.write(value.`profileId`, buf)
+                FfiConverterInt.write(value.`screen`, buf)
+                FfiConverterInt.write(value.`cellX`, buf)
+                FfiConverterInt.write(value.`cellY`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Remove -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`package`, buf)
+                FfiConverterString.write(value.`class`, buf)
+                FfiConverterULong.write(value.`profileId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Dock -> {
+                buf.putInt(3)
+                FfiConverterString.write(value.`package`, buf)
+                FfiConverterString.write(value.`class`, buf)
+                FfiConverterULong.write(value.`profileId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Pin -> {
+                buf.putInt(4)
+                FfiConverterString.write(value.`package`, buf)
+                FfiConverterString.write(value.`class`, buf)
+                FfiConverterULong.write(value.`profileId`, buf)
+                FfiConverterInt.write(value.`preferredScreen`, buf)
+                Unit
+            }
+            is WorkspaceCommand.DropMissing -> {
+                buf.putInt(5)
+                FfiConverterSequenceTypeAppId.write(value.`live`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+
+
+sealed class WorkspaceException: kotlin.Exception() {
+
+    class Occupied(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class OutOfBounds(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingItem(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidProfile(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class Full(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<WorkspaceException> {
+        override fun lift(error_buf: RustBuffer.ByValue): WorkspaceException = FfiConverterTypeWorkspaceError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceException> {
+    override fun read(buf: ByteBuffer): WorkspaceException {
+
+
+        return when(buf.getInt()) {
+            1 -> WorkspaceException.Occupied()
+            2 -> WorkspaceException.OutOfBounds()
+            3 -> WorkspaceException.MissingItem()
+            4 -> WorkspaceException.InvalidProfile()
+            5 -> WorkspaceException.Full()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: WorkspaceException): ULong {
+        return when(value) {
+            is WorkspaceException.Occupied -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.OutOfBounds -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.MissingItem -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.Full -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: WorkspaceException, buf: ByteBuffer) {
+        when(value) {
+            is WorkspaceException.Occupied -> {
+                buf.putInt(1)
+                Unit
+            }
+            is WorkspaceException.OutOfBounds -> {
+                buf.putInt(2)
+                Unit
+            }
+            is WorkspaceException.MissingItem -> {
+                buf.putInt(3)
+                Unit
+            }
+            is WorkspaceException.InvalidProfile -> {
+                buf.putInt(4)
+                Unit
+            }
+            is WorkspaceException.Full -> {
+                buf.putInt(5)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1304,11 +1816,66 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWorkspaceItem: FfiConverterRustBuffer<List<WorkspaceItem>> {
+    override fun read(buf: ByteBuffer): List<WorkspaceItem> {
+        val len = buf.getInt()
+        return List<WorkspaceItem>(len) {
+            FfiConverterTypeWorkspaceItem.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WorkspaceItem>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWorkspaceItem.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WorkspaceItem>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWorkspaceItem.write(it, buf)
+        }
+    }
+}
+    @Throws(WorkspaceException::class) fun `applyWorkspaceCommand`(`snapshot`: WorkspaceSnapshot, `command`: WorkspaceCommand): WorkspaceTransition {
+            return FfiConverterTypeWorkspaceTransition.lift(
+    uniffiRustCallWithError(WorkspaceException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_apply_workspace_command(
+        FfiConverterTypeWorkspaceSnapshot.lower(`snapshot`),FfiConverterTypeWorkspaceCommand.lower(`command`),_status)
+}
+    )
+    }
+
+
     @Throws(EngineException::class) fun `filterAndOrderApps`(`apps`: List<App>, `query`: kotlin.String, `visibleProfileIds`: List<kotlin.ULong>): List<AppId> {
             return FfiConverterSequenceTypeAppId.lift(
     uniffiRustCallWithError(EngineException) { _status ->
     UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_filter_and_order_apps(
         FfiConverterSequenceTypeApp.lower(`apps`),FfiConverterString.lower(`query`),FfiConverterSequenceULong.lower(`visibleProfileIds`),_status)
+}
+    )
+    }
+
+ fun `initDiagnostics`(`config`: DiagnosticsConfig)
+        =
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_init_diagnostics(
+        FfiConverterTypeDiagnosticsConfig.lower(`config`),_status)
+}
+
+
+ fun `nativePanicked`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_native_panicked(
+        _status)
 }
     )
     }

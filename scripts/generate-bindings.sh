@@ -20,4 +20,5 @@ while IFS= read -r -d '' f; do
     printf '\n' >> "$f"
   fi
 done < <(find "$out/com/caniko/cenix/uniffi" -name '*.kt' -print0)
+printf 'uniffi=0.29.5\n' >"$out/com/caniko/cenix/uniffi/GENERATOR"
 echo "generated UniFFI Kotlin under $out/com/caniko/cenix/uniffi"
