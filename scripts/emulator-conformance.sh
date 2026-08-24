@@ -12,14 +12,21 @@ if [[ "$avd" == "cenix-api35" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
   echo "refusing shared AVD cenix-api35; set CENIX_ALLOW_SHARED_AVD=1 to override" >&2
   exit 1
 fi
-sysdir="${CENIX_SYSTEM_IMAGE:-$sdk/system-images/android-35/google_apis/x86_64}"
+default_image="$sdk/system-images/android-35/default/x86_64"
+compat_image="$sdk/system-images/android-35/google_apis/x86_64"
+if [[ -d "$default_image" ]]; then
+  default_sysdir="$default_image"
+else
+  default_sysdir="$compat_image"
+fi
+sysdir="${CENIX_SYSTEM_IMAGE:-$default_sysdir}"
 image_kind="google_apis"
 if [[ "$sysdir" == *"/default/"* || "$sysdir" == *"/aosp"* ]]; then
   image_kind="aosp"
 fi
 echo "conformance artifacts: $art"
-echo "emulator suite must run through: nix develop .#emulator"
-echo "this AOSP API 35 $image_kind x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
+echo "emulator suite must run through the matching Nix emulator shell"
+echo "this Android API 35 $image_kind x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
 echo "git commit: $CENIX_GIT_COMMIT"
 echo "avd: $avd"
 
@@ -120,6 +127,14 @@ fi
 "$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
 "$adb" -s "$serial" shell settings put system accelerometer_rotation 0
 "$adb" -s "$serial" shell settings put system user_rotation 0
+"$adb" -s "$serial" shell settings put system font_scale "${CENIX_FONT_SCALE:-1.0}"
+"$adb" -s "$serial" shell settings put system system_locales "${CENIX_LOCALE:-en-US}"
+"$adb" -s "$serial" shell settings put global window_animation_scale 0
+"$adb" -s "$serial" shell settings put global transition_animation_scale 0
+"$adb" -s "$serial" shell settings put global animator_duration_scale 0
+"$adb" -s "$serial" shell cmd uimode night "${CENIX_NIGHT_MODE:-no}" >/dev/null
+"$adb" -s "$serial" shell wm size 320x640
+"$adb" -s "$serial" shell wm density 160
 sleep 1
 
 pass() { echo "PASS: $1"; }
@@ -296,6 +311,7 @@ apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
   echo "avd=$avd"
   echo "serial=$serial"
   echo "image=$sysdir"
+  echo "image_revision=$(sed -n 's/^Pkg.Revision=//p' "$sysdir/source.properties" 2>/dev/null || true)"
   echo "kind=$image_kind"
   echo "api=35"
   echo "abi=x86_64"
@@ -525,4 +541,4 @@ sleep 1
 wait_ui 'Emergency mode' 1
 pass "retry-native does not report success while libcenix_ffi.so is absent"
 
-echo "emulator conformance passed on $serial (AOSP API 35 $image_kind x86_64, not GrapheneOS/mustang)"
+echo "emulator conformance passed on $serial (Android API 35 $image_kind x86_64, not GrapheneOS/mustang)"
