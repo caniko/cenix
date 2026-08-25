@@ -41,8 +41,8 @@ class HomeConformanceTest {
         openAllApps()
         val field = device.findObject(By.res(PKG, "searchField"))
         field.click()
-        field.setText("set")
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").textContains("Settings")), 5_000))
+        field.setText("fixture")
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000))
 
         device.pressBack()
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))

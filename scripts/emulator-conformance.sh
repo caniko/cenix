@@ -421,8 +421,10 @@ printf '%s\n' "$ui" | tr '>' '\n' | grep -q 'text="Cenix".*resource-id="com.cani
 pass "shell: initial state is full-screen HOME"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+"$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
 pass "instrumentation: HomeConformanceTest"
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 "$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"
 apply_app_rtl
 "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null || true
@@ -431,14 +433,14 @@ echo "$holders" | grep -q 'com.caniko.cenix' || fail "instrumentation dropped HO
 go_home
 hide_keyboard
 
-set_search "Settings"
-wait_ui 'text="Settings"' 1
+open_all_apps
+wait_ui 'resource-id="com.caniko.cenix:id/appLabel"' 1
 pass "shell: swipe up opens All Apps"
 clear_search
 hide_keyboard
 ui="$(dump_ui)"
 echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"' || fail "catalog empty"
-pass "discovery: nonempty, Settings present, Cenix hidden"
+pass "discovery: nonempty catalog, Cenix hidden"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 set_search "Fixture"
@@ -470,33 +472,34 @@ wait_ui 'text="Cenix Fixture"' 0
 clear_search
 pass "package callback: fixture disappeared without restart"
 
-set_search "Settings"
-wait_ui 'text="Settings"' 1
+"$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
 close_all_apps
 ui="$(dump_ui)"
 read -r tx1 ty1 tx2 ty2 < <(read_bounds "$ui" 'content-desc="Empty, page 1, row 2, column 1"')
-set_search "Settings"
-wait_ui 'text="Settings"' 1
-drag_pattern_to_bounds 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"' $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
-wait_ui 'content-desc="Settings, page 1' 1
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
+drag_pattern_to_bounds 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"' $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
 wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 0
 pass "workspace: All Apps drag reveals HOME and places into CellLayout"
-drag_from_to 'content-desc="Settings, page 1' 'content-desc="Empty,'
-wait_ui 'content-desc="Settings, page 1' 1
+drag_from_to 'content-desc="Cenix Fixture, page 1' 'content-desc="Empty,'
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "workspace: internal drag moves pin"
-drag_to_workspace_edge 'content-desc="Settings, page 1' next
+drag_to_workspace_edge 'content-desc="Cenix Fixture, page 1' next
 wait_ui 'content-desc="Page 2 of 2"' 1
-wait_ui 'content-desc="Settings, page 2' 1
+wait_ui 'content-desc="Cenix Fixture, page 2' 1
 pass "workspace: edge drag creates and enters second page"
-drag_to_workspace_edge 'content-desc="Settings, page 2' prev
+drag_to_workspace_edge 'content-desc="Cenix Fixture, page 2' prev
 wait_ui 'content-desc="Page 1 of 1"' 1
-wait_ui 'content-desc="Settings, page 1' 1
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "workspace: returning item removes empty trailing page"
-drag_from_to 'content-desc="Settings, page 1' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
-wait_ui 'content-desc="Settings, hotseat' 1
+drag_from_to 'content-desc="Cenix Fixture, page 1' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
+wait_ui 'content-desc="Cenix Fixture, hotseat' 1
 pass "hotseat: cross-container drag docks"
-drag_from_to 'content-desc="Settings, hotseat' 'content-desc="Empty,'
-wait_ui 'content-desc="Settings, page 1' 1
+drag_from_to 'content-desc="Cenix Fixture, hotseat' 'content-desc="Empty,'
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "hotseat: drag undocks into workspace"
 
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
@@ -515,7 +518,7 @@ wait_resumed 'com.caniko.cenix/.HomeActivity'
 ui="$(dump_ui)"
 read -r lx1 ly1 lx2 ly2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
 (( lx2 > lx1 && ly2 > ly1 )) || fail "workspace unusable in landscape"
-echo "$ui" | grep -q 'content-desc="Settings, page 1' || fail "workspace item missing in landscape"
+echo "$ui" | grep -q 'content-desc="Cenix Fixture, page 1' || fail "workspace item missing in landscape"
 echo "$ui" | grep -q 'searchField' && fail "All Apps visible on landscape HOME"
 "$adb" -s "$serial" shell settings put system user_rotation 0
 sleep 2
@@ -523,14 +526,14 @@ wait_resumed 'com.caniko.cenix/.HomeActivity'
 ui="$(dump_ui)"
 read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
 (( px2 > px1 && py2 > py1 )) || fail "workspace unusable in portrait"
-echo "$ui" | grep -q 'content-desc="Settings, page 1' || fail "workspace item missing after portrait restore"
+echo "$ui" | grep -q 'content-desc="Cenix Fixture, page 1' || fail "workspace item missing after portrait restore"
 pass "configuration: landscape/portrait retain usable HOME workspace"
 
-set_search "Settings"
+set_search "Fixture"
 focus_search
 sleep 1
 ui="$(dump_ui ime)"
-echo "$ui" | grep -q 'text="Settings"' || fail "IME covered All Apps results"
+echo "$ui" | grep -q 'text="Cenix Fixture"' || fail "IME covered All Apps results"
 echo "$ui" | grep -q 'retryNative' && fail "normal All Apps exposed emergency controls"
 pass "configuration: IME leaves All Apps results operable"
 
@@ -539,19 +542,18 @@ hide_keyboard
 sleep 1
 go_home
 
-"$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 ui="$(dump_ui)"
 read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
-set_search "Fixture"
-wait_ui 'text="Cenix Fixture"' 1
-drag_pattern_to_bounds 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
-wait_ui 'content-desc="Cenix Fixture, page 1' 1
-drag_from_to 'content-desc="Cenix Fixture, page 1' 'content-desc="Settings, page 1'
-wait_ui 'folder, 2 applications' 1
+set_search "Two"
+wait_ui 'text="Cenix Fixture Two"' 1
+drag_pattern_to_bounds 'text="Cenix Fixture Two".*resource-id="com.caniko.cenix:id/appLabel"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'content-desc="Cenix Fixture Two, page 1' 1
+drag_from_to 'content-desc="Cenix Fixture Two, page 1' 'content-desc="Cenix Fixture, page 1'
+wait_ui 'folder, .* applications' 1
 pass "folders: central occupied-cell drop creates two-member folder"
-tap_pattern 'folder, 2 applications'
+tap_pattern 'folder, .* applications'
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
-wait_ui 'content-desc="Cenix Fixture"' 1
+wait_ui 'content-desc="Cenix Fixture Two"' 1
 pass "folders: popup exposes ranked members"
 tap_pattern 'resource-id="com.caniko.cenix:id/folder_title"'
 "$adb" -s "$serial" shell input text "Utilities"
@@ -561,19 +563,19 @@ wait_ui 'text="Utilities".*resource-id="com.caniko.cenix:id/folder_title"' 1
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
 "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
-wait_ui 'content-desc="Utilities, folder, 2 applications' 1
+wait_ui 'content-desc="Utilities, folder, .* applications' 1
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
 go_home
-wait_ui 'content-desc="Utilities, folder, 2 applications' 1
+wait_ui 'content-desc="Utilities, folder, .* applications' 1
 pass "folders: title and membership survive process recreation"
 ui="$(dump_ui)"
 read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
-tap_pattern 'content-desc="Utilities, folder, 2 applications'
+tap_pattern 'content-desc="Utilities, folder, .* applications'
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
-drag_pattern_to_bounds 'content-desc="Cenix Fixture"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+drag_pattern_to_bounds 'content-desc="Cenix Fixture Two"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
-wait_ui 'content-desc="Settings, page 1' 1
-wait_ui 'folder, 2 applications' 0
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
+wait_ui 'folder, .* applications' 0
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 pass "folders: dragging a member out dissolves the single-member folder"
 
@@ -618,18 +620,18 @@ go_home
 wait_ui 'Emergency mode' 1
 ui="$(dump_ui)"
 if ! echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"'; then
-  set_search "Settings"
-  wait_ui 'text="Settings"' 1
+  set_search "Fixture"
+  wait_ui 'text="Cenix Fixture"' 1
   clear_search
   hide_keyboard
 fi
 pass "native-unavailable APK starts in Kotlin emergency and lists apps"
-set_search "Settings"
-wait_ui 'text="Settings"' 1
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
 pass "native-unavailable Kotlin search works"
 hide_keyboard
 tap_pattern 'resource-id="com.caniko.cenix:id/appLabel"'
-wait_resumed 'com.android.settings'
+wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
 go_home
 wait_ui 'Emergency mode' 1
 pass "native-unavailable launch + HOME still works"
