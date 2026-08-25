@@ -559,11 +559,16 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleBack() {
         if (dragLayer.isDragging) return dragLayer.cancel("back")
+        val imeVisible = root.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
         folderPopup?.let { popup ->
-            if (popup.clearTitleFocus()) hideKeyboard() else closeFolder("back")
+            if (imeVisible) {
+                popup.clearTitleFocus()
+                hideKeyboard()
+            } else {
+                closeFolder("back")
+            }
             return
         }
-        val imeVisible = root.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
         if (root.surface == LauncherSurface.ALL_APPS && imeVisible) {
             searchField.clearFocus()
             hideKeyboard()
