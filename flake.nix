@@ -77,7 +77,7 @@
       rustShells = harbor-rs.lib.mkDevShells {
         inherit pkgs craneLib cross;
       };
-      apkDebug = harbor-android.lib.mkAndroidApk {
+      apkDebugBase = harbor-android.lib.mkAndroidApk {
         inherit pkgs androidSdk rustToolchain;
         workspaceSrc = ./.;
         cargoPkg = "cenix-ffi";
@@ -90,6 +90,13 @@
         pname = "cenix-debug";
         buildCommand = "nix build .#apk-debug";
       };
+      apkDebug = apkDebugBase.overrideAttrs (old: {
+        CENIX_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
+        preBuild = (old.preBuild or "") + ''
+          export ANDROID_USER_HOME="$HOME/.android"
+          mkdir -p "$ANDROID_USER_HOME"
+        '';
+      });
     in {
       inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug;
       checks = {
