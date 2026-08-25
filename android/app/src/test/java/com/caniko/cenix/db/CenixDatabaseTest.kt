@@ -58,7 +58,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV2KeepsMetadata() {
+    fun migratesV1ToV3KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -77,7 +77,7 @@ class CenixDatabaseTest {
         sqlite.close()
 
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_1_2)
+            .addMigrations(CenixDatabase.MIGRATION_1_2, CenixDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
         val metadata = db.dao().metadata()
@@ -85,6 +85,40 @@ class CenixDatabaseTest {
         assertEquals(2, metadata!!.startupFailures)
         assertTrue(metadata.emergency)
         assertTrue(db.dao().workspaceItems().isEmpty())
+        assertEquals(listOf(1L), db.dao().workspacePages().map { it.pageId })
+        db.close()
+        context.deleteDatabase(name)
+    }
+
+    @Test
+    fun migratesV2ToV3PreservesPagesHotseatAndProfiles() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val name = "cenix-v2-v3.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(file, null)
+        sqlite.execSQL("CREATE TABLE `launcher_metadata` (`singletonId` INTEGER NOT NULL, `startupInProgress` INTEGER NOT NULL, `startupFailures` INTEGER NOT NULL, `lastFailureAt` INTEGER NOT NULL, `emergency` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`singletonId`))")
+        sqlite.execSQL("INSERT INTO launcher_metadata VALUES (1,0,0,0,0,0)")
+        sqlite.execSQL("CREATE TABLE `workspace_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `screen` INTEGER NOT NULL, `cellX` INTEGER NOT NULL, `cellY` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `className` TEXT NOT NULL, `profileId` INTEGER NOT NULL)")
+        sqlite.execSQL("CREATE UNIQUE INDEX `index_workspace_items_screen_cellX_cellY` ON `workspace_items` (`screen`,`cellX`,`cellY`)")
+        sqlite.execSQL("CREATE UNIQUE INDEX `index_workspace_items_packageName_className_profileId` ON `workspace_items` (`packageName`,`className`,`profileId`)")
+        sqlite.execSQL("INSERT INTO workspace_items VALUES (7,0,1,2,'page0','Main',10),(8,1,2,3,'page1','Main',11),(9,-1,3,0,'dock','Main',12)")
+        sqlite.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+        sqlite.execSQL("INSERT INTO room_master_table VALUES(42,'bfd9985aefa862a91336911fc458b1ce')")
+        sqlite.version = 2
+        sqlite.close()
+        val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
+            .addMigrations(CenixDatabase.MIGRATION_2_3)
+            .allowMainThreadQueries()
+            .build()
+        val items = db.dao().workspaceItems().associateBy { it.id }
+        assertEquals(1L, items[7]!!.containerId)
+        assertEquals(2L, items[8]!!.containerId)
+        assertEquals("HOTSEAT", items[9]!!.containerKind)
+        assertEquals(12L, items[9]!!.profileId)
+        assertEquals(10L, db.dao().workspaceMetadata()!!.nextItemId)
+        assertEquals(3L, db.dao().workspaceMetadata()!!.nextPageId)
         db.close()
         context.deleteDatabase(name)
     }

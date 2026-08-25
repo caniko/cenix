@@ -1216,6 +1216,82 @@ public object FfiConverterTypeAppId: FfiConverterRustBuffer<AppId> {
 
 
 
+data class CellRect (
+    var `cellX`: kotlin.Int,
+    var `cellY`: kotlin.Int,
+    var `spanX`: kotlin.Int,
+    var `spanY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCellRect: FfiConverterRustBuffer<CellRect> {
+    override fun read(buf: ByteBuffer): CellRect {
+        return CellRect(
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CellRect) = (
+            FfiConverterInt.allocationSize(value.`cellX`) +
+            FfiConverterInt.allocationSize(value.`cellY`) +
+            FfiConverterInt.allocationSize(value.`spanX`) +
+            FfiConverterInt.allocationSize(value.`spanY`)
+    )
+
+    override fun write(value: CellRect, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`cellX`, buf)
+            FfiConverterInt.write(value.`cellY`, buf)
+            FfiConverterInt.write(value.`spanX`, buf)
+            FfiConverterInt.write(value.`spanY`, buf)
+    }
+}
+
+
+
+data class ComponentId (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeComponentId: FfiConverterRustBuffer<ComponentId> {
+    override fun read(buf: ByteBuffer): ComponentId {
+        return ComponentId(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ComponentId) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`)
+    )
+
+    override fun write(value: ComponentId, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+    }
+}
+
+
+
 data class DiagnosticsConfig (
     var `level`: kotlin.String,
     var `releaseRedaction`: kotlin.Boolean
@@ -1248,13 +1324,48 @@ public object FfiConverterTypeDiagnosticsConfig: FfiConverterRustBuffer<Diagnost
 
 
 
+data class GridSpec (
+    var `cols`: kotlin.Int,
+    var `rows`: kotlin.Int,
+    var `hotseatCols`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGridSpec: FfiConverterRustBuffer<GridSpec> {
+    override fun read(buf: ByteBuffer): GridSpec {
+        return GridSpec(
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GridSpec) = (
+            FfiConverterInt.allocationSize(value.`cols`) +
+            FfiConverterInt.allocationSize(value.`rows`) +
+            FfiConverterInt.allocationSize(value.`hotseatCols`)
+    )
+
+    override fun write(value: GridSpec, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`cols`, buf)
+            FfiConverterInt.write(value.`rows`, buf)
+            FfiConverterInt.write(value.`hotseatCols`, buf)
+    }
+}
+
+
+
 data class WorkspaceItem (
-    var `package`: kotlin.String,
-    var `class`: kotlin.String,
-    var `profileId`: kotlin.ULong,
-    var `screen`: kotlin.Int,
-    var `cellX`: kotlin.Int,
-    var `cellY`: kotlin.Int
+    var `itemId`: kotlin.ULong,
+    var `component`: ComponentId,
+    var `container`: ContainerRef,
+    var `cell`: CellRect,
+    var `kind`: ItemKind
 ) {
 
     companion object
@@ -1266,41 +1377,70 @@ data class WorkspaceItem (
 public object FfiConverterTypeWorkspaceItem: FfiConverterRustBuffer<WorkspaceItem> {
     override fun read(buf: ByteBuffer): WorkspaceItem {
         return WorkspaceItem(
-            FfiConverterString.read(buf),
-            FfiConverterString.read(buf),
             FfiConverterULong.read(buf),
-            FfiConverterInt.read(buf),
-            FfiConverterInt.read(buf),
-            FfiConverterInt.read(buf),
+            FfiConverterTypeComponentId.read(buf),
+            FfiConverterTypeContainerRef.read(buf),
+            FfiConverterTypeCellRect.read(buf),
+            FfiConverterTypeItemKind.read(buf),
         )
     }
 
     override fun allocationSize(value: WorkspaceItem) = (
-            FfiConverterString.allocationSize(value.`package`) +
-            FfiConverterString.allocationSize(value.`class`) +
-            FfiConverterULong.allocationSize(value.`profileId`) +
-            FfiConverterInt.allocationSize(value.`screen`) +
-            FfiConverterInt.allocationSize(value.`cellX`) +
-            FfiConverterInt.allocationSize(value.`cellY`)
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterTypeComponentId.allocationSize(value.`component`) +
+            FfiConverterTypeContainerRef.allocationSize(value.`container`) +
+            FfiConverterTypeCellRect.allocationSize(value.`cell`) +
+            FfiConverterTypeItemKind.allocationSize(value.`kind`)
     )
 
     override fun write(value: WorkspaceItem, buf: ByteBuffer) {
-            FfiConverterString.write(value.`package`, buf)
-            FfiConverterString.write(value.`class`, buf)
-            FfiConverterULong.write(value.`profileId`, buf)
-            FfiConverterInt.write(value.`screen`, buf)
-            FfiConverterInt.write(value.`cellX`, buf)
-            FfiConverterInt.write(value.`cellY`, buf)
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterTypeComponentId.write(value.`component`, buf)
+            FfiConverterTypeContainerRef.write(value.`container`, buf)
+            FfiConverterTypeCellRect.write(value.`cell`, buf)
+            FfiConverterTypeItemKind.write(value.`kind`, buf)
+    }
+}
+
+
+
+data class WorkspacePage (
+    var `pageId`: kotlin.ULong,
+    var `rank`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspacePage: FfiConverterRustBuffer<WorkspacePage> {
+    override fun read(buf: ByteBuffer): WorkspacePage {
+        return WorkspacePage(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspacePage) = (
+            FfiConverterULong.allocationSize(value.`pageId`) +
+            FfiConverterInt.allocationSize(value.`rank`)
+    )
+
+    override fun write(value: WorkspacePage, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`pageId`, buf)
+            FfiConverterInt.write(value.`rank`, buf)
     }
 }
 
 
 
 data class WorkspaceSnapshot (
-    var `items`: List<WorkspaceItem>,
-    var `cols`: kotlin.Int,
-    var `rows`: kotlin.Int,
-    var `screens`: kotlin.Int
+    var `generation`: kotlin.ULong,
+    var `grid`: GridSpec,
+    var `pages`: List<WorkspacePage>,
+    var `items`: List<WorkspaceItem>
 ) {
 
     companion object
@@ -1312,32 +1452,38 @@ data class WorkspaceSnapshot (
 public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<WorkspaceSnapshot> {
     override fun read(buf: ByteBuffer): WorkspaceSnapshot {
         return WorkspaceSnapshot(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeGridSpec.read(buf),
+            FfiConverterSequenceTypeWorkspacePage.read(buf),
             FfiConverterSequenceTypeWorkspaceItem.read(buf),
-            FfiConverterInt.read(buf),
-            FfiConverterInt.read(buf),
-            FfiConverterInt.read(buf),
         )
     }
 
     override fun allocationSize(value: WorkspaceSnapshot) = (
-            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
-            FfiConverterInt.allocationSize(value.`cols`) +
-            FfiConverterInt.allocationSize(value.`rows`) +
-            FfiConverterInt.allocationSize(value.`screens`)
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
+            FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`)
     )
 
     override fun write(value: WorkspaceSnapshot, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterTypeGridSpec.write(value.`grid`, buf)
+            FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
             FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
-            FfiConverterInt.write(value.`cols`, buf)
-            FfiConverterInt.write(value.`rows`, buf)
-            FfiConverterInt.write(value.`screens`, buf)
     }
 }
 
 
 
 data class WorkspaceTransition (
-    var `items`: List<WorkspaceItem>
+    var `generation`: kotlin.ULong,
+    var `grid`: GridSpec,
+    var `pages`: List<WorkspacePage>,
+    var `items`: List<WorkspaceItem>,
+    var `createdPageIds`: List<kotlin.ULong>,
+    var `removedPageIds`: List<kotlin.ULong>,
+    var `changedItemIds`: List<kotlin.ULong>
 ) {
 
     companion object
@@ -1349,18 +1495,100 @@ data class WorkspaceTransition (
 public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<WorkspaceTransition> {
     override fun read(buf: ByteBuffer): WorkspaceTransition {
         return WorkspaceTransition(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeGridSpec.read(buf),
+            FfiConverterSequenceTypeWorkspacePage.read(buf),
             FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
         )
     }
 
     override fun allocationSize(value: WorkspaceTransition) = (
-            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`)
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
+            FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterSequenceULong.allocationSize(value.`createdPageIds`) +
+            FfiConverterSequenceULong.allocationSize(value.`removedPageIds`) +
+            FfiConverterSequenceULong.allocationSize(value.`changedItemIds`)
     )
 
     override fun write(value: WorkspaceTransition, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterTypeGridSpec.write(value.`grid`, buf)
+            FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
             FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterSequenceULong.write(value.`createdPageIds`, buf)
+            FfiConverterSequenceULong.write(value.`removedPageIds`, buf)
+            FfiConverterSequenceULong.write(value.`changedItemIds`, buf)
     }
 }
+
+
+
+sealed class ContainerRef {
+
+    data class Workspace(
+        val `pageId`: kotlin.ULong) : ContainerRef() {
+        companion object
+    }
+
+    object Hotseat : ContainerRef()
+
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeContainerRef : FfiConverterRustBuffer<ContainerRef>{
+    override fun read(buf: ByteBuffer): ContainerRef {
+        return when(buf.getInt()) {
+            1 -> ContainerRef.Workspace(
+                FfiConverterULong.read(buf),
+                )
+            2 -> ContainerRef.Hotseat
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: ContainerRef) = when(value) {
+        is ContainerRef.Workspace -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is ContainerRef.Hotseat -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: ContainerRef, buf: ByteBuffer) {
+        when(value) {
+            is ContainerRef.Workspace -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is ContainerRef.Hotseat -> {
+                buf.putInt(2)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
 
 
 
@@ -1444,42 +1672,109 @@ public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineExcepti
 
 
 
+
+enum class ItemKind {
+
+    APPLICATION;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeItemKind: FfiConverterRustBuffer<ItemKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ItemKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ItemKind) = 4UL
+
+    override fun write(value: ItemKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 sealed class WorkspaceCommand {
 
-    data class Place(
-        val `package`: kotlin.String,
-        val `class`: kotlin.String,
-        val `profileId`: kotlin.ULong,
-        val `screen`: kotlin.Int,
-        val `cellX`: kotlin.Int,
-        val `cellY`: kotlin.Int) : WorkspaceCommand() {
+    data class PlaceFromAllApps(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `component`: ComponentId,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Move(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
         companion object
     }
 
     data class Remove(
-        val `package`: kotlin.String,
-        val `class`: kotlin.String,
-        val `profileId`: kotlin.ULong) : WorkspaceCommand() {
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong) : WorkspaceCommand() {
         companion object
     }
 
     data class Dock(
-        val `package`: kotlin.String,
-        val `class`: kotlin.String,
-        val `profileId`: kotlin.ULong) : WorkspaceCommand() {
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `rank`: kotlin.Int) : WorkspaceCommand() {
         companion object
     }
 
-    data class Pin(
-        val `package`: kotlin.String,
-        val `class`: kotlin.String,
-        val `profileId`: kotlin.ULong,
-        val `preferredScreen`: kotlin.Int) : WorkspaceCommand() {
+    data class Undock(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Reorder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddPage(
+        val `expectedGeneration`: kotlin.ULong,
+        val `pageId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveEmptyPage(
+        val `expectedGeneration`: kotlin.ULong,
+        val `pageId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class SetGrid(
+        val `expectedGeneration`: kotlin.ULong,
+        val `grid`: GridSpec) : WorkspaceCommand() {
         companion object
     }
 
     data class DropMissing(
-        val `live`: List<AppId>) : WorkspaceCommand() {
+        val `expectedGeneration`: kotlin.ULong,
+        val `live`: List<ComponentId>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Cancelled(
+        val `expectedGeneration`: kotlin.ULong) : WorkspaceCommand() {
         companion object
     }
 
@@ -1494,124 +1789,238 @@ sealed class WorkspaceCommand {
 public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<WorkspaceCommand>{
     override fun read(buf: ByteBuffer): WorkspaceCommand {
         return when(buf.getInt()) {
-            1 -> WorkspaceCommand.Place(
-                FfiConverterString.read(buf),
-                FfiConverterString.read(buf),
+            1 -> WorkspaceCommand.PlaceFromAllApps(
                 FfiConverterULong.read(buf),
-                FfiConverterInt.read(buf),
-                FfiConverterInt.read(buf),
-                FfiConverterInt.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeComponentId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
                 )
-            2 -> WorkspaceCommand.Remove(
-                FfiConverterString.read(buf),
-                FfiConverterString.read(buf),
+            2 -> WorkspaceCommand.Move(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            3 -> WorkspaceCommand.Remove(
+                FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            3 -> WorkspaceCommand.Dock(
-                FfiConverterString.read(buf),
-                FfiConverterString.read(buf),
+            4 -> WorkspaceCommand.Dock(
                 FfiConverterULong.read(buf),
-                )
-            4 -> WorkspaceCommand.Pin(
-                FfiConverterString.read(buf),
-                FfiConverterString.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterInt.read(buf),
                 )
-            5 -> WorkspaceCommand.DropMissing(
-                FfiConverterSequenceTypeAppId.read(buf),
+            5 -> WorkspaceCommand.Undock(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            6 -> WorkspaceCommand.Reorder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            7 -> WorkspaceCommand.AddPage(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            8 -> WorkspaceCommand.RemoveEmptyPage(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            9 -> WorkspaceCommand.SetGrid(
+                FfiConverterULong.read(buf),
+                FfiConverterTypeGridSpec.read(buf),
+                )
+            10 -> WorkspaceCommand.DropMissing(
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceTypeComponentId.read(buf),
+                )
+            11 -> WorkspaceCommand.Cancelled(
+                FfiConverterULong.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
 
     override fun allocationSize(value: WorkspaceCommand) = when(value) {
-        is WorkspaceCommand.Place -> {
+        is WorkspaceCommand.PlaceFromAllApps -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
-                + FfiConverterString.allocationSize(value.`package`)
-                + FfiConverterString.allocationSize(value.`class`)
-                + FfiConverterULong.allocationSize(value.`profileId`)
-                + FfiConverterInt.allocationSize(value.`screen`)
-                + FfiConverterInt.allocationSize(value.`cellX`)
-                + FfiConverterInt.allocationSize(value.`cellY`)
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.Move -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
             )
         }
         is WorkspaceCommand.Remove -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
-                + FfiConverterString.allocationSize(value.`package`)
-                + FfiConverterString.allocationSize(value.`class`)
-                + FfiConverterULong.allocationSize(value.`profileId`)
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
             )
         }
         is WorkspaceCommand.Dock -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
-                + FfiConverterString.allocationSize(value.`package`)
-                + FfiConverterString.allocationSize(value.`class`)
-                + FfiConverterULong.allocationSize(value.`profileId`)
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterInt.allocationSize(value.`rank`)
             )
         }
-        is WorkspaceCommand.Pin -> {
+        is WorkspaceCommand.Undock -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
-                + FfiConverterString.allocationSize(value.`package`)
-                + FfiConverterString.allocationSize(value.`class`)
-                + FfiConverterULong.allocationSize(value.`profileId`)
-                + FfiConverterInt.allocationSize(value.`preferredScreen`)
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.Reorder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.AddPage -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is WorkspaceCommand.RemoveEmptyPage -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is WorkspaceCommand.SetGrid -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterTypeGridSpec.allocationSize(value.`grid`)
             )
         }
         is WorkspaceCommand.DropMissing -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
-                + FfiConverterSequenceTypeAppId.allocationSize(value.`live`)
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterSequenceTypeComponentId.allocationSize(value.`live`)
+            )
+        }
+        is WorkspaceCommand.Cancelled -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
             )
         }
     }
 
     override fun write(value: WorkspaceCommand, buf: ByteBuffer) {
         when(value) {
-            is WorkspaceCommand.Place -> {
+            is WorkspaceCommand.PlaceFromAllApps -> {
                 buf.putInt(1)
-                FfiConverterString.write(value.`package`, buf)
-                FfiConverterString.write(value.`class`, buf)
-                FfiConverterULong.write(value.`profileId`, buf)
-                FfiConverterInt.write(value.`screen`, buf)
-                FfiConverterInt.write(value.`cellX`, buf)
-                FfiConverterInt.write(value.`cellY`, buf)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Move -> {
+                buf.putInt(2)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
                 Unit
             }
             is WorkspaceCommand.Remove -> {
-                buf.putInt(2)
-                FfiConverterString.write(value.`package`, buf)
-                FfiConverterString.write(value.`class`, buf)
-                FfiConverterULong.write(value.`profileId`, buf)
+                buf.putInt(3)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
                 Unit
             }
             is WorkspaceCommand.Dock -> {
-                buf.putInt(3)
-                FfiConverterString.write(value.`package`, buf)
-                FfiConverterString.write(value.`class`, buf)
-                FfiConverterULong.write(value.`profileId`, buf)
+                buf.putInt(4)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterInt.write(value.`rank`, buf)
                 Unit
             }
-            is WorkspaceCommand.Pin -> {
-                buf.putInt(4)
-                FfiConverterString.write(value.`package`, buf)
-                FfiConverterString.write(value.`class`, buf)
-                FfiConverterULong.write(value.`profileId`, buf)
-                FfiConverterInt.write(value.`preferredScreen`, buf)
+            is WorkspaceCommand.Undock -> {
+                buf.putInt(5)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Reorder -> {
+                buf.putInt(6)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddPage -> {
+                buf.putInt(7)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveEmptyPage -> {
+                buf.putInt(8)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.SetGrid -> {
+                buf.putInt(9)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterTypeGridSpec.write(value.`grid`, buf)
                 Unit
             }
             is WorkspaceCommand.DropMissing -> {
-                buf.putInt(5)
-                FfiConverterSequenceTypeAppId.write(value.`live`, buf)
+                buf.putInt(10)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterSequenceTypeComponentId.write(value.`live`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Cancelled -> {
+                buf.putInt(11)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1644,6 +2053,12 @@ sealed class WorkspaceException: kotlin.Exception() {
             get() = ""
     }
 
+    class MissingPage(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
     class InvalidProfile(
         ) : WorkspaceException() {
         override val message
@@ -1651,6 +2066,24 @@ sealed class WorkspaceException: kotlin.Exception() {
     }
 
     class Full(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class StaleGeneration(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidGrid(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvariantViolation(
         ) : WorkspaceException() {
         override val message
             get() = ""
@@ -1675,8 +2108,12 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
             1 -> WorkspaceException.Occupied()
             2 -> WorkspaceException.OutOfBounds()
             3 -> WorkspaceException.MissingItem()
-            4 -> WorkspaceException.InvalidProfile()
-            5 -> WorkspaceException.Full()
+            4 -> WorkspaceException.MissingPage()
+            5 -> WorkspaceException.InvalidProfile()
+            6 -> WorkspaceException.Full()
+            7 -> WorkspaceException.StaleGeneration()
+            8 -> WorkspaceException.InvalidGrid()
+            9 -> WorkspaceException.InvariantViolation()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -1695,11 +2132,27 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is WorkspaceException.MissingPage -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
             is WorkspaceException.InvalidProfile -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
             is WorkspaceException.Full -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.StaleGeneration -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvariantViolation -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
@@ -1720,12 +2173,28 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 buf.putInt(3)
                 Unit
             }
-            is WorkspaceException.InvalidProfile -> {
+            is WorkspaceException.MissingPage -> {
                 buf.putInt(4)
                 Unit
             }
-            is WorkspaceException.Full -> {
+            is WorkspaceException.InvalidProfile -> {
                 buf.putInt(5)
+                Unit
+            }
+            is WorkspaceException.Full -> {
+                buf.putInt(6)
+                Unit
+            }
+            is WorkspaceException.StaleGeneration -> {
+                buf.putInt(7)
+                Unit
+            }
+            is WorkspaceException.InvalidGrid -> {
+                buf.putInt(8)
+                Unit
+            }
+            is WorkspaceException.InvariantViolation -> {
+                buf.putInt(9)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1823,6 +2292,34 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeComponentId: FfiConverterRustBuffer<List<ComponentId>> {
+    override fun read(buf: ByteBuffer): List<ComponentId> {
+        val len = buf.getInt()
+        return List<ComponentId>(len) {
+            FfiConverterTypeComponentId.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ComponentId>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeComponentId.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ComponentId>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeComponentId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeWorkspaceItem: FfiConverterRustBuffer<List<WorkspaceItem>> {
     override fun read(buf: ByteBuffer): List<WorkspaceItem> {
         val len = buf.getInt()
@@ -1841,6 +2338,34 @@ public object FfiConverterSequenceTypeWorkspaceItem: FfiConverterRustBuffer<List
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeWorkspaceItem.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List<WorkspacePage>> {
+    override fun read(buf: ByteBuffer): List<WorkspacePage> {
+        val len = buf.getInt()
+        return List<WorkspacePage>(len) {
+            FfiConverterTypeWorkspacePage.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WorkspacePage>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWorkspacePage.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WorkspacePage>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWorkspacePage.write(it, buf)
         }
     }
 }
