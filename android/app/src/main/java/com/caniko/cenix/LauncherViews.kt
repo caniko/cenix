@@ -2,20 +2,36 @@ package com.caniko.cenix
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Parcel
 import android.os.Parcelable
+import android.text.InputFilter
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.GridLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.OverScroller
+import android.widget.ScrollView
+import android.widget.TextView
+import com.caniko.cenix.uniffi.FolderMember
 import kotlin.math.abs
 
 class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs) {
@@ -88,6 +104,13 @@ open class CellLayout @JvmOverloads constructor(context: Context, attrs: Attribu
         val cellX = if (layoutDirection == LAYOUT_DIRECTION_RTL) columns - 1 - visualX else visualX
         return cellX to (y * rows / height).toInt().coerceIn(0, rows - 1)
     }
+
+    fun viewAt(cellX: Int, cellY: Int): View? = (0 until childCount)
+        .map(::getChildAt)
+        .firstOrNull {
+            val params = it.layoutParams as? CellParams
+            params?.cellX == cellX && params.cellY == cellY
+        }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
@@ -291,16 +314,215 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
 
 class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ListView(context, attrs)
 
-data class LauncherDrag(val app: LaunchableApp, val itemId: ULong?)
-data class DropDestination(val container: CellLayout?, val cellX: Int = 0, val cellY: Int = 0, val remove: Boolean = false)
+class FolderIconView(context: Context) : LinearLayout(context) {
+    private val preview = GridLayout(context).apply { columnCount = 2; rowCount = 2 }
+    private val label = TextView(context).apply { gravity = android.view.Gravity.CENTER; maxLines = 1 }
+
+    init {
+        orientation = VERTICAL
+        gravity = android.view.Gravity.CENTER
+        val size = dp(36)
+        addView(preview, LayoutParams(size, size))
+        addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        isFocusable = true
+    }
+
+    fun bind(title: String, count: Int, icons: List<Drawable?>) {
+        preview.removeAllViews()
+        repeat(4) { index ->
+            preview.addView(ImageView(context).apply {
+                setImageDrawable(icons.getOrNull(index))
+                contentDescription = null
+            }, GridLayout.LayoutParams().apply { width = dp(18); height = dp(18) })
+        }
+        label.text = title.ifEmpty { context.getString(R.string.folder) }
+        contentDescription = context.getString(R.string.folder_description, label.text, count)
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+}
+
+class FolderPopup(context: Context) : FrameLayout(context) {
+    private val panel = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(12))
+        background = GradientDrawable().apply {
+            setColor(resolveBackgroundColor())
+            cornerRadius = dp(20).toFloat()
+        }
+        elevation = dp(12).toFloat()
+        isClickable = true
+    }
+    private val title = EditText(context).apply {
+        hint = context.getString(R.string.folder)
+        maxLines = 1
+        imeOptions = EditorInfo.IME_ACTION_DONE
+        filters = arrayOf(InputFilter { source, start, end, dest, dstart, dend ->
+            val candidate = dest.substring(0, dstart) + source.subSequence(start, end) + dest.substring(dend)
+            if (candidate.codePointCount(0, candidate.length) <= 80 && candidate.codePoints().noneMatch(Character::isISOControl)) null else ""
+        })
+    }
+    private val members = GridLayout(context).apply { columnCount = 3 }
+    private val memberScroll = ScrollView(context).apply {
+        isFillViewport = true
+        addView(members, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+    }
+    private val close = Button(context).apply { text = context.getString(R.string.close_folder) }
+    var folderId: ULong = 0UL
+        private set
+    var onClose: (() -> Unit)? = null
+    var onRename: ((String) -> Unit)? = null
+    var onLaunch: ((LaunchableApp) -> Unit)? = null
+    var onBeginDrag: ((View, LaunchableApp, FolderMember) -> Unit)? = null
+    var onMove: ((FolderMember, UInt) -> Unit)? = null
+    var onRemove: ((FolderMember) -> Unit)? = null
+
+    init {
+        id = R.id.folder_popup
+        title.id = R.id.folder_title
+        members.id = R.id.folder_members
+        isClickable = true
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        setOnClickListener { onClose?.invoke() }
+        panel.setOnClickListener { }
+        panel.addView(title, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        panel.addView(memberScroll, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(76)))
+        panel.addView(close, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(panel, LayoutParams(dp(320), LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER))
+        close.setOnClickListener { onClose?.invoke() }
+        title.setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_DONE) {
+                commitTitle()
+                title.clearFocus()
+                true
+            } else false
+        }
+        title.setOnFocusChangeListener { _, focused -> if (!focused) commitTitle() }
+    }
+
+    fun bind(
+        id: ULong,
+        currentTitle: String,
+        entries: List<Pair<FolderMember, LaunchableApp>>,
+    ) {
+        folderId = id
+        title.setText(currentTitle)
+        title.tag = currentTitle
+        members.removeAllViews()
+        memberScroll.layoutParams = (memberScroll.layoutParams as LinearLayout.LayoutParams).apply {
+            height = (((entries.size + 2) / 3).coerceAtLeast(1) * dp(76)).coerceAtMost(dp(300))
+        }
+        entries.forEachIndexed { index, (member, app) ->
+            val cell = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                isFocusable = true
+                contentDescription = app.label
+                addView(ImageView(context).apply {
+                    setImageDrawable(app.icon)
+                    contentDescription = null
+                }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                addView(TextView(context).apply {
+                    text = app.label
+                    gravity = android.view.Gravity.CENTER
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+                setOnClickListener { onLaunch?.invoke(app) }
+                setOnLongClickListener { onBeginDrag?.invoke(this, app, member); true }
+                accessibilityDelegate = object : View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        if (index > 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_left, context.getString(R.string.move_earlier)))
+                        if (index + 1 < entries.size) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_right, context.getString(R.string.move_later)))
+                        info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_remove_from_folder, context.getString(R.string.remove_from_folder)))
+                    }
+
+                    override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean = when (action) {
+                        R.id.action_move_left -> { onMove?.invoke(member, (index - 1).coerceAtLeast(0).toUInt()); true }
+                        R.id.action_move_right -> { onMove?.invoke(member, (index + 1).coerceAtMost(entries.lastIndex).toUInt()); true }
+                        R.id.action_remove_from_folder -> { onRemove?.invoke(member); true }
+                        else -> super.performAccessibilityAction(host, action, args)
+                    }
+                }
+            }
+            members.addView(cell, GridLayout.LayoutParams().apply { width = dp(88); height = dp(76) })
+        }
+        contentDescription = context.getString(R.string.folder_description, currentTitle.ifEmpty { context.getString(R.string.folder) }, entries.size)
+    }
+
+    fun rankAt(rawX: Float, rawY: Float): UInt? {
+        val location = IntArray(2)
+        members.getLocationOnScreen(location)
+        if (rawX < location[0] || rawY < location[1] || rawX >= location[0] + members.width || rawY >= location[1] + members.height) return null
+        for (index in 0 until members.childCount) {
+            val child = members.getChildAt(index)
+            child.getLocationOnScreen(location)
+            if (Rect(location[0], location[1], location[0] + child.width, location[1] + child.height).contains(rawX.toInt(), rawY.toInt())) {
+                return index.toUInt()
+            }
+        }
+        return members.childCount.toUInt()
+    }
+
+    fun clearTitleFocus(): Boolean {
+        if (!title.hasFocus()) return false
+        title.clearFocus()
+        return true
+    }
+
+    fun focusTitle() {
+        title.requestFocus()
+        title.setSelection(title.text?.length ?: 0)
+        context.getSystemService(InputMethodManager::class.java).showSoftInput(title, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun commitTitle() {
+        val previous = title.tag as? String ?: ""
+        val next = title.text?.toString().orEmpty()
+        if (next != previous) {
+            title.tag = next
+            onRename?.invoke(next)
+        }
+    }
+
+    private fun resolveBackgroundColor(): Int = context.obtainStyledAttributes(intArrayOf(android.R.attr.colorBackground)).use {
+        it.getColor(0, Color.WHITE)
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+}
+
+data class CellTarget(val itemId: ULong, val folderId: ULong? = null)
+data class LauncherDrag(
+    val app: LaunchableApp?,
+    val itemId: ULong?,
+    val sourceFolderId: ULong? = null,
+    val isFolder: Boolean = false,
+)
+data class DropDestination(
+    val container: CellLayout?,
+    val cellX: Int = 0,
+    val cellY: Int = 0,
+    val remove: Boolean = false,
+    val targetItemId: ULong? = null,
+    val folderId: ULong? = null,
+    val folderRank: UInt? = null,
+    val createFolder: Boolean = false,
+)
 
 class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs) {
     var pager: WorkspacePager? = null
     var hotseat: HotseatView? = null
     var removeTarget: View? = null
+    var folderPopup: FolderPopup? = null
     var onDrop: ((LauncherDrag, DropDestination) -> Unit)? = null
+    var onFolderHover: ((ULong) -> Unit)? = null
     private var drag: LauncherDrag? = null
     private var source: View? = null
+    private var activeTarget: View? = null
+    private var hoverFolderId: ULong? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val openFolder = Runnable { hoverFolderId?.let { onFolderHover?.invoke(it) } }
     val isDragging: Boolean get() = drag != null
 
     fun beginDrag(view: View, payload: LauncherDrag): Boolean {
@@ -319,6 +541,7 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
                 val location = IntArray(2)
                 pager?.getLocationOnScreen(location)
                 pager?.edgeHover(event.rawX - location[0])
+                updateFolderTarget(payload, event.rawX, event.rawY)
             }
             MotionEvent.ACTION_UP -> {
                 val destination = destination(event.rawX, event.rawY)
@@ -340,19 +563,71 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
         removeTarget?.visibility = GONE
         drag = null
         source = null
+        activeTarget?.isActivated = false
+        activeTarget?.scaleX = 1f
+        activeTarget?.scaleY = 1f
+        activeTarget = null
+        hoverFolderId = null
+        handler.removeCallbacks(openFolder)
         pager?.resetEdge()
     }
 
     private fun destination(rawX: Float, rawY: Float): DropDestination {
         if (removeTarget?.contains(rawX, rawY) == true) return DropDestination(null, remove = true)
-        hotseat?.cellAt(rawX, rawY)?.let { return DropDestination(hotseat, it.first, it.second) }
-        pager?.currentLayout?.cellAt(rawX, rawY)?.let { return DropDestination(pager?.currentLayout, it.first, it.second) }
+        folderPopup?.rankAt(rawX, rawY)?.let { return DropDestination(null, folderId = folderPopup?.folderId, folderRank = it) }
+        hotseat?.cellAt(rawX, rawY)?.let { return cellDestination(hotseat, it.first, it.second, rawX, rawY) }
+        pager?.currentLayout?.cellAt(rawX, rawY)?.let { return cellDestination(pager?.currentLayout, it.first, it.second, rawX, rawY) }
         return DropDestination(null)
+    }
+
+    private fun cellDestination(layout: CellLayout?, x: Int, y: Int, rawX: Float, rawY: Float): DropDestination {
+        val view = layout?.viewAt(x, y)
+        val target = view?.tag as? CellTarget
+        return DropDestination(
+            container = layout,
+            cellX = x,
+            cellY = y,
+            targetItemId = target?.itemId,
+            folderId = target?.folderId,
+            createFolder = target != null && target.folderId == null && view.centralContains(rawX, rawY),
+        )
+    }
+
+    private fun updateFolderTarget(payload: LauncherDrag, rawX: Float, rawY: Float) {
+        val destination = destination(rawX, rawY)
+        val target = when {
+            destination.folderId != null && destination.folderRank == null && !payload.isFolder -> destination.folderId
+            else -> null
+        }
+        val layout = destination.container
+        val view = if ((destination.createFolder && !payload.isFolder) || target != null) layout?.viewAt(destination.cellX, destination.cellY) else null
+        if (view !== activeTarget) {
+            activeTarget?.isActivated = false
+            activeTarget?.scaleX = 1f
+            activeTarget?.scaleY = 1f
+            activeTarget = view
+            activeTarget?.isActivated = true
+            activeTarget?.scaleX = 1.08f
+            activeTarget?.scaleY = 1.08f
+        }
+        if (target != hoverFolderId) {
+            handler.removeCallbacks(openFolder)
+            hoverFolderId = target
+            if (target != null) handler.postDelayed(openFolder, 800)
+        }
     }
 
     private fun View.contains(rawX: Float, rawY: Float): Boolean {
         val location = IntArray(2)
         getLocationOnScreen(location)
         return Rect(location[0], location[1], location[0] + width, location[1] + height).contains(rawX.toInt(), rawY.toInt())
+    }
+
+    private fun View?.centralContains(rawX: Float, rawY: Float): Boolean {
+        this ?: return false
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        return rawX in (location[0] + width * 0.25f)..(location[0] + width * 0.75f) &&
+            rawY in (location[1] + height * 0.25f)..(location[1] + height * 0.75f)
     }
 }

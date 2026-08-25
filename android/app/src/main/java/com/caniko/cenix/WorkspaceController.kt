@@ -42,6 +42,68 @@ class WorkspaceController(
         return execute("remove", WorkspaceCommand.Remove(state.generation, itemId))
     }
 
+    fun createFolder(sourceItemId: ULong, destinationItemId: ULong): WorkspaceTransition? {
+        val state = snapshot()
+        return execute(
+            "folder-create",
+            WorkspaceCommand.CreateFolder(
+                state.generation,
+                repository.nextItemId(),
+                sourceItemId,
+                destinationItemId,
+            ),
+        )
+    }
+
+    fun addFromAllAppsToFolder(app: LaunchableApp, folderId: ULong, rank: UInt): WorkspaceTransition? {
+        val state = snapshot()
+        return execute(
+            "folder-add",
+            WorkspaceCommand.AddFromAllAppsToFolder(
+                state.generation,
+                repository.nextItemId(),
+                ComponentId(app.packageName, app.className, app.profileId.toULong()),
+                folderId,
+                rank,
+            ),
+        )
+    }
+
+    fun addItemToFolder(itemId: ULong, folderId: ULong, rank: UInt): WorkspaceTransition? {
+        val state = snapshot()
+        return execute("folder-add", WorkspaceCommand.AddItemToFolder(state.generation, itemId, folderId, rank))
+    }
+
+    fun moveFolderMember(folderId: ULong, itemId: ULong, rank: UInt): WorkspaceTransition? {
+        val state = snapshot()
+        return execute("folder-reorder", WorkspaceCommand.MoveFolderMember(state.generation, folderId, itemId, rank))
+    }
+
+    fun removeItemFromFolder(
+        folderId: ULong,
+        itemId: ULong,
+        container: ContainerRef,
+        cellX: Int,
+        cellY: Int,
+    ): WorkspaceTransition? {
+        val state = snapshot()
+        return execute(
+            "folder-remove",
+            WorkspaceCommand.RemoveItemFromFolder(
+                state.generation,
+                folderId,
+                itemId,
+                container,
+                CellRect(cellX, cellY, 1, 1),
+            ),
+        )
+    }
+
+    fun renameFolder(folderId: ULong, title: String): WorkspaceTransition? {
+        val state = snapshot()
+        return execute("folder-rename", WorkspaceCommand.RenameFolder(state.generation, folderId, title))
+    }
+
     fun dock(itemId: ULong): WorkspaceTransition? {
         val state = snapshot()
         val occupied = state.items.filter { it.container is ContainerRef.Hotseat }.map { it.cell.cellX }.toSet()

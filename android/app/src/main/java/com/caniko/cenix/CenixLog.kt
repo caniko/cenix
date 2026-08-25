@@ -14,6 +14,8 @@ enum class EventId {
     ROOM_COMMIT,
     ROOM_ROLLBACK,
     DRAG_CANCEL,
+    FOLDER_OPEN,
+    FOLDER_CLOSE,
     SHELL_TRANSITION,
     MIGRATION,
     EMERGENCY,
@@ -27,7 +29,7 @@ object CenixLog {
     @Volatile
     var redact: Boolean = true
 
-    private val sensitive = listOf("package", "class", "label", "query", "profile", "component")
+    private val sensitive = listOf("package", "class", "label", "query", "profile", "component", "title")
 
     fun event(id: EventId, severity: Severity, fields: Map<String, String> = emptyMap()) {
         val line = format(id, severity, fields)

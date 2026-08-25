@@ -28,9 +28,10 @@ pub enum ContainerRef {
     Hotseat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ItemKind {
-    Application,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ItemPayload {
+    Application(ComponentId),
+    Folder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,10 +43,23 @@ pub struct WorkspacePage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceItem {
     pub item_id: u64,
-    pub component: ComponentId,
+    pub payload: ItemPayload,
     pub container: ContainerRef,
     pub cell: CellRect,
-    pub kind: ItemKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderMember {
+    pub item_id: u64,
+    pub component: ComponentId,
+    pub rank: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folder {
+    pub folder_id: u64,
+    pub title: String,
+    pub members: Vec<FolderMember>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +68,7 @@ pub struct WorkspaceSnapshot {
     pub grid: GridSpec,
     pub pages: Vec<WorkspacePage>,
     pub items: Vec<WorkspaceItem>,
+    pub folders: Vec<Folder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +107,43 @@ pub enum WorkspaceCommand {
         container: ContainerRef,
         cell: CellRect,
     },
+    CreateFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        first_item_id: u64,
+        second_item_id: u64,
+    },
+    AddFromAllAppsToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        component: ComponentId,
+        folder_id: u64,
+        rank: u32,
+    },
+    AddItemToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        folder_id: u64,
+        rank: u32,
+    },
+    MoveFolderMember {
+        expected_generation: u64,
+        folder_id: u64,
+        item_id: u64,
+        rank: u32,
+    },
+    RemoveItemFromFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        item_id: u64,
+        container: ContainerRef,
+        cell: CellRect,
+    },
+    RenameFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        title: String,
+    },
     AddPage {
         expected_generation: u64,
         page_id: u64,
@@ -119,6 +171,7 @@ pub struct WorkspaceTransition {
     pub grid: GridSpec,
     pub pages: Vec<WorkspacePage>,
     pub items: Vec<WorkspaceItem>,
+    pub folders: Vec<Folder>,
     pub created_page_ids: Vec<u64>,
     pub removed_page_ids: Vec<u64>,
     pub changed_item_ids: Vec<u64>,
@@ -130,10 +183,13 @@ pub enum WorkspaceError {
     OutOfBounds,
     MissingItem,
     MissingPage,
+    MissingFolder,
     InvalidProfile,
     Full,
     StaleGeneration,
     InvalidGrid,
+    InvalidTitle,
+    CrossProfile,
     InvariantViolation,
 }
 
@@ -161,6 +217,30 @@ impl WorkspaceCommand {
                 ..
             }
             | Self::Reorder {
+                expected_generation,
+                ..
+            }
+            | Self::CreateFolder {
+                expected_generation,
+                ..
+            }
+            | Self::AddFromAllAppsToFolder {
+                expected_generation,
+                ..
+            }
+            | Self::AddItemToFolder {
+                expected_generation,
+                ..
+            }
+            | Self::MoveFolderMember {
+                expected_generation,
+                ..
+            }
+            | Self::RemoveItemFromFolder {
+                expected_generation,
+                ..
+            }
+            | Self::RenameFolder {
                 expected_generation,
                 ..
             }
@@ -248,6 +328,41 @@ pub fn apply_workspace_command(
             cell,
             ..
         } => move_item(&mut snapshot, item_id, container, cell, true)?,
+        WorkspaceCommand::CreateFolder {
+            folder_id,
+            first_item_id,
+            second_item_id,
+            ..
+        } => create_folder(&mut snapshot, folder_id, first_item_id, second_item_id)?,
+        WorkspaceCommand::AddFromAllAppsToFolder {
+            item_id,
+            component,
+            folder_id,
+            rank,
+            ..
+        } => add_from_all_apps_to_folder(&mut snapshot, item_id, component, folder_id, rank)?,
+        WorkspaceCommand::AddItemToFolder {
+            item_id,
+            folder_id,
+            rank,
+            ..
+        } => add_item_to_folder(&mut snapshot, item_id, folder_id, rank)?,
+        WorkspaceCommand::MoveFolderMember {
+            folder_id,
+            item_id,
+            rank,
+            ..
+        } => move_folder_member(&mut snapshot, folder_id, item_id, rank)?,
+        WorkspaceCommand::RemoveItemFromFolder {
+            folder_id,
+            item_id,
+            container,
+            cell,
+            ..
+        } => remove_item_from_folder(&mut snapshot, folder_id, item_id, container, cell)?,
+        WorkspaceCommand::RenameFolder {
+            folder_id, title, ..
+        } => rename_folder(&mut snapshot, folder_id, title)?,
         WorkspaceCommand::AddPage { page_id, .. } => {
             if page_id == 0
                 || page_id >= i64::MAX as u64
@@ -274,7 +389,7 @@ pub fn apply_workspace_command(
                 validate_component(component)?;
             }
             let live: HashSet<_> = live.into_iter().collect();
-            snapshot.items.retain(|item| live.contains(&item.component));
+            drop_missing(&mut snapshot, &live)?;
         }
         WorkspaceCommand::Cancelled { .. } => {}
     }
@@ -283,13 +398,15 @@ pub fn apply_workspace_command(
         removed_page_ids.extend(trim_empty_trailing_pages(&mut snapshot));
     }
     normalize_pages(&mut snapshot.pages)?;
+    normalize_folders(&mut snapshot.folders);
     validate_snapshot(&snapshot)?;
     sort_snapshot(&mut snapshot);
 
-    let changed_item_ids = changed_items(&before.items, &snapshot.items);
+    let changed_item_ids = changed_items(&before, &snapshot);
     let changed = before.grid != snapshot.grid
         || before.pages != snapshot.pages
-        || before.items != snapshot.items;
+        || before.items != snapshot.items
+        || before.folders != snapshot.folders;
     if changed {
         snapshot.generation = snapshot
             .generation
@@ -304,6 +421,7 @@ pub fn apply_workspace_command(
         grid: snapshot.grid,
         pages: snapshot.pages,
         items: snapshot.items,
+        folders: snapshot.folders,
         created_page_ids,
         removed_page_ids,
         changed_item_ids,
@@ -332,10 +450,7 @@ fn place_from_all_apps(
     if item_id == 0
         || item_id >= i64::MAX as u64
         || snapshot.items.iter().any(|item| item.item_id == item_id)
-        || snapshot
-            .items
-            .iter()
-            .any(|item| item.component == component)
+        || component_exists(snapshot, &component)
     {
         return Err(WorkspaceError::InvariantViolation);
     }
@@ -346,10 +461,9 @@ fn place_from_all_apps(
     }
     snapshot.items.push(WorkspaceItem {
         item_id,
-        component,
+        payload: ItemPayload::Application(component),
         container,
         cell,
-        kind: ItemKind::Application,
     });
     Ok(())
 }
@@ -393,10 +507,348 @@ fn move_item(
 }
 
 fn remove_item(snapshot: &mut WorkspaceSnapshot, item_id: u64) -> Result<(), WorkspaceError> {
-    let len = snapshot.items.len();
+    let item = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == item_id)
+        .cloned()
+        .ok_or(WorkspaceError::MissingItem)?;
     snapshot.items.retain(|item| item.item_id != item_id);
-    if snapshot.items.len() == len {
-        return Err(WorkspaceError::MissingItem);
+    if item.payload == ItemPayload::Folder {
+        snapshot
+            .folders
+            .retain(|folder| folder.folder_id != item_id);
+    }
+    Ok(())
+}
+
+fn create_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+    first_item_id: u64,
+    second_item_id: u64,
+) -> Result<(), WorkspaceError> {
+    if folder_id == 0
+        || folder_id >= i64::MAX as u64
+        || first_item_id == second_item_id
+        || id_exists(snapshot, folder_id)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    let first = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == first_item_id)
+        .cloned()
+        .ok_or(WorkspaceError::MissingItem)?;
+    let second = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == second_item_id)
+        .cloned()
+        .ok_or(WorkspaceError::MissingItem)?;
+    let ItemPayload::Application(first_component) = first.payload else {
+        return Err(WorkspaceError::InvariantViolation);
+    };
+    let ItemPayload::Application(second_component) = second.payload else {
+        return Err(WorkspaceError::InvariantViolation);
+    };
+    if first_component.profile_id != second_component.profile_id {
+        return Err(WorkspaceError::CrossProfile);
+    }
+
+    snapshot
+        .items
+        .retain(|item| item.item_id != first_item_id && item.item_id != second_item_id);
+    snapshot.items.push(WorkspaceItem {
+        item_id: folder_id,
+        payload: ItemPayload::Folder,
+        container: second.container,
+        cell: second.cell,
+    });
+    snapshot.folders.push(Folder {
+        folder_id,
+        title: String::new(),
+        members: vec![
+            FolderMember {
+                item_id: second_item_id,
+                component: second_component,
+                rank: 0,
+            },
+            FolderMember {
+                item_id: first_item_id,
+                component: first_component,
+                rank: 1,
+            },
+        ],
+    });
+    Ok(())
+}
+
+fn add_from_all_apps_to_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    component: ComponentId,
+    folder_id: u64,
+    rank: u32,
+) -> Result<(), WorkspaceError> {
+    validate_component(&component)?;
+    if item_id == 0
+        || item_id >= i64::MAX as u64
+        || id_exists(snapshot, item_id)
+        || component_exists(snapshot, &component)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    insert_folder_member(
+        snapshot,
+        folder_id,
+        FolderMember {
+            item_id,
+            component,
+            rank,
+        },
+        rank,
+    )
+}
+
+fn add_item_to_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    folder_id: u64,
+    rank: u32,
+) -> Result<(), WorkspaceError> {
+    let destination = snapshot
+        .folders
+        .iter()
+        .find(|folder| folder.folder_id == folder_id)
+        .ok_or(WorkspaceError::MissingFolder)?;
+    if destination
+        .members
+        .iter()
+        .any(|member| member.item_id == item_id)
+    {
+        return move_folder_member(snapshot, folder_id, item_id, rank);
+    }
+    let destination_profile = destination.members[0].component.profile_id;
+
+    let (component, source_folder) = if let Some(item) = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == item_id)
+        .cloned()
+    {
+        let ItemPayload::Application(component) = item.payload else {
+            return Err(WorkspaceError::InvariantViolation);
+        };
+        snapshot.items.retain(|item| item.item_id != item_id);
+        (component, None)
+    } else {
+        let source_id = snapshot
+            .folders
+            .iter()
+            .find(|folder| {
+                folder
+                    .members
+                    .iter()
+                    .any(|member| member.item_id == item_id)
+            })
+            .map(|folder| folder.folder_id)
+            .ok_or(WorkspaceError::MissingItem)?;
+        let source = snapshot
+            .folders
+            .iter_mut()
+            .find(|folder| folder.folder_id == source_id)
+            .expect("source folder exists");
+        let member = source
+            .members
+            .iter()
+            .find(|member| member.item_id == item_id)
+            .cloned()
+            .expect("source member exists");
+        source.members.retain(|member| member.item_id != item_id);
+        normalize_members(&mut source.members);
+        (member.component, Some(source_id))
+    };
+    if component.profile_id != destination_profile {
+        return Err(WorkspaceError::CrossProfile);
+    }
+    if let Some(source_id) = source_folder {
+        dissolve_if_needed(snapshot, source_id)?;
+    }
+    insert_folder_member(
+        snapshot,
+        folder_id,
+        FolderMember {
+            item_id,
+            component,
+            rank,
+        },
+        rank,
+    )
+}
+
+fn insert_folder_member(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+    mut member: FolderMember,
+    rank: u32,
+) -> Result<(), WorkspaceError> {
+    let folder = snapshot
+        .folders
+        .iter_mut()
+        .find(|folder| folder.folder_id == folder_id)
+        .ok_or(WorkspaceError::MissingFolder)?;
+    let profile = folder
+        .members
+        .first()
+        .ok_or(WorkspaceError::InvariantViolation)?
+        .component
+        .profile_id;
+    if member.component.profile_id != profile {
+        return Err(WorkspaceError::CrossProfile);
+    }
+    let index = usize::try_from(rank)
+        .unwrap_or(usize::MAX)
+        .min(folder.members.len());
+    member.rank = index as u32;
+    folder.members.insert(index, member);
+    normalize_members(&mut folder.members);
+    Ok(())
+}
+
+fn move_folder_member(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+    item_id: u64,
+    rank: u32,
+) -> Result<(), WorkspaceError> {
+    let folder = snapshot
+        .folders
+        .iter_mut()
+        .find(|folder| folder.folder_id == folder_id)
+        .ok_or(WorkspaceError::MissingFolder)?;
+    let current = folder
+        .members
+        .iter()
+        .position(|member| member.item_id == item_id)
+        .ok_or(WorkspaceError::MissingItem)?;
+    let destination = usize::try_from(rank)
+        .unwrap_or(usize::MAX)
+        .min(folder.members.len() - 1);
+    if current == destination {
+        return Ok(());
+    }
+    let member = folder.members.remove(current);
+    folder.members.insert(destination, member);
+    normalize_members(&mut folder.members);
+    Ok(())
+}
+
+fn remove_item_from_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+    item_id: u64,
+    container: ContainerRef,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
+    validate_destination(snapshot, &container, cell)?;
+    if occupied(snapshot, &container, cell, None) {
+        return Err(WorkspaceError::Occupied);
+    }
+    let folder = snapshot
+        .folders
+        .iter_mut()
+        .find(|folder| folder.folder_id == folder_id)
+        .ok_or(WorkspaceError::MissingFolder)?;
+    let member = folder
+        .members
+        .iter()
+        .find(|member| member.item_id == item_id)
+        .cloned()
+        .ok_or(WorkspaceError::MissingItem)?;
+    folder.members.retain(|member| member.item_id != item_id);
+    normalize_members(&mut folder.members);
+    snapshot.items.push(WorkspaceItem {
+        item_id,
+        payload: ItemPayload::Application(member.component),
+        container,
+        cell,
+    });
+    dissolve_if_needed(snapshot, folder_id)
+}
+
+fn rename_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+    title: String,
+) -> Result<(), WorkspaceError> {
+    validate_title(&title)?;
+    let folder = snapshot
+        .folders
+        .iter_mut()
+        .find(|folder| folder.folder_id == folder_id)
+        .ok_or(WorkspaceError::MissingFolder)?;
+    folder.title = title;
+    Ok(())
+}
+
+fn dissolve_if_needed(
+    snapshot: &mut WorkspaceSnapshot,
+    folder_id: u64,
+) -> Result<(), WorkspaceError> {
+    let folder = snapshot
+        .folders
+        .iter()
+        .find(|folder| folder.folder_id == folder_id)
+        .cloned()
+        .ok_or(WorkspaceError::MissingFolder)?;
+    if folder.members.len() > 1 {
+        return Ok(());
+    }
+    let placement = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == folder_id && item.payload == ItemPayload::Folder)
+        .cloned()
+        .ok_or(WorkspaceError::InvariantViolation)?;
+    snapshot.items.retain(|item| item.item_id != folder_id);
+    snapshot
+        .folders
+        .retain(|folder| folder.folder_id != folder_id);
+    if let Some(member) = folder.members.into_iter().next() {
+        snapshot.items.push(WorkspaceItem {
+            item_id: member.item_id,
+            payload: ItemPayload::Application(member.component),
+            container: placement.container,
+            cell: placement.cell,
+        });
+    }
+    Ok(())
+}
+
+fn drop_missing(
+    snapshot: &mut WorkspaceSnapshot,
+    live: &HashSet<ComponentId>,
+) -> Result<(), WorkspaceError> {
+    snapshot.items.retain(|item| match &item.payload {
+        ItemPayload::Application(component) => live.contains(component),
+        ItemPayload::Folder => true,
+    });
+    for folder in &mut snapshot.folders {
+        folder
+            .members
+            .retain(|member| live.contains(&member.component));
+        normalize_members(&mut folder.members);
+    }
+    let dissolve: Vec<_> = snapshot
+        .folders
+        .iter()
+        .filter(|folder| folder.members.len() <= 1)
+        .map(|folder| folder.folder_id)
+        .collect();
+    for folder_id in dissolve {
+        dissolve_if_needed(snapshot, folder_id)?;
     }
     Ok(())
 }
@@ -522,6 +974,35 @@ fn validate_component(component: &ComponentId) -> Result<(), WorkspaceError> {
     Ok(())
 }
 
+fn validate_title(title: &str) -> Result<(), WorkspaceError> {
+    if title.chars().count() > 80 || title.chars().any(char::is_control) {
+        return Err(WorkspaceError::InvalidTitle);
+    }
+    Ok(())
+}
+
+fn id_exists(snapshot: &WorkspaceSnapshot, item_id: u64) -> bool {
+    snapshot.items.iter().any(|item| item.item_id == item_id)
+        || snapshot.folders.iter().any(|folder| {
+            folder.folder_id == item_id
+                || folder
+                    .members
+                    .iter()
+                    .any(|member| member.item_id == item_id)
+        })
+}
+
+fn component_exists(snapshot: &WorkspaceSnapshot, component: &ComponentId) -> bool {
+    snapshot.items.iter().any(
+        |item| matches!(&item.payload, ItemPayload::Application(existing) if existing == component),
+    ) || snapshot.folders.iter().any(|folder| {
+        folder
+            .members
+            .iter()
+            .any(|member| &member.component == component)
+    })
+}
+
 fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
     if snapshot.grid.cols <= 0
         || snapshot.grid.rows <= 0
@@ -553,16 +1034,59 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
 
     let mut item_ids = HashSet::new();
     let mut components = HashSet::new();
+    let folder_ids: HashSet<_> = snapshot
+        .folders
+        .iter()
+        .map(|folder| folder.folder_id)
+        .collect();
+    if folder_ids.len() != snapshot.folders.len() {
+        return Err(WorkspaceError::InvariantViolation);
+    }
     for item in &snapshot.items {
-        validate_component(&item.component)?;
-        if item.item_id == 0
-            || item.item_id >= i64::MAX as u64
-            || !item_ids.insert(item.item_id)
-            || !components.insert(item.component.clone())
+        if item.item_id == 0 || item.item_id >= i64::MAX as u64 || !item_ids.insert(item.item_id) {
+            return Err(WorkspaceError::InvariantViolation);
+        }
+        match &item.payload {
+            ItemPayload::Application(component) => {
+                validate_component(component)?;
+                if !components.insert(component.clone()) {
+                    return Err(WorkspaceError::InvariantViolation);
+                }
+            }
+            ItemPayload::Folder if !folder_ids.contains(&item.item_id) => {
+                return Err(WorkspaceError::InvariantViolation);
+            }
+            ItemPayload::Folder => {}
+        }
+        validate_destination(snapshot, &item.container, item.cell)?;
+    }
+    if snapshot.folders.iter().any(|folder| {
+        !snapshot
+            .items
+            .iter()
+            .any(|item| item.item_id == folder.folder_id && item.payload == ItemPayload::Folder)
+    }) {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    for folder in &snapshot.folders {
+        validate_title(&folder.title)?;
+        if folder.folder_id == 0 || folder.folder_id >= i64::MAX as u64 || folder.members.len() < 2
         {
             return Err(WorkspaceError::InvariantViolation);
         }
-        validate_destination(snapshot, &item.container, item.cell)?;
+        let profile = folder.members[0].component.profile_id;
+        for (rank, member) in folder.members.iter().enumerate() {
+            validate_component(&member.component)?;
+            if member.rank != rank as u32
+                || member.component.profile_id != profile
+                || member.item_id == 0
+                || member.item_id >= i64::MAX as u64
+                || !item_ids.insert(member.item_id)
+                || !components.insert(member.component.clone())
+            {
+                return Err(WorkspaceError::InvariantViolation);
+            }
+        }
     }
     for (index, left) in snapshot.items.iter().enumerate() {
         if snapshot.items[index + 1..]
@@ -586,6 +1110,19 @@ fn normalize_pages(pages: &mut [WorkspacePage]) -> Result<(), WorkspaceError> {
     Ok(())
 }
 
+fn normalize_members(members: &mut [FolderMember]) {
+    for (rank, member) in members.iter_mut().enumerate() {
+        member.rank = rank as u32;
+    }
+}
+
+fn normalize_folders(folders: &mut [Folder]) {
+    folders.sort_by_key(|folder| folder.folder_id);
+    for folder in folders {
+        normalize_members(&mut folder.members);
+    }
+}
+
 fn sort_snapshot(snapshot: &mut WorkspaceSnapshot) {
     let ranks: HashMap<_, _> = snapshot
         .pages
@@ -601,16 +1138,58 @@ fn sort_snapshot(snapshot: &mut WorkspaceSnapshot) {
     });
 }
 
-fn changed_items(before: &[WorkspaceItem], after: &[WorkspaceItem]) -> Vec<u64> {
-    let old: HashMap<_, _> = before.iter().map(|item| (item.item_id, item)).collect();
-    let new: HashMap<_, _> = after.iter().map(|item| (item.item_id, item)).collect();
-    let mut ids: Vec<_> = old
+fn changed_items(before: &WorkspaceSnapshot, after: &WorkspaceSnapshot) -> Vec<u64> {
+    let old_items: HashMap<_, _> = before
+        .items
+        .iter()
+        .map(|item| (item.item_id, item))
+        .collect();
+    let new_items: HashMap<_, _> = after
+        .items
+        .iter()
+        .map(|item| (item.item_id, item))
+        .collect();
+    let old_folders: HashMap<_, _> = before
+        .folders
+        .iter()
+        .map(|folder| (folder.folder_id, folder))
+        .collect();
+    let new_folders: HashMap<_, _> = after
+        .folders
+        .iter()
+        .map(|folder| (folder.folder_id, folder))
+        .collect();
+    let old_members: HashMap<_, _> = before
+        .folders
+        .iter()
+        .flat_map(|folder| folder.members.iter())
+        .map(|member| (member.item_id, member))
+        .collect();
+    let new_members: HashMap<_, _> = after
+        .folders
+        .iter()
+        .flat_map(|folder| folder.members.iter())
+        .map(|member| (member.item_id, member))
+        .collect();
+    let mut ids: Vec<_> = old_items
         .keys()
-        .chain(new.keys())
+        .chain(new_items.keys())
+        .filter(|id| old_items.get(id) != new_items.get(id))
+        .chain(
+            old_folders
+                .keys()
+                .chain(new_folders.keys())
+                .filter(|id| old_folders.get(id) != new_folders.get(id)),
+        )
+        .chain(
+            old_members
+                .keys()
+                .chain(new_members.keys())
+                .filter(|id| old_members.get(id) != new_members.get(id)),
+        )
         .copied()
         .collect::<HashSet<_>>()
         .into_iter()
-        .filter(|id| old.get(id) != new.get(id))
         .collect();
     ids.sort_unstable();
     ids
@@ -623,6 +1202,7 @@ impl From<WorkspaceTransition> for WorkspaceSnapshot {
             grid: value.grid,
             pages: value.pages,
             items: value.items,
+            folders: value.folders,
         }
     }
 }
@@ -652,6 +1232,7 @@ mod tests {
                 rank: 0,
             }],
             items: Vec::new(),
+            folders: Vec::new(),
         }
     }
 
@@ -899,5 +1480,194 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn folder_lifecycle_is_atomic_and_preserves_item_identity() {
+        let mut state = snapshot();
+        state.generation = 0;
+        state.grid = GridSpec {
+            cols: 4,
+            rows: 5,
+            hotseat_cols: 4,
+        };
+        for (item_id, name, profile_id, x) in [
+            (1, "source", 0, 0),
+            (2, "destination", 0, 1),
+            (3, "other-profile", 1, 2),
+            (4, "placed", 0, 3),
+        ] {
+            state = apply_workspace_command(
+                state,
+                WorkspaceCommand::PlaceFromAllApps {
+                    expected_generation: item_id - 1,
+                    item_id,
+                    component: ComponentId {
+                        package: "com.example".into(),
+                        class: name.into(),
+                        profile_id,
+                    },
+                    page_id: 10,
+                    cell: CellRect::single(x, 0),
+                },
+            )
+            .unwrap()
+            .into();
+        }
+
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::CreateFolder {
+                expected_generation: 4,
+                folder_id: 10,
+                first_item_id: 1,
+                second_item_id: 2,
+            },
+        )
+        .unwrap()
+        .into();
+        assert_eq!(
+            state.folders[0]
+                .members
+                .iter()
+                .map(|member| member.item_id)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert!(state.items.iter().any(|item| {
+            item.item_id == 10
+                && item.payload == ItemPayload::Folder
+                && item.cell == CellRect::single(1, 0)
+        }));
+
+        let unchanged = state.clone();
+        assert_eq!(
+            apply_workspace_command(
+                state.clone(),
+                WorkspaceCommand::AddItemToFolder {
+                    expected_generation: 5,
+                    item_id: 3,
+                    folder_id: 10,
+                    rank: 0,
+                }
+            ),
+            Err(WorkspaceError::CrossProfile)
+        );
+        assert_eq!(state, unchanged);
+
+        for command in [
+            WorkspaceCommand::AddItemToFolder {
+                expected_generation: 5,
+                item_id: 4,
+                folder_id: 10,
+                rank: 1,
+            },
+            WorkspaceCommand::AddFromAllAppsToFolder {
+                expected_generation: 6,
+                item_id: 5,
+                component: component("from-drawer"),
+                folder_id: 10,
+                rank: 2,
+            },
+            WorkspaceCommand::MoveFolderMember {
+                expected_generation: 7,
+                folder_id: 10,
+                item_id: 1,
+                rank: 0,
+            },
+            WorkspaceCommand::RenameFolder {
+                expected_generation: 8,
+                folder_id: 10,
+                title: "Tools".into(),
+            },
+        ] {
+            state = apply_workspace_command(state, command).unwrap().into();
+        }
+        assert_eq!(state.folders[0].title, "Tools");
+        assert_eq!(
+            state.folders[0]
+                .members
+                .iter()
+                .map(|member| (member.item_id, member.rank))
+                .collect::<Vec<_>>(),
+            vec![(1, 0), (2, 1), (4, 2), (5, 3)]
+        );
+        assert_eq!(
+            apply_workspace_command(
+                state.clone(),
+                WorkspaceCommand::RenameFolder {
+                    expected_generation: 9,
+                    folder_id: 10,
+                    title: "bad\nname".into(),
+                }
+            ),
+            Err(WorkspaceError::InvalidTitle)
+        );
+
+        for (generation, item_id, x) in [(9, 1, 0), (10, 2, 2), (11, 5, 3)] {
+            state = apply_workspace_command(
+                state,
+                WorkspaceCommand::RemoveItemFromFolder {
+                    expected_generation: generation,
+                    folder_id: 10,
+                    item_id,
+                    container: ContainerRef::Workspace { page_id: 10 },
+                    cell: CellRect::single(x, 1),
+                },
+            )
+            .unwrap()
+            .into();
+        }
+        assert!(state.folders.is_empty());
+        assert!(state.items.iter().any(|item| {
+            item.item_id == 4
+                && matches!(item.payload, ItemPayload::Application(_))
+                && item.cell == CellRect::single(1, 0)
+        }));
+        validate_snapshot(&state).unwrap();
+    }
+
+    #[test]
+    fn package_reconciliation_dissolves_single_member_folder() {
+        let mut state = snapshot();
+        state.generation = 0;
+        for (item_id, name, x) in [(1, "keep", 0), (2, "remove", 1)] {
+            state = apply_workspace_command(
+                state,
+                WorkspaceCommand::PlaceFromAllApps {
+                    expected_generation: item_id - 1,
+                    item_id,
+                    component: component(name),
+                    page_id: 10,
+                    cell: CellRect::single(x, 0),
+                },
+            )
+            .unwrap()
+            .into();
+        }
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::CreateFolder {
+                expected_generation: 2,
+                folder_id: 3,
+                first_item_id: 1,
+                second_item_id: 2,
+            },
+        )
+        .unwrap()
+        .into();
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::DropMissing {
+                expected_generation: 3,
+                live: vec![component("keep")],
+            },
+        )
+        .unwrap()
+        .into();
+
+        assert!(state.folders.is_empty());
+        assert_eq!(state.items[0].item_id, 1);
+        assert_eq!(state.items[0].cell, CellRect::single(1, 0));
     }
 }

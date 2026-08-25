@@ -25,4 +25,12 @@
     <string name="close_all_apps">Close All Apps</string>
     <string name="open_launcher_settings">Open launcher settings</string>
     <string name="export_diagnostics">Export diagnostics</string>
+    <string name="folder">Folder</string>
+    <string name="folder_description">%1$s, folder, %2$d applications</string>
+    <string name="close_folder">Close folder</string>
+    <string name="open_folder">Open folder</string>
+    <string name="rename_folder">Rename folder</string>
+    <string name="remove_from_folder">Remove from folder</string>
+    <string name="move_earlier">Move earlier</string>
+    <string name="move_later">Move later</string>
 </resources>

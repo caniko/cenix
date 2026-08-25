@@ -49,9 +49,10 @@ pub enum ContainerRef {
     Hotseat,
 }
 
-#[derive(Clone, Copy, uniffi::Enum)]
-pub enum ItemKind {
-    Application,
+#[derive(Clone, uniffi::Enum)]
+pub enum ItemPayload {
+    Application { component: ComponentId },
+    Folder,
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -63,10 +64,23 @@ pub struct WorkspacePage {
 #[derive(Clone, uniffi::Record)]
 pub struct WorkspaceItem {
     pub item_id: u64,
-    pub component: ComponentId,
+    pub payload: ItemPayload,
     pub container: ContainerRef,
     pub cell: CellRect,
-    pub kind: ItemKind,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct FolderMember {
+    pub item_id: u64,
+    pub component: ComponentId,
+    pub rank: u32,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct Folder {
+    pub folder_id: u64,
+    pub title: String,
+    pub members: Vec<FolderMember>,
 }
 
 #[derive(uniffi::Record)]
@@ -75,6 +89,7 @@ pub struct WorkspaceSnapshot {
     pub grid: GridSpec,
     pub pages: Vec<WorkspacePage>,
     pub items: Vec<WorkspaceItem>,
+    pub folders: Vec<Folder>,
 }
 
 #[derive(uniffi::Enum)]
@@ -113,6 +128,43 @@ pub enum WorkspaceCommand {
         container: ContainerRef,
         cell: CellRect,
     },
+    CreateFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        first_item_id: u64,
+        second_item_id: u64,
+    },
+    AddFromAllAppsToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        component: ComponentId,
+        folder_id: u64,
+        rank: u32,
+    },
+    AddItemToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        folder_id: u64,
+        rank: u32,
+    },
+    MoveFolderMember {
+        expected_generation: u64,
+        folder_id: u64,
+        item_id: u64,
+        rank: u32,
+    },
+    RemoveItemFromFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        item_id: u64,
+        container: ContainerRef,
+        cell: CellRect,
+    },
+    RenameFolder {
+        expected_generation: u64,
+        folder_id: u64,
+        title: String,
+    },
     AddPage {
         expected_generation: u64,
         page_id: u64,
@@ -140,6 +192,7 @@ pub struct WorkspaceTransition {
     pub grid: GridSpec,
     pub pages: Vec<WorkspacePage>,
     pub items: Vec<WorkspaceItem>,
+    pub folders: Vec<Folder>,
     pub created_page_ids: Vec<u64>,
     pub removed_page_ids: Vec<u64>,
     pub changed_item_ids: Vec<u64>,
@@ -169,6 +222,8 @@ pub enum WorkspaceError {
     MissingItem,
     #[error("missing page")]
     MissingPage,
+    #[error("missing folder")]
+    MissingFolder,
     #[error("invalid profile")]
     InvalidProfile,
     #[error("full")]
@@ -177,6 +232,10 @@ pub enum WorkspaceError {
     StaleGeneration,
     #[error("invalid grid")]
     InvalidGrid,
+    #[error("invalid title")]
+    InvalidTitle,
+    #[error("cross profile")]
+    CrossProfile,
     #[error("invariant violation")]
     InvariantViolation,
 }
@@ -201,10 +260,13 @@ impl From<core::WorkspaceError> for WorkspaceError {
             core::WorkspaceError::OutOfBounds => Self::OutOfBounds,
             core::WorkspaceError::MissingItem => Self::MissingItem,
             core::WorkspaceError::MissingPage => Self::MissingPage,
+            core::WorkspaceError::MissingFolder => Self::MissingFolder,
             core::WorkspaceError::InvalidProfile => Self::InvalidProfile,
             core::WorkspaceError::Full => Self::Full,
             core::WorkspaceError::StaleGeneration => Self::StaleGeneration,
             core::WorkspaceError::InvalidGrid => Self::InvalidGrid,
+            core::WorkspaceError::InvalidTitle => Self::InvalidTitle,
+            core::WorkspaceError::CrossProfile => Self::CrossProfile,
             core::WorkspaceError::InvariantViolation => Self::InvariantViolation,
         }
     }
@@ -339,18 +401,22 @@ impl From<core::ContainerRef> for ContainerRef {
     }
 }
 
-impl From<ItemKind> for core::ItemKind {
-    fn from(value: ItemKind) -> Self {
+impl From<ItemPayload> for core::ItemPayload {
+    fn from(value: ItemPayload) -> Self {
         match value {
-            ItemKind::Application => Self::Application,
+            ItemPayload::Application { component } => Self::Application(component.into()),
+            ItemPayload::Folder => Self::Folder,
         }
     }
 }
 
-impl From<core::ItemKind> for ItemKind {
-    fn from(value: core::ItemKind) -> Self {
+impl From<core::ItemPayload> for ItemPayload {
+    fn from(value: core::ItemPayload) -> Self {
         match value {
-            core::ItemKind::Application => Self::Application,
+            core::ItemPayload::Application(component) => Self::Application {
+                component: component.into(),
+            },
+            core::ItemPayload::Folder => Self::Folder,
         }
     }
 }
@@ -377,10 +443,9 @@ impl From<WorkspaceItem> for core::WorkspaceItem {
     fn from(value: WorkspaceItem) -> Self {
         Self {
             item_id: value.item_id,
-            component: value.component.into(),
+            payload: value.payload.into(),
             container: value.container.into(),
             cell: value.cell.into(),
-            kind: value.kind.into(),
         }
     }
 }
@@ -389,10 +454,49 @@ impl From<core::WorkspaceItem> for WorkspaceItem {
     fn from(value: core::WorkspaceItem) -> Self {
         Self {
             item_id: value.item_id,
-            component: value.component.into(),
+            payload: value.payload.into(),
             container: value.container.into(),
             cell: value.cell.into(),
-            kind: value.kind.into(),
+        }
+    }
+}
+
+impl From<FolderMember> for core::FolderMember {
+    fn from(value: FolderMember) -> Self {
+        Self {
+            item_id: value.item_id,
+            component: value.component.into(),
+            rank: value.rank,
+        }
+    }
+}
+
+impl From<core::FolderMember> for FolderMember {
+    fn from(value: core::FolderMember) -> Self {
+        Self {
+            item_id: value.item_id,
+            component: value.component.into(),
+            rank: value.rank,
+        }
+    }
+}
+
+impl From<Folder> for core::Folder {
+    fn from(value: Folder) -> Self {
+        Self {
+            folder_id: value.folder_id,
+            title: value.title,
+            members: value.members.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<core::Folder> for Folder {
+    fn from(value: core::Folder) -> Self {
+        Self {
+            folder_id: value.folder_id,
+            title: value.title,
+            members: value.members.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -404,6 +508,7 @@ impl From<WorkspaceSnapshot> for core::WorkspaceSnapshot {
             grid: value.grid.into(),
             pages: value.pages.into_iter().map(Into::into).collect(),
             items: value.items.into_iter().map(Into::into).collect(),
+            folders: value.folders.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -473,6 +578,74 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
                 container: container.into(),
                 cell: cell.into(),
             },
+            WorkspaceCommand::CreateFolder {
+                expected_generation,
+                folder_id,
+                first_item_id,
+                second_item_id,
+            } => Self::CreateFolder {
+                expected_generation,
+                folder_id,
+                first_item_id,
+                second_item_id,
+            },
+            WorkspaceCommand::AddFromAllAppsToFolder {
+                expected_generation,
+                item_id,
+                component,
+                folder_id,
+                rank,
+            } => Self::AddFromAllAppsToFolder {
+                expected_generation,
+                item_id,
+                component: component.into(),
+                folder_id,
+                rank,
+            },
+            WorkspaceCommand::AddItemToFolder {
+                expected_generation,
+                item_id,
+                folder_id,
+                rank,
+            } => Self::AddItemToFolder {
+                expected_generation,
+                item_id,
+                folder_id,
+                rank,
+            },
+            WorkspaceCommand::MoveFolderMember {
+                expected_generation,
+                folder_id,
+                item_id,
+                rank,
+            } => Self::MoveFolderMember {
+                expected_generation,
+                folder_id,
+                item_id,
+                rank,
+            },
+            WorkspaceCommand::RemoveItemFromFolder {
+                expected_generation,
+                folder_id,
+                item_id,
+                container,
+                cell,
+            } => Self::RemoveItemFromFolder {
+                expected_generation,
+                folder_id,
+                item_id,
+                container: container.into(),
+                cell: cell.into(),
+            },
+            WorkspaceCommand::RenameFolder {
+                expected_generation,
+                folder_id,
+                title,
+            } => Self::RenameFolder {
+                expected_generation,
+                folder_id,
+                title,
+            },
             WorkspaceCommand::AddPage {
                 expected_generation,
                 page_id,
@@ -517,6 +690,7 @@ impl From<core::WorkspaceTransition> for WorkspaceTransition {
             grid: value.grid.into(),
             pages: value.pages.into_iter().map(Into::into).collect(),
             items: value.items.into_iter().map(Into::into).collect(),
+            folders: value.folders.into_iter().map(Into::into).collect(),
             created_page_ids: value.created_page_ids,
             removed_page_ids: value.removed_page_ids,
             changed_item_ids: value.changed_item_ids,

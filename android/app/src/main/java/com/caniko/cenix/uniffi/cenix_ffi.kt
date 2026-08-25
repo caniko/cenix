@@ -1015,6 +1015,29 @@ object NoPointer
 /**
  * @suppress
  */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterInt: FfiConverter<Int, Int> {
     override fun lift(value: Int): Int {
         return value
@@ -1324,6 +1347,78 @@ public object FfiConverterTypeDiagnosticsConfig: FfiConverterRustBuffer<Diagnost
 
 
 
+data class Folder (
+    var `folderId`: kotlin.ULong,
+    var `title`: kotlin.String,
+    var `members`: List<FolderMember>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFolder: FfiConverterRustBuffer<Folder> {
+    override fun read(buf: ByteBuffer): Folder {
+        return Folder(
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeFolderMember.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Folder) = (
+            FfiConverterULong.allocationSize(value.`folderId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterSequenceTypeFolderMember.allocationSize(value.`members`)
+    )
+
+    override fun write(value: Folder, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`folderId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterSequenceTypeFolderMember.write(value.`members`, buf)
+    }
+}
+
+
+
+data class FolderMember (
+    var `itemId`: kotlin.ULong,
+    var `component`: ComponentId,
+    var `rank`: kotlin.UInt
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFolderMember: FfiConverterRustBuffer<FolderMember> {
+    override fun read(buf: ByteBuffer): FolderMember {
+        return FolderMember(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeComponentId.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FolderMember) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterTypeComponentId.allocationSize(value.`component`) +
+            FfiConverterUInt.allocationSize(value.`rank`)
+    )
+
+    override fun write(value: FolderMember, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterTypeComponentId.write(value.`component`, buf)
+            FfiConverterUInt.write(value.`rank`, buf)
+    }
+}
+
+
+
 data class GridSpec (
     var `cols`: kotlin.Int,
     var `rows`: kotlin.Int,
@@ -1362,10 +1457,9 @@ public object FfiConverterTypeGridSpec: FfiConverterRustBuffer<GridSpec> {
 
 data class WorkspaceItem (
     var `itemId`: kotlin.ULong,
-    var `component`: ComponentId,
+    var `payload`: ItemPayload,
     var `container`: ContainerRef,
-    var `cell`: CellRect,
-    var `kind`: ItemKind
+    var `cell`: CellRect
 ) {
 
     companion object
@@ -1378,27 +1472,24 @@ public object FfiConverterTypeWorkspaceItem: FfiConverterRustBuffer<WorkspaceIte
     override fun read(buf: ByteBuffer): WorkspaceItem {
         return WorkspaceItem(
             FfiConverterULong.read(buf),
-            FfiConverterTypeComponentId.read(buf),
+            FfiConverterTypeItemPayload.read(buf),
             FfiConverterTypeContainerRef.read(buf),
             FfiConverterTypeCellRect.read(buf),
-            FfiConverterTypeItemKind.read(buf),
         )
     }
 
     override fun allocationSize(value: WorkspaceItem) = (
             FfiConverterULong.allocationSize(value.`itemId`) +
-            FfiConverterTypeComponentId.allocationSize(value.`component`) +
+            FfiConverterTypeItemPayload.allocationSize(value.`payload`) +
             FfiConverterTypeContainerRef.allocationSize(value.`container`) +
-            FfiConverterTypeCellRect.allocationSize(value.`cell`) +
-            FfiConverterTypeItemKind.allocationSize(value.`kind`)
+            FfiConverterTypeCellRect.allocationSize(value.`cell`)
     )
 
     override fun write(value: WorkspaceItem, buf: ByteBuffer) {
             FfiConverterULong.write(value.`itemId`, buf)
-            FfiConverterTypeComponentId.write(value.`component`, buf)
+            FfiConverterTypeItemPayload.write(value.`payload`, buf)
             FfiConverterTypeContainerRef.write(value.`container`, buf)
             FfiConverterTypeCellRect.write(value.`cell`, buf)
-            FfiConverterTypeItemKind.write(value.`kind`, buf)
     }
 }
 
@@ -1440,7 +1531,8 @@ data class WorkspaceSnapshot (
     var `generation`: kotlin.ULong,
     var `grid`: GridSpec,
     var `pages`: List<WorkspacePage>,
-    var `items`: List<WorkspaceItem>
+    var `items`: List<WorkspaceItem>,
+    var `folders`: List<Folder>
 ) {
 
     companion object
@@ -1456,6 +1548,7 @@ public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<Workspac
             FfiConverterTypeGridSpec.read(buf),
             FfiConverterSequenceTypeWorkspacePage.read(buf),
             FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterSequenceTypeFolder.read(buf),
         )
     }
 
@@ -1463,7 +1556,8 @@ public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<Workspac
             FfiConverterULong.allocationSize(value.`generation`) +
             FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
             FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
-            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`)
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterSequenceTypeFolder.allocationSize(value.`folders`)
     )
 
     override fun write(value: WorkspaceSnapshot, buf: ByteBuffer) {
@@ -1471,6 +1565,7 @@ public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<Workspac
             FfiConverterTypeGridSpec.write(value.`grid`, buf)
             FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
             FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterSequenceTypeFolder.write(value.`folders`, buf)
     }
 }
 
@@ -1481,6 +1576,7 @@ data class WorkspaceTransition (
     var `grid`: GridSpec,
     var `pages`: List<WorkspacePage>,
     var `items`: List<WorkspaceItem>,
+    var `folders`: List<Folder>,
     var `createdPageIds`: List<kotlin.ULong>,
     var `removedPageIds`: List<kotlin.ULong>,
     var `changedItemIds`: List<kotlin.ULong>
@@ -1499,6 +1595,7 @@ public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<Worksp
             FfiConverterTypeGridSpec.read(buf),
             FfiConverterSequenceTypeWorkspacePage.read(buf),
             FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterSequenceTypeFolder.read(buf),
             FfiConverterSequenceULong.read(buf),
             FfiConverterSequenceULong.read(buf),
             FfiConverterSequenceULong.read(buf),
@@ -1510,6 +1607,7 @@ public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<Worksp
             FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
             FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
             FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterSequenceTypeFolder.allocationSize(value.`folders`) +
             FfiConverterSequenceULong.allocationSize(value.`createdPageIds`) +
             FfiConverterSequenceULong.allocationSize(value.`removedPageIds`) +
             FfiConverterSequenceULong.allocationSize(value.`changedItemIds`)
@@ -1520,6 +1618,7 @@ public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<Worksp
             FfiConverterTypeGridSpec.write(value.`grid`, buf)
             FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
             FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterSequenceTypeFolder.write(value.`folders`, buf)
             FfiConverterSequenceULong.write(value.`createdPageIds`, buf)
             FfiConverterSequenceULong.write(value.`removedPageIds`, buf)
             FfiConverterSequenceULong.write(value.`changedItemIds`, buf)
@@ -1672,28 +1771,63 @@ public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineExcepti
 
 
 
+sealed class ItemPayload {
 
-enum class ItemKind {
+    data class Application(
+        val `component`: ComponentId) : ItemPayload() {
+        companion object
+    }
 
-    APPLICATION;
+    object Folder : ItemPayload()
+
+
+
+
     companion object
 }
-
 
 /**
  * @suppress
  */
-public object FfiConverterTypeItemKind: FfiConverterRustBuffer<ItemKind> {
-    override fun read(buf: ByteBuffer) = try {
-        ItemKind.values()[buf.getInt() - 1]
-    } catch (e: IndexOutOfBoundsException) {
-        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
+    override fun read(buf: ByteBuffer): ItemPayload {
+        return when(buf.getInt()) {
+            1 -> ItemPayload.Application(
+                FfiConverterTypeComponentId.read(buf),
+                )
+            2 -> ItemPayload.Folder
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
     }
 
-    override fun allocationSize(value: ItemKind) = 4UL
+    override fun allocationSize(value: ItemPayload) = when(value) {
+        is ItemPayload.Application -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+            )
+        }
+        is ItemPayload.Folder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
 
-    override fun write(value: ItemKind, buf: ByteBuffer) {
-        buf.putInt(value.ordinal + 1)
+    override fun write(value: ItemPayload, buf: ByteBuffer) {
+        when(value) {
+            is ItemPayload.Application -> {
+                buf.putInt(1)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                Unit
+            }
+            is ItemPayload.Folder -> {
+                buf.putInt(2)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 
@@ -1746,6 +1880,55 @@ sealed class WorkspaceCommand {
         val `itemId`: kotlin.ULong,
         val `container`: ContainerRef,
         val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class CreateFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `firstItemId`: kotlin.ULong,
+        val `secondItemId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddFromAllAppsToFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `component`: ComponentId,
+        val `folderId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddItemToFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class MoveFolderMember(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveItemFromFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RenameFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `title`: kotlin.String) : WorkspaceCommand() {
         companion object
     }
 
@@ -1823,23 +2006,60 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 FfiConverterTypeContainerRef.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            7 -> WorkspaceCommand.AddPage(
+            7 -> WorkspaceCommand.CreateFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            8 -> WorkspaceCommand.RemoveEmptyPage(
+            8 -> WorkspaceCommand.AddFromAllAppsToFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeComponentId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            9 -> WorkspaceCommand.AddItemToFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            10 -> WorkspaceCommand.MoveFolderMember(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            11 -> WorkspaceCommand.RemoveItemFromFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            12 -> WorkspaceCommand.RenameFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterString.read(buf),
+                )
+            13 -> WorkspaceCommand.AddPage(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            9 -> WorkspaceCommand.SetGrid(
+            14 -> WorkspaceCommand.RemoveEmptyPage(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            15 -> WorkspaceCommand.SetGrid(
                 FfiConverterULong.read(buf),
                 FfiConverterTypeGridSpec.read(buf),
                 )
-            10 -> WorkspaceCommand.DropMissing(
+            16 -> WorkspaceCommand.DropMissing(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceTypeComponentId.read(buf),
                 )
-            11 -> WorkspaceCommand.Cancelled(
+            17 -> WorkspaceCommand.Cancelled(
                 FfiConverterULong.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
@@ -1903,6 +2123,67 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 + FfiConverterULong.allocationSize(value.`itemId`)
                 + FfiConverterTypeContainerRef.allocationSize(value.`container`)
                 + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.CreateFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`firstItemId`)
+                + FfiConverterULong.allocationSize(value.`secondItemId`)
+            )
+        }
+        is WorkspaceCommand.AddFromAllAppsToFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.AddItemToFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.MoveFolderMember -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.RemoveItemFromFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.RenameFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterString.allocationSize(value.`title`)
             )
         }
         is WorkspaceCommand.AddPage -> {
@@ -1994,32 +2275,81 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 FfiConverterTypeCellRect.write(value.`cell`, buf)
                 Unit
             }
-            is WorkspaceCommand.AddPage -> {
+            is WorkspaceCommand.CreateFolder -> {
                 buf.putInt(7)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`firstItemId`, buf)
+                FfiConverterULong.write(value.`secondItemId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddFromAllAppsToFolder -> {
+                buf.putInt(8)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddItemToFolder -> {
+                buf.putInt(9)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.MoveFolderMember -> {
+                buf.putInt(10)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveItemFromFolder -> {
+                buf.putInt(11)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RenameFolder -> {
+                buf.putInt(12)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterString.write(value.`title`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddPage -> {
+                buf.putInt(13)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`pageId`, buf)
                 Unit
             }
             is WorkspaceCommand.RemoveEmptyPage -> {
-                buf.putInt(8)
+                buf.putInt(14)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`pageId`, buf)
                 Unit
             }
             is WorkspaceCommand.SetGrid -> {
-                buf.putInt(9)
+                buf.putInt(15)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterTypeGridSpec.write(value.`grid`, buf)
                 Unit
             }
             is WorkspaceCommand.DropMissing -> {
-                buf.putInt(10)
+                buf.putInt(16)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterSequenceTypeComponentId.write(value.`live`, buf)
                 Unit
             }
             is WorkspaceCommand.Cancelled -> {
-                buf.putInt(11)
+                buf.putInt(17)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 Unit
             }
@@ -2059,6 +2389,12 @@ sealed class WorkspaceException: kotlin.Exception() {
             get() = ""
     }
 
+    class MissingFolder(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
     class InvalidProfile(
         ) : WorkspaceException() {
         override val message
@@ -2078,6 +2414,18 @@ sealed class WorkspaceException: kotlin.Exception() {
     }
 
     class InvalidGrid(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidTitle(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class CrossProfile(
         ) : WorkspaceException() {
         override val message
             get() = ""
@@ -2109,11 +2457,14 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
             2 -> WorkspaceException.OutOfBounds()
             3 -> WorkspaceException.MissingItem()
             4 -> WorkspaceException.MissingPage()
-            5 -> WorkspaceException.InvalidProfile()
-            6 -> WorkspaceException.Full()
-            7 -> WorkspaceException.StaleGeneration()
-            8 -> WorkspaceException.InvalidGrid()
-            9 -> WorkspaceException.InvariantViolation()
+            5 -> WorkspaceException.MissingFolder()
+            6 -> WorkspaceException.InvalidProfile()
+            7 -> WorkspaceException.Full()
+            8 -> WorkspaceException.StaleGeneration()
+            9 -> WorkspaceException.InvalidGrid()
+            10 -> WorkspaceException.InvalidTitle()
+            11 -> WorkspaceException.CrossProfile()
+            12 -> WorkspaceException.InvariantViolation()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -2136,6 +2487,10 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is WorkspaceException.MissingFolder -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
             is WorkspaceException.InvalidProfile -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
@@ -2149,6 +2504,14 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 4UL
             )
             is WorkspaceException.InvalidGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidTitle -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.CrossProfile -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
@@ -2177,24 +2540,36 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 buf.putInt(4)
                 Unit
             }
-            is WorkspaceException.InvalidProfile -> {
+            is WorkspaceException.MissingFolder -> {
                 buf.putInt(5)
                 Unit
             }
-            is WorkspaceException.Full -> {
+            is WorkspaceException.InvalidProfile -> {
                 buf.putInt(6)
                 Unit
             }
-            is WorkspaceException.StaleGeneration -> {
+            is WorkspaceException.Full -> {
                 buf.putInt(7)
                 Unit
             }
-            is WorkspaceException.InvalidGrid -> {
+            is WorkspaceException.StaleGeneration -> {
                 buf.putInt(8)
                 Unit
             }
-            is WorkspaceException.InvariantViolation -> {
+            is WorkspaceException.InvalidGrid -> {
                 buf.putInt(9)
+                Unit
+            }
+            is WorkspaceException.InvalidTitle -> {
+                buf.putInt(10)
+                Unit
+            }
+            is WorkspaceException.CrossProfile -> {
+                buf.putInt(11)
+                Unit
+            }
+            is WorkspaceException.InvariantViolation -> {
+                buf.putInt(12)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -2310,6 +2685,62 @@ public object FfiConverterSequenceTypeComponentId: FfiConverterRustBuffer<List<C
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeComponentId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFolder: FfiConverterRustBuffer<List<Folder>> {
+    override fun read(buf: ByteBuffer): List<Folder> {
+        val len = buf.getInt()
+        return List<Folder>(len) {
+            FfiConverterTypeFolder.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Folder>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFolder.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Folder>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFolder.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFolderMember: FfiConverterRustBuffer<List<FolderMember>> {
+    override fun read(buf: ByteBuffer): List<FolderMember> {
+        val len = buf.getInt()
+        return List<FolderMember>(len) {
+            FfiConverterTypeFolderMember.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FolderMember>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFolderMember.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FolderMember>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFolderMember.write(it, buf)
         }
     }
 }

@@ -49,10 +49,7 @@ data class WorkspacePageEntity(
 
 @Entity(
     tableName = "workspace_items",
-    indices = [
-        Index(value = ["containerKind", "containerId", "cellX", "cellY"], unique = true),
-        Index(value = ["packageName", "className", "profileId"], unique = true),
-    ],
+    indices = [Index(value = ["containerKind", "containerId", "cellX", "cellY"], unique = true)],
 )
 data class WorkspaceItemEntity(
     @PrimaryKey val id: Long,
@@ -63,21 +60,49 @@ data class WorkspaceItemEntity(
     val spanX: Int = 1,
     val spanY: Int = 1,
     val itemKind: String = ITEM_APPLICATION,
-    val packageName: String,
-    val className: String,
-    val profileId: Long,
 ) {
     companion object {
         const val CONTAINER_WORKSPACE = "WORKSPACE"
         const val CONTAINER_HOTSEAT = "HOTSEAT"
         const val ITEM_APPLICATION = "APPLICATION"
+        const val ITEM_FOLDER = "FOLDER"
     }
 }
+
+@Entity(
+    tableName = "workspace_applications",
+    indices = [Index(value = ["packageName", "className", "profileId"], unique = true)],
+)
+data class ApplicationItemEntity(
+    @PrimaryKey val itemId: Long,
+    val packageName: String,
+    val className: String,
+    val profileId: Long,
+)
+
+@Entity(tableName = "workspace_folders")
+data class FolderEntity(
+    @PrimaryKey val folderId: Long,
+    val title: String,
+)
+
+@Entity(
+    tableName = "folder_members",
+    indices = [Index(value = ["folderId", "rank"], unique = true)],
+)
+data class FolderMemberEntity(
+    @PrimaryKey val itemId: Long,
+    val folderId: Long,
+    val rank: Int,
+)
 
 data class WorkspaceRows(
     val metadata: WorkspaceMetadataEntity,
     val pages: List<WorkspacePageEntity>,
     val items: List<WorkspaceItemEntity>,
+    val applications: List<ApplicationItemEntity>,
+    val folders: List<FolderEntity>,
+    val folderMembers: List<FolderMemberEntity>,
 )
 
 class StaleWorkspaceGeneration : IllegalStateException("stale workspace generation")
@@ -100,8 +125,17 @@ interface CenixDao {
     @Query("SELECT * FROM workspace_pages ORDER BY rank")
     fun workspacePages(): List<WorkspacePageEntity>
 
-    @Query("SELECT * FROM workspace_items ORDER BY containerKind, containerId, cellY, cellX")
+    @Query("SELECT * FROM workspace_items ORDER BY CASE containerKind WHEN 'WORKSPACE' THEN 0 ELSE 1 END, containerId, cellY, cellX, id")
     fun workspaceItems(): List<WorkspaceItemEntity>
+
+    @Query("SELECT * FROM workspace_applications ORDER BY itemId")
+    fun workspaceApplications(): List<ApplicationItemEntity>
+
+    @Query("SELECT * FROM workspace_folders ORDER BY folderId")
+    fun workspaceFolders(): List<FolderEntity>
+
+    @Query("SELECT * FROM folder_members ORDER BY folderId, rank")
+    fun folderMembers(): List<FolderMemberEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertPages(entities: List<WorkspacePageEntity>)
@@ -109,11 +143,29 @@ interface CenixDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertWorkspace(entities: List<WorkspaceItemEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertApplications(entities: List<ApplicationItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertFolders(entities: List<FolderEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertFolderMembers(entities: List<FolderMemberEntity>)
+
     @Query("DELETE FROM workspace_pages")
     fun clearPages()
 
     @Query("DELETE FROM workspace_items")
     fun clearWorkspace()
+
+    @Query("DELETE FROM workspace_applications")
+    fun clearApplications()
+
+    @Query("DELETE FROM workspace_folders")
+    fun clearFolders()
+
+    @Query("DELETE FROM folder_members")
+    fun clearFolderMembers()
 
     @Query(
         "UPDATE workspace_metadata SET generation = :nextGeneration, cols = :cols, rows = :rows, hotseatCols = :hotseatCols, " +
@@ -135,6 +187,9 @@ interface CenixDao {
         metadata = checkNotNull(workspaceMetadata()),
         pages = workspacePages(),
         items = workspaceItems(),
+        applications = workspaceApplications(),
+        folders = workspaceFolders(),
+        folderMembers = folderMembers(),
     )
 
     @Transaction
@@ -143,11 +198,21 @@ interface CenixDao {
         metadata: WorkspaceMetadataEntity,
         pages: List<WorkspacePageEntity>,
         items: List<WorkspaceItemEntity>,
+        applications: List<ApplicationItemEntity> = emptyList(),
+        folders: List<FolderEntity> = emptyList(),
+        folderMembers: List<FolderMemberEntity> = emptyList(),
     ) {
         val currentMetadata = checkNotNull(workspaceMetadata())
         if (currentMetadata.generation != expectedGeneration) throw StaleWorkspaceGeneration()
         if (metadata.generation == expectedGeneration) {
-            if (metadata != currentMetadata || pages != workspacePages() || items != workspaceItems()) {
+            if (
+                metadata != currentMetadata ||
+                pages != workspacePages() ||
+                items != workspaceItems() ||
+                applications != workspaceApplications() ||
+                folders != workspaceFolders() ||
+                folderMembers != this.folderMembers()
+            ) {
                 throw InvalidWorkspaceTransition()
             }
             return
@@ -166,10 +231,16 @@ interface CenixDao {
         ) {
             throw StaleWorkspaceGeneration()
         }
+        clearFolderMembers()
+        clearFolders()
+        clearApplications()
         clearWorkspace()
         clearPages()
         insertPages(pages)
         if (items.isNotEmpty()) insertWorkspace(items)
+        if (applications.isNotEmpty()) insertApplications(applications)
+        if (folders.isNotEmpty()) insertFolders(folders)
+        if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
     }
 
     @Transaction
@@ -203,7 +274,15 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
 }
 
 @Database(
-    entities = [MetadataEntity::class, WorkspaceMetadataEntity::class, WorkspacePageEntity::class, WorkspaceItemEntity::class],
+    entities = [
+        MetadataEntity::class,
+        WorkspaceMetadataEntity::class,
+        WorkspacePageEntity::class,
+        WorkspaceItemEntity::class,
+        ApplicationItemEntity::class,
+        FolderEntity::class,
+        FolderMemberEntity::class,
+    ],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
@@ -212,7 +291,7 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 3
+        const val VERSION = 4
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -259,9 +338,45 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workspace_items` RENAME TO `workspace_items_v3`")
+                db.execSQL("DROP INDEX IF EXISTS `index_workspace_items_containerKind_containerId_cellX_cellY`")
+                db.execSQL("DROP INDEX IF EXISTS `index_workspace_items_packageName_className_profileId`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_items` (`id` INTEGER NOT NULL, `containerKind` TEXT NOT NULL, `containerId` INTEGER NOT NULL, `cellX` INTEGER NOT NULL, `cellY` INTEGER NOT NULL, `spanX` INTEGER NOT NULL, `spanY` INTEGER NOT NULL, `itemKind` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "INSERT INTO `workspace_items` SELECT `id`, `containerKind`, `containerId`, `cellX`, `cellY`, `spanX`, `spanY`, `itemKind` FROM `workspace_items_v3`",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_items_containerKind_containerId_cellX_cellY` ON `workspace_items` (`containerKind`, `containerId`, `cellX`, `cellY`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_applications` (`itemId` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `className` TEXT NOT NULL, `profileId` INTEGER NOT NULL, PRIMARY KEY(`itemId`))",
+                )
+                db.execSQL(
+                    "INSERT INTO `workspace_applications` SELECT `id`, `packageName`, `className`, `profileId` FROM `workspace_items_v3` WHERE `itemKind` = 'APPLICATION'",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_applications_packageName_className_profileId` ON `workspace_applications` (`packageName`, `className`, `profileId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_folders` (`folderId` INTEGER NOT NULL, `title` TEXT NOT NULL, PRIMARY KEY(`folderId`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `folder_members` (`itemId` INTEGER NOT NULL, `folderId` INTEGER NOT NULL, `rank` INTEGER NOT NULL, PRIMARY KEY(`itemId`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_folder_members_folderId_rank` ON `folder_members` (`folderId`, `rank`)",
+                )
+                db.execSQL("DROP TABLE `workspace_items_v3`")
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             return builder.build().also { it.ensureSeed() }
         }

@@ -26,6 +26,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.caniko.cenix.uniffi.ContainerRef
+import com.caniko.cenix.uniffi.ComponentId
+import com.caniko.cenix.uniffi.Folder
+import com.caniko.cenix.uniffi.FolderMember
+import com.caniko.cenix.uniffi.ItemPayload
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
@@ -46,6 +50,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var pager: WorkspacePager
     private lateinit var hotseat: HotseatView
     private lateinit var pageIndicator: PageIndicator
+    private var folderPopup: FolderPopup? = null
     private var controller: WorkspaceController? = null
     private var rendered = emptySnapshot()
     private var selectedPageId: ULong? = null
@@ -113,6 +118,7 @@ class HomeActivity : AppCompatActivity() {
         dragLayer.hotseat = hotseat
         dragLayer.removeTarget = findViewById(R.id.removeTarget)
         dragLayer.onDrop = ::onDrop
+        dragLayer.onFolderHover = ::openFolder
         root.onSurfaceRequested = { target ->
             if (target != LauncherSurface.HOME || !appList.canScrollVertically(-1)) setSurface(target)
         }
@@ -173,6 +179,7 @@ class HomeActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        closeFolder("home")
         selectedPageId = rendered.pages.firstOrNull()?.pageId
         pager.setCurrentPage(0, false)
         setSurface(LauncherShell.homeIntent(app.emergency), false)
@@ -180,6 +187,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        closeFolder("lifecycle")
         dragLayer.cancel("lifecycle")
         catalog.unregister(packageCallback)
         search.close()
@@ -227,6 +235,7 @@ class HomeActivity : AppCompatActivity() {
     private fun render(snapshot: WorkspaceSnapshot) {
         rendered = snapshot
         val byComponent = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
+        val folders = snapshot.folders.associateBy { it.folderId }
         val pageLayouts = snapshot.pages.mapIndexed { pageIndex, page ->
             CellLayout(this).apply {
                 columns = snapshot.grid.cols
@@ -237,8 +246,7 @@ class HomeActivity : AppCompatActivity() {
                     .associateBy { it.cell.cellX to it.cell.cellY }
                 for (y in 0 until rows) for (x in 0 until columns) {
                     val item = items[x to y]
-                    val appItem = item?.let { byComponent[Triple(it.component.`package`, it.component.`class`, it.component.profileId.toLong())] }
-                    addCell(createCell(appItem, item, "page ${pageIndex + 1}", x, y), x, y)
+                    addCell(createCell(item, folders[item?.itemId], byComponent, "page ${pageIndex + 1}", x, y), x, y)
                 }
             }
         }
@@ -255,20 +263,45 @@ class HomeActivity : AppCompatActivity() {
         val dock = snapshot.items.filter { it.container is ContainerRef.Hotseat }.associateBy { it.cell.cellX }
         for (x in 0 until hotseat.columns) {
             val item = dock[x]
-            val appItem = item?.let { byComponent[Triple(it.component.`package`, it.component.`class`, it.component.profileId.toLong())] }
-            hotseat.addCell(createCell(appItem, item, "hotseat", x, 0), x, 0)
+            hotseat.addCell(createCell(item, folders[item?.itemId], byComponent, "hotseat", x, 0), x, 0)
+        }
+        folderPopup?.let { popup ->
+            folders[popup.folderId]?.let { bindFolderPopup(popup, it, byComponent) } ?: closeFolder("dissolved")
         }
     }
 
-    private fun createCell(appItem: LaunchableApp?, item: WorkspaceItem?, location: String, x: Int, y: Int): View {
+    private fun createCell(
+        item: WorkspaceItem?,
+        folder: Folder?,
+        byComponent: Map<Triple<String, String, Long>, LaunchableApp>,
+        location: String,
+        x: Int,
+        y: Int,
+    ): View {
+        if (item != null && folder != null && item.payload is ItemPayload.Folder) {
+            return FolderIconView(this).apply {
+                bind(
+                    folder.title,
+                    folder.members.size,
+                    folder.members.take(4).map { member -> byComponent[member.component.key()]?.icon },
+                )
+                contentDescription = "$contentDescription, $location, row ${y + 1}, column ${x + 1}"
+                tag = CellTarget(item.itemId, folder.folderId)
+                setOnClickListener { openFolder(folder.folderId) }
+                setOnLongClickListener { dragLayer.beginDrag(this, LauncherDrag(null, item.itemId, isFolder = true)) }
+                addAccessibilityMoves(this, item, x, y, folder.folderId)
+            }
+        }
+        val appItem = (item?.payload as? ItemPayload.Application)?.component?.let { byComponent[it.key()] }
         val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
         view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon)
         view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label.orEmpty()
         view.contentDescription = if (appItem == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
         else "${appItem.label}, $location, row ${y + 1}, column ${x + 1}"
         view.isFocusable = appItem != null
-        if (appItem != null && item != null) {
+        if (appItem != null) {
             val payload = LauncherDrag(appItem, item.itemId)
+            view.tag = CellTarget(item.itemId)
             view.setOnClickListener { launch(appItem) }
             view.setOnLongClickListener { dragLayer.beginDrag(view, payload) }
             addAccessibilityMoves(view, item, x, y)
@@ -276,7 +309,7 @@ class HomeActivity : AppCompatActivity() {
         return view
     }
 
-    private fun addAccessibilityMoves(view: View, item: WorkspaceItem, x: Int, y: Int) {
+    private fun addAccessibilityMoves(view: View, item: WorkspaceItem, x: Int, y: Int, folderId: ULong? = null) {
         view.accessibilityDelegate = object : View.AccessibilityDelegate() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(host, info)
@@ -288,6 +321,10 @@ class HomeActivity : AppCompatActivity() {
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_next_page, "Move to next page"))
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(if (item.container is ContainerRef.Hotseat) R.id.action_undock else R.id.action_dock, if (item.container is ContainerRef.Hotseat) "Undock" else "Dock"))
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_DISMISS, "Remove"))
+                if (folderId != null) {
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_open_folder, getString(R.string.open_folder)))
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_rename_folder, getString(R.string.rename_folder)))
+                }
             }
 
             override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
@@ -301,6 +338,12 @@ class HomeActivity : AppCompatActivity() {
                     R.id.action_dock -> { mutate { it.dock(item.itemId) }; return true }
                     R.id.action_undock -> { rendered.pages.getOrNull(pager.currentPage)?.let { page -> mutate { it.undock(item.itemId, page.pageId) } }; return true }
                     AccessibilityNodeInfo.ACTION_DISMISS -> { mutate { it.remove(item.itemId) }; return true }
+                    R.id.action_open_folder -> { folderId?.let(::openFolder); return true }
+                    R.id.action_rename_folder -> {
+                        folderId?.let(::openFolder)
+                        folderPopup?.focusTitle()
+                        return true
+                    }
                     else -> return super.performAccessibilityAction(host, action, args)
                 }
                 val container = item.container
@@ -330,16 +373,100 @@ class HomeActivity : AppCompatActivity() {
         mutate { it.move(item.itemId, ContainerRef.Workspace(page.pageId), item.cell.cellX, item.cell.cellY) }
     }
 
+    private fun openFolder(folderId: ULong) {
+        if (folderPopup?.folderId == folderId) return
+        val folder = rendered.folders.firstOrNull { it.folderId == folderId } ?: return
+        closeFolder("replace")
+        val popup = FolderPopup(this).apply {
+            onClose = { closeFolder("action") }
+            onRename = { next -> mutate { it.renameFolder(folderId, next) } }
+            onLaunch = ::launch
+            onBeginDrag = { view, app, member ->
+                dragLayer.beginDrag(view, LauncherDrag(app, member.itemId, folderId))
+            }
+            onMove = { member, rank -> mutate { it.moveFolderMember(folderId, member.itemId, rank) } }
+            onRemove = { member -> removeMemberFromFolder(folderId, member) }
+        }
+        folderPopup = popup
+        dragLayer.folderPopup = popup
+        homeSurface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        val byComponent = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
+        bindFolderPopup(popup, folder, byComponent)
+        dragLayer.addView(popup, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        CenixLog.event(EventId.FOLDER_OPEN, Severity.INFO, mapOf("members" to folder.members.size.toString()))
+        popup.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    }
+
+    private fun bindFolderPopup(
+        popup: FolderPopup,
+        folder: Folder,
+        byComponent: Map<Triple<String, String, Long>, LaunchableApp>,
+    ) {
+        popup.bind(
+            folder.folderId,
+            folder.title,
+            folder.members.mapNotNull { member -> byComponent[member.component.key()]?.let { member to it } },
+        )
+    }
+
+    private fun closeFolder(reason: String) {
+        val popup = folderPopup ?: return
+        popup.clearTitleFocus()
+        dragLayer.folderPopup = null
+        dragLayer.removeView(popup)
+        folderPopup = null
+        if (root.surface == LauncherSurface.HOME) homeSurface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        hideKeyboard()
+        CenixLog.event(EventId.FOLDER_CLOSE, Severity.INFO, mapOf("category" to reason))
+    }
+
+    private fun removeMemberFromFolder(folderId: ULong, member: FolderMember) {
+        val page = rendered.pages.getOrNull(pager.currentPage) ?: return
+        val occupied = rendered.items
+            .filter { (it.container as? ContainerRef.Workspace)?.pageId == page.pageId }
+            .map { it.cell.cellX to it.cell.cellY }
+            .toSet()
+        val cell = (0 until rendered.grid.rows).flatMap { y -> (0 until rendered.grid.cols).map { x -> x to y } }
+            .firstOrNull { it !in occupied }
+            ?: return Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show()
+        mutate { it.removeItemFromFolder(folderId, member.itemId, ContainerRef.Workspace(page.pageId), cell.first, cell.second) }
+    }
+
+    private fun ComponentId.key() = Triple(`package`, `class`, profileId.toLong())
+
     private fun onDrop(payload: LauncherDrag, destination: DropDestination) {
         when {
-            destination.remove && payload.itemId != null -> mutate { it.remove(payload.itemId) }
+            destination.remove && payload.itemId != null && payload.sourceFolderId == null -> mutate { it.remove(payload.itemId) }
+            destination.folderId != null && !payload.isFolder -> {
+                val folder = rendered.folders.firstOrNull { it.folderId == destination.folderId } ?: return
+                val rank = destination.folderRank ?: folder.members.size.toUInt()
+                when {
+                    payload.itemId == null && payload.app != null -> mutate { it.addFromAllAppsToFolder(payload.app, folder.folderId, rank) }
+                    payload.sourceFolderId == folder.folderId && destination.folderRank != null -> mutate {
+                        it.moveFolderMember(folder.folderId, checkNotNull(payload.itemId), rank)
+                    }
+                    payload.itemId != null -> mutate { it.addItemToFolder(payload.itemId, folder.folderId, rank) }
+                }
+            }
+            destination.createFolder && destination.targetItemId != null && payload.itemId != null && payload.sourceFolderId == null && !payload.isFolder -> mutate {
+                it.createFolder(payload.itemId, destination.targetItemId)
+            }
             destination.container === hotseat && payload.itemId != null -> mutate {
-                it.move(payload.itemId, ContainerRef.Hotseat, destination.cellX, 0)
+                if (payload.sourceFolderId != null) {
+                    it.removeItemFromFolder(payload.sourceFolderId, payload.itemId, ContainerRef.Hotseat, destination.cellX, 0)
+                } else {
+                    it.move(payload.itemId, ContainerRef.Hotseat, destination.cellX, 0)
+                }
             }
             destination.container is CellLayout -> {
                 val pageId = rendered.pages.getOrNull(pager.currentPage)?.pageId ?: return
-                if (payload.itemId == null) mutate { it.placeFromAllApps(payload.app, pageId, destination.cellX, destination.cellY) }
-                else mutate { it.move(payload.itemId, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY) }
+                when {
+                    payload.itemId == null && payload.app != null -> mutate { it.placeFromAllApps(payload.app, pageId, destination.cellX, destination.cellY) }
+                    payload.sourceFolderId != null && payload.itemId != null -> mutate {
+                        it.removeItemFromFolder(payload.sourceFolderId, payload.itemId, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY)
+                    }
+                    payload.itemId != null -> mutate { it.move(payload.itemId, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY) }
+                }
             }
             else -> CenixLog.event(EventId.DRAG_CANCEL, Severity.INFO, mapOf("category" to "invalid-target"))
         }
@@ -374,6 +501,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun setSurface(target: LauncherSurface, animate: Boolean = true) {
         if ((target == LauncherSurface.EMERGENCY) != app.emergency) return
+        if (target != LauncherSurface.HOME) closeFolder("surface")
         root.surface = target
         allAppsContainer.animate().cancel()
         when (target) {
@@ -431,6 +559,10 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleBack() {
         if (dragLayer.isDragging) return dragLayer.cancel("back")
+        folderPopup?.let { popup ->
+            if (popup.clearTitleFocus()) hideKeyboard() else closeFolder("back")
+            return
+        }
         val imeVisible = root.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
         if (root.surface == LauncherSurface.ALL_APPS && imeVisible) {
             searchField.clearFocus()
@@ -441,7 +573,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun hideKeyboard() {
-        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(root.windowToken, 0)
     }
 
     private fun addRootAccessibilityActions() {
@@ -474,6 +606,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun launch(appItem: LaunchableApp) {
+        closeFolder("launch")
         val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
         if (user == null) return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         try {
@@ -537,12 +670,12 @@ class HomeActivity : AppCompatActivity() {
         return getString(if (profileId == personal) R.string.profile_personal else R.string.profile_other)
     }
 
-    private fun WorkspaceTransition.asSnapshot() = WorkspaceSnapshot(generation, grid, pages, items)
+    private fun WorkspaceTransition.asSnapshot() = WorkspaceSnapshot(generation, grid, pages, items, folders)
 
     companion object {
         const val EXTRA_FORCE_NATIVE_FAILURE = "com.caniko.cenix.FORCE_NATIVE_FAILURE"
         private const val SURFACE_ANIMATION_MS = 220L
         private const val STATE_PAGE_ID = "workspace.pageId"
-        private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList())
+        private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList(), emptyList())
     }
 }

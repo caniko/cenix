@@ -58,7 +58,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV3KeepsMetadata() {
+    fun migratesV1ToV4KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -77,7 +77,7 @@ class CenixDatabaseTest {
         sqlite.close()
 
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_1_2, CenixDatabase.MIGRATION_2_3)
+            .addMigrations(CenixDatabase.MIGRATION_1_2, CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         val metadata = db.dao().metadata()
@@ -91,7 +91,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV2ToV3PreservesPagesHotseatAndProfiles() {
+    fun migratesV2ToV4PreservesPagesHotseatAndProfiles() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-v2-v3.db"
         context.deleteDatabase(name)
@@ -109,14 +109,14 @@ class CenixDatabaseTest {
         sqlite.version = 2
         sqlite.close()
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_2_3)
+            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         val items = db.dao().workspaceItems().associateBy { it.id }
         assertEquals(1L, items[7]!!.containerId)
         assertEquals(2L, items[8]!!.containerId)
         assertEquals("HOTSEAT", items[9]!!.containerKind)
-        assertEquals(12L, items[9]!!.profileId)
+        assertEquals(12L, db.dao().workspaceApplications().associateBy { it.itemId }[9]!!.profileId)
         assertEquals(10L, db.dao().workspaceMetadata()!!.nextItemId)
         assertEquals(3L, db.dao().workspaceMetadata()!!.nextPageId)
         db.close()
