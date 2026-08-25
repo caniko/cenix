@@ -10,12 +10,12 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | --- | --- | --- | --- |
 | home-register | INSTALLABLE_PUBLIC | done | API |
 | home-role | ROLE_HOME_GATED | done | API |
-| workspace | INSTALLABLE_PUBLIC | done | API |
-| hotseat | INSTALLABLE_PUBLIC | done | API |
-| all-apps | INSTALLABLE_PUBLIC | done | API |
+| workspace | INSTALLABLE_PUBLIC | done-p1 | API |
+| hotseat | INSTALLABLE_PUBLIC | done-p1 | API |
+| all-apps | INSTALLABLE_PUBLIC | stacked-p1; shell-p1.5 | API |
 | search | INSTALLABLE_PUBLIC | done | API |
 | folders | INSTALLABLE_PUBLIC | later | SRC |
-| drag-drop | INSTALLABLE_PUBLIC | done | API |
+| drag-drop | INSTALLABLE_PUBLIC | internal-done-p1 | API |
 | widgets | USER_AUTHORIZED | later | API |
 | widget-restore | USER_AUTHORIZED | later | SRC |
 | pinned-shortcuts | USER_AUTHORIZED | later | API |
@@ -28,7 +28,7 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | private-space | UNKNOWN_REQUIRES_SPIKE | omitted | SRC |
 | app-lock | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
 | wallpaper | USER_AUTHORIZED | later | API |
-| grid-migration | INSTALLABLE_PUBLIC | later | SRC |
+| grid-migration | INSTALLABLE_PUBLIC | room-v3-done; user-grid-later | API |
 | backup | INSTALLABLE_PUBLIC | omitted | SRC |
 | a11y | INSTALLABLE_PUBLIC | partial | API |
 | secondary-display | INSTALLABLE_PUBLIC | omitted | API |

@@ -14,8 +14,11 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 
 ## In this tree
 
-- Typed UniFFI workspace reducer + filter (`API`, host tests)
-- Room-only durable state, no main-thread queries on device (`API`)
+- Typed UniFFI workspace reducer and filter; no retained Rust workspace state (`API`)
+- Room v3 generation transactions, stable pages/items, monotonic allocators, and tested 2 to 3 migration (`API`)
+- Custom `WorkspacePager`, `CellLayout`, `HotseatView`, visual page indicator, and internal `DragLayer` (`API`)
+- Dynamic trailing-page lifecycle and deterministic occupied-cell reorder (`API`)
+- Room-only durable state and no main-thread queries on device (`API`)
 - Crash-loop 3/60s process-local; user/native persist emergency (`API`, host tests)
 - Diagnostics: redacted events, SAF export, 64KiB×4 ring (`API`)
 - Isolated AVD name `cenix-ci-$RUN_ID`; refuse shared `cenix-api35` unless `CENIX_ALLOW_SHARED_AVD=1`
@@ -27,3 +30,4 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 - FOSS `default`/`aosp_atd` system image — flake still ships `google_apis` until harbor-android provides one
 - Byte-identical release APKs — `scripts/compare-release-apks.sh` records hashes
 - Macrobenchmark / jank — static gates only (`scripts/check-performance-static.sh`)
+- Production HOME/All Apps separation — P1.5, not P1
