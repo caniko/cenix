@@ -518,6 +518,43 @@ hide_keyboard
 "$adb" -s "$serial" shell settings put system user_rotation 0
 sleep 1
 go_home
+
+"$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+ui="$(dump_ui)"
+read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
+drag_pattern_to_bounds 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
+drag_from_to 'content-desc="Cenix Fixture, page 1' 'content-desc="Settings, page 1'
+wait_ui 'folder, 2 applications' 1
+pass "folders: central occupied-cell drop creates two-member folder"
+tap_pattern 'folder, 2 applications'
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
+wait_ui 'content-desc="Cenix Fixture"' 1
+pass "folders: popup exposes ranked members"
+tap_pattern 'resource-id="com.caniko.cenix:id/folder_title"'
+"$adb" -s "$serial" shell input text "Utilities"
+"$adb" -s "$serial" shell input keyevent KEYCODE_ENTER
+wait_ui 'text="Utilities".*resource-id="com.caniko.cenix:id/folder_title"' 1
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
+wait_ui 'content-desc="Utilities, folder, 2 applications' 1
+"$adb" -s "$serial" shell am force-stop com.caniko.cenix
+go_home
+wait_ui 'content-desc="Utilities, folder, 2 applications' 1
+pass "folders: title and membership survive process recreation"
+ui="$(dump_ui)"
+read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+tap_pattern 'content-desc="Utilities, folder, 2 applications'
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
+drag_pattern_to_bounds 'content-desc="Cenix Fixture"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
+wait_ui 'content-desc="Settings, page 1' 1
+wait_ui 'folder, 2 applications' 0
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
+pass "folders: dragging a member out dissolves the single-member folder"
+
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
 wait_ui 'Emergency mode' 1
 pass "debug extra forces emergency chrome"
