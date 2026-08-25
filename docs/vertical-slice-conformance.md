@@ -1,6 +1,6 @@
 # Vertical slice conformance
 
-Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
+Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
 
 Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `default` x86_64 emulator is not that device.
 
@@ -12,7 +12,7 @@ Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The
 - Emergency path never constructs `NativeAppFilter` or generated UniFFI types
 - Native probe failure (`filterFactory` throw or probe throw) enters persisted emergency
 - Rust command sequences preserve generation, no-overlap, deterministic ordering, page trimming, grid, and reorder invariants
-- Room rejects stale generations, verifies no-op equality, rolls back failed writes, and preserves v2 screen 0, screen 1, hotseat, profiles, and cells
+- Room rejects stale generations, verifies no-op equality, rolls back failed writes, and migrates v2/v3 workspace data to the normalized v4 schema
 - Debug APK audit: HOME exported, no `INTERNET`, no `QUERY_ALL_PACKAGES`, no WebView, `libcenix_ffi.so` present
 
 ## Proven on emulator
@@ -29,12 +29,25 @@ That script:
 2. Installs the debug APK and takes the HOME role
 3. Checks normal HOME contains the workspace and hotseat but not All Apps or emergency controls
 4. Checks swipe, Back, HOME intent, search, and IME transitions, then installs, launches, and removes `com.caniko.cenix.fixture`
-5. Drags Settings from All Apps into a logical workspace cell through the internal drag layer
+5. Drags the deterministic fixture from All Apps into a logical workspace cell through the internal drag layer
 6. Moves the item, edge-creates page two, returns it, and verifies empty trailing-page removal
 7. Drags workspace to hotseat and back
 8. Force-stop + HOME stays healthy; landscape/portrait retain the workspace and pinned item
-9. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
-10. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+9. Creates a two-member folder, renames it, recreates the process, extracts a member, and verifies dissolution
+10. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
+11. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+
+Final P2A evidence used clean commit `0e0755dbe3dde4e0d651437b2d01aea28610bb99`, AOSP API 35 default x86_64 image revision 2, and debug APK SHA-256 `590c5493c57e2351749093d57f67d35515d46acf1786d6e8c4a9c5d7660b6ea9`.
+
+| Run | Serial | Duration | Evidence |
+| --- | --- | ---: | --- |
+| 1 | `emulator-5586` | 408s | `AOSP_EMU` |
+| 2 | `emulator-5592` | 411s | `AOSP_EMU` |
+| 3 | `emulator-5576` | 404s | `AOSP_EMU` |
+| 4 | `emulator-5604` | 406s | `AOSP_EMU` |
+| 5 | `emulator-5582` | 404s | `AOSP_EMU` |
+
+The same commit and APK passed the full flow with measured forced RTL (`emulator-5606`) and 1.3x font scale (`emulator-5604`). Artifacts are under `/tmp/cenix-repeat-2191916`, `/tmp/cenix-conformance.wvor3x`, and `/tmp/cenix-conformance.bOrgig`. This is `AOSP_EMU`, never `GOS_DEV`.
 
 Final P1.5 evidence used clean commit `146456280e73498c1dc74bc7bb8ca1f00346ef0c`, AOSP API 35 default x86_64 image revision 2, and isolated AVDs.
 
@@ -68,4 +81,6 @@ nix develop --command scripts/run-host-tests.sh
 nix develop --command scripts/assemble-debug.sh
 nix develop --command scripts/audit-apk.sh
 nix develop --command scripts/check-16k.sh android/app/src/main/jniLibs/arm64-v8a/libcenix_ffi.so android/app/src/main/jniLibs/x86_64/libcenix_ffi.so
+nix flake check
+nix build .#apk-debug --option sandbox false
 ```

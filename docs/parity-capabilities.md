@@ -12,8 +12,8 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; drag |
 | HOME / All Apps shell | `INSTALLABLE_PUBLIC` | done | separate surfaces; swipe, Back, HOME intent; `emu` |
 | Local label search | `INSTALLABLE_PUBLIC` | done | `emu` |
-| Folders | `INSTALLABLE_PUBLIC` | later | `src` |
-| Drag and drop | `INSTALLABLE_PUBLIC` | done | Kotlin-only All Apps pin, move, dock, reorder, remove; no swap |
+| Folders | `INSTALLABLE_PUBLIC` | done | typed create, append, reorder, rename, extract, dissolve; `emu` |
+| Drag and drop | `INSTALLABLE_PUBLIC` | done | Kotlin-only All Apps pin, move, dock, reorder, folder, remove; no swap |
 | Widgets | `USER_AUTHORIZED` | later | `AppWidgetHost`; pin confirm is public |
 | Widget restore / ID remap | `USER_AUTHORIZED` | later | `APPWIDGET_HOST_RESTORED`; `src` |
 | Pinned shortcuts | `USER_AUTHORIZED` | later | `ShortcutManager` / `CONFIRM_PIN_SHORTCUT` |
