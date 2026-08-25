@@ -20,3 +20,4 @@
 | [0016](0016-dynamic-page-lifecycle.md) | Dynamic page lifecycle |
 | [0017](0017-internal-drag-layer.md) | Kotlin-only internal drag layer |
 | [0018](0018-deterministic-reorder.md) | Deterministic occupied-cell reorder |
+| [0019](0019-production-shell.md) | Separate production HOME and All Apps surfaces |

@@ -8,12 +8,12 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | --- | --- | --- | --- |
 | HOME registration | `INSTALLABLE_PUBLIC` | done | `src`+`api`+`emu` |
 | HOME role selection | `ROLE_HOME_GATED` | done | `RoleManager` / `cmd role`; `emu` |
-| Workspace | `INSTALLABLE_PUBLIC` | done | two pages; long-press pin; drag move |
+| Workspace | `INSTALLABLE_PUBLIC` | done | dynamic pages; internal drag and reorder; `emu` |
 | Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; drag |
-| All Apps list | `INSTALLABLE_PUBLIC` | done | `LauncherApps`; `emu` |
+| HOME / All Apps shell | `INSTALLABLE_PUBLIC` | done | separate surfaces; swipe, Back, HOME intent; `emu` |
 | Local label search | `INSTALLABLE_PUBLIC` | done | `emu` |
 | Folders | `INSTALLABLE_PUBLIC` | later | `src` |
-| Drag and drop | `INSTALLABLE_PUBLIC` | done | pin move/unpin; no swap; no All Apps drag |
+| Drag and drop | `INSTALLABLE_PUBLIC` | done | Kotlin-only All Apps pin, move, dock, reorder, remove; no swap |
 | Widgets | `USER_AUTHORIZED` | later | `AppWidgetHost`; pin confirm is public |
 | Widget restore / ID remap | `USER_AUTHORIZED` | later | `APPWIDGET_HOST_RESTORED`; `src` |
 | Pinned shortcuts | `USER_AUTHORIZED` | later | `ShortcutManager` / `CONFIRM_PIN_SHORTCUT` |

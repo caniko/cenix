@@ -2,7 +2,7 @@
 
 ## Still out
 
-- Folders, widgets, shortcuts, All Apps drag, swap, more than two pages
+- Folders, widgets, pinned shortcuts, and swap
 - Recents / Quickstep (privileged; do not claim)
 - Private Space chrome, app lock, launcher data provider
 - Icon packs / Cuscon

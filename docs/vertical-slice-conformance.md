@@ -1,8 +1,8 @@
 # Vertical slice conformance
 
-Cenix is an installable HOME app with a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
+Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
 
-Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `google_apis` x86_64 emulator is not that device.
+Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `default` x86_64 emulator is not that device.
 
 ## Proven on host
 
@@ -17,24 +17,36 @@ Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The
 
 ## Proven on emulator
 
-Run only from `nix develop .#emulator`. `nix develop` (default) does not fetch the ~1.6 GiB system image.
+Run only from `nix develop .#emulator-aosp`. `nix develop` (default) does not fetch the ~1.6 GiB system image.
 
 ```bash
-nix develop .#emulator --command scripts/emulator-conformance.sh
+nix develop .#emulator-aosp --command scripts/emulator-conformance.sh
 ```
 
 That script:
 
 1. Creates isolated AVD `cenix-ci-$RUN_ID` (320×640 mdpi AOSP API 35; refuses shared `cenix-api35`)
 2. Installs the debug APK and takes the HOME role
-3. Checks search, workspace grid, and hotseat are present
-4. Installs `com.caniko.cenix.fixture`, searches, launches it, returns HOME, then uninstalls
+3. Checks normal HOME contains the workspace and hotseat but not All Apps or emergency controls
+4. Checks swipe, Back, HOME intent, search, and IME transitions, then installs, launches, and removes `com.caniko.cenix.fixture`
 5. Drags Settings from All Apps into a logical workspace cell through the internal drag layer
 6. Moves the item, edge-creates page two, returns it, and verifies empty trailing-page removal
 7. Drags workspace to hotseat and back
-8. Force-stop + HOME stays healthy; landscape/portrait keep search and recovery controls
+8. Force-stop + HOME stays healthy; landscape/portrait retain the workspace and pinned item
 9. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
 10. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+
+Final P1.5 evidence used clean commit `146456280e73498c1dc74bc7bb8ca1f00346ef0c`, AOSP API 35 default x86_64 image revision 2, and isolated AVDs.
+
+| Run | Serial | Duration | Debug APK SHA-256 | Evidence |
+| --- | --- | ---: | --- | --- |
+| 1 | `emulator-5578` | 335s | `1b44e49cd43fd1384402d474a5f1bb5e63a46ec51336195adca109fdd0d4bf1e` | `AOSP_EMU` |
+| 2 | `emulator-5586` | 342s | `1b44e49cd43fd1384402d474a5f1bb5e63a46ec51336195adca109fdd0d4bf1e` | `AOSP_EMU` |
+| 3 | `emulator-5590` | 337s | `1b44e49cd43fd1384402d474a5f1bb5e63a46ec51336195adca109fdd0d4bf1e` | `AOSP_EMU` |
+| 4 | `emulator-5608` | 338s | `1b44e49cd43fd1384402d474a5f1bb5e63a46ec51336195adca109fdd0d4bf1e` | `AOSP_EMU` |
+| 5 | `emulator-5588` | 336s | `1b44e49cd43fd1384402d474a5f1bb5e63a46ec51336195adca109fdd0d4bf1e` | `AOSP_EMU` |
+
+The same commit and APK also passed full runs with forced RTL (`emulator-5620`) and 1.3x font scale (`emulator-5622`). Artifacts are under `/tmp/cenix-p15-final/{repeat,rtl,large-font}`.
 
 Final P1 evidence used clean commit `9fb79fbc505685a1566fcbd6f6c6d6a3d3769b42`, AOSP API 35 default x86_64 image revision 2, and explicit emulator ports.
 
@@ -46,9 +58,7 @@ Final P1 evidence used clean commit `9fb79fbc505685a1566fcbd6f6c6d6a3d3769b42`, 
 | 4 | `cenix-ci-p1-final-4` | `emulator-5606` | 321s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
 | 5 | `cenix-ci-p1-final-5` | `emulator-5608` | 258s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
 
-Artifacts are under `/tmp/cenix-p1-final/run-{1..5}`. AOSP emulator evidence is never `GOS_DEV`.
-
-If the image, emulator binary, or boot fails, the script writes `docs/emulator-blocker.md` and exits non-zero.
+P1 artifacts are under `/tmp/cenix-p1-final/run-{1..5}`. AOSP emulator evidence is never `GOS_DEV`.
 
 ## Host command set
 
