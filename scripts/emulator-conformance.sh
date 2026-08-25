@@ -358,6 +358,12 @@ role_holders() {
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r'
 }
 
+apply_app_rtl() {
+  if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
+    "$adb" -s "$serial" shell cmd locale set-app-locales com.caniko.cenix --user 0 ar >/dev/null
+  fi
+}
+
 "$root/scripts/assemble-debug.sh"
 "$root/scripts/audit-apk.sh"
 apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
@@ -387,6 +393,7 @@ PY
 "$adb" -s "$serial" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null 2>&1 || true
 "$adb" -s "$serial" install -r -t "$apk"
+apply_app_rtl
 "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "Cenix is not HOME role holder: $holders"
@@ -417,6 +424,7 @@ export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
 pass "instrumentation: HomeConformanceTest"
 "$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"
+apply_app_rtl
 "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null || true
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "instrumentation dropped HOME role: $holders"
@@ -604,6 +612,7 @@ omit_apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
 CENIX_OMIT_NATIVE=1 "$root/scripts/audit-apk.sh" "$omit_apk"
 "$adb" -s "$serial" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" -s "$serial" install -r -t "$omit_apk"
+apply_app_rtl
 "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
 go_home
 wait_ui 'Emergency mode' 1
