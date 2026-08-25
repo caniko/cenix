@@ -16,10 +16,10 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | search | INSTALLABLE_PUBLIC | done | API |
 | folders | INSTALLABLE_PUBLIC | done-p2a | API,AOSP_EMU |
 | drag-drop | INSTALLABLE_PUBLIC | internal-done-p1; folders-done-p2a | API,AOSP_EMU |
-| widgets | USER_AUTHORIZED | later | API |
-| widget-restore | USER_AUTHORIZED | later | SRC |
-| pinned-shortcuts | USER_AUTHORIZED | later | API |
-| pin-widget-confirm | USER_AUTHORIZED | later | API |
+| widgets | USER_AUTHORIZED | p3-contract | SRC,API |
+| widget-restore | USER_AUTHORIZED | p3-contract | SRC,API |
+| pinned-shortcuts | USER_AUTHORIZED | done-p2b | API,AOSP_EMU |
+| pin-widget-confirm | USER_AUTHORIZED | p3-contract | SRC,API |
 | notification-dots | USER_AUTHORIZED | later | API |
 | package-events | INSTALLABLE_PUBLIC | done | API,AOSP_EMU |
 | session-commit | INSTALLABLE_PUBLIC | later | SRC |
@@ -30,7 +30,7 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | wallpaper | USER_AUTHORIZED | later | API |
 | grid-migration | INSTALLABLE_PUBLIC | room-v4-done; user-grid-later | API |
 | backup | INSTALLABLE_PUBLIC | omitted | SRC |
-| a11y | INSTALLABLE_PUBLIC | partial | API |
+| a11y | INSTALLABLE_PUBLIC | keyboard-and-semantics-p2b; TalkBack-unverified | API,AOSP_EMU |
 | secondary-display | INSTALLABLE_PUBLIC | omitted | API |
 | recents-quickstep | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
 | launcher-provider | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
