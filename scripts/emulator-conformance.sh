@@ -93,8 +93,12 @@ if [[ -n "$serial" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
   exit 1
 fi
 emu_port="${CENIX_EMU_PORT:-$((5570 + RANDOM % 20 * 2))}"
+rtl_boot=()
+if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
+  rtl_boot=(-prop debug.force_rtl=true)
+fi
 if [[ -z "$serial" ]]; then
-  "$emulator_bin" -avd "$avd" -port "$emu_port" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/emulator.log" 2>&1 &
+  "$emulator_bin" -avd "$avd" -port "$emu_port" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect "${rtl_boot[@]}" >"$art/emulator.log" 2>&1 &
   started=$!
   cleanup() { kill "$started" 2>/dev/null || true; }
   trap cleanup EXIT
