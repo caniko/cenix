@@ -12,4 +12,9 @@
     <string name="update_dynamic">Update dynamic shortcut</string>
     <string name="disable_dynamic">Disable dynamic shortcut</string>
     <string name="remove_dynamic">Remove dynamic shortcut</string>
+    <string name="update_widget">Update widget</string>
+    <string name="pin_widget">Request pinned widget</string>
+    <string name="complete_widget_config">Complete widget configuration</string>
+    <string name="collection_widget">Fixture collection widget</string>
+    <string name="configurable_widget">Fixture configurable widget</string>
 </resources>

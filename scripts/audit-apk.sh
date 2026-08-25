@@ -15,8 +15,11 @@ if ! grep -q 'android.intent.category.HOME' "$manifest"; then
   exit 1
 fi
 exported="$(grep -c 'android:exported="true"' "$manifest" || true)"
-if [[ "$exported" -ne 2 ]] || ! grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' "$manifest"; then
-  echo "only HOME and pin-shortcut confirmation may be exported, found $exported" >&2
+if [[ "$exported" -ne 4 ]] ||
+  ! grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' "$manifest" ||
+  ! grep -q 'android.content.pm.action.CONFIRM_PIN_APPWIDGET' "$manifest" ||
+  ! grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' "$manifest"; then
+  echo "only HOME, pin confirmations, and widget restore may be exported, found $exported" >&2
   exit 1
 fi
 if grep -R --include='*.kt' --include='*.xml' -nE 'WebView|cuscon|Cuscon|cenix_jni|FilterProtocol|NativeBridge|harbor-js' "$root/android" \
@@ -69,6 +72,8 @@ grep -q 'android.permission.INTERNET' <<<"$xmltree" && { echo "INTERNET in merge
 grep -q 'QUERY_ALL_PACKAGES' <<<"$xmltree" && { echo "QUERY_ALL_PACKAGES in merged manifest" >&2; exit 1; }
 grep -q 'android.intent.category.HOME' <<<"$xmltree" || { echo "HOME missing from merged manifest" >&2; exit 1; }
 grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' <<<"$xmltree" || { echo "pin shortcut confirmation missing from merged manifest" >&2; exit 1; }
+grep -q 'android.content.pm.action.CONFIRM_PIN_APPWIDGET' <<<"$xmltree" || { echo "pin widget confirmation missing from merged manifest" >&2; exit 1; }
+grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' <<<"$xmltree" || { echo "widget restore receiver missing from merged manifest" >&2; exit 1; }
 grep -qiE 'cuscon|harbor-js|cenix_jni' <<<"$badging" && { echo "forbidden string in badging" >&2; exit 1; }
 python3 - "$apk" <<'PY' || { echo "Play Services reference in APK" >&2; exit 1; }
 import sys, zipfile

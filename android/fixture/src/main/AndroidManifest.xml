@@ -23,6 +23,35 @@
         <activity
             android:name=".DynamicShortcutActivity"
             android:exported="true" />
+        <activity
+            android:name=".FixtureWidgetConfigActivity"
+            android:exported="true" />
+        <receiver
+            android:name=".FixtureWidgetProvider"
+            android:label="@string/collection_widget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/fixture_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".ConfigurableWidgetProvider"
+            android:label="@string/configurable_widget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/configurable_widget_info" />
+        </receiver>
+        <service
+            android:name=".FixtureWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
         <activity-alias
             android:name=".FixtureTwo"
             android:exported="true"

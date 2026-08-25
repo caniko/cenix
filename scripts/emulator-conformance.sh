@@ -191,7 +191,7 @@ dump_ui() {
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
       xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
       if grep -q 'package="com.caniko.cenix"' <<<"$xml" &&
-        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation)' <<<"$xml"; then
+        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation|widget_picker)' <<<"$xml"; then
         printf '%s\n' "$xml"
         return 0
       fi
@@ -264,6 +264,15 @@ long_press_pattern() {
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   x=$(((x1 + x2) / 2))
   y=$(((y1 + y2) / 2))
+  "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
+}
+
+long_press_pattern_top() {
+  local xml x1 y1 x2 y2 x y
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  x=$(((x1 + x2) / 2))
+  y=$((y1 + 24))
   "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
 }
 
@@ -397,6 +406,34 @@ set_search() {
   "$adb" -s "$serial" shell input text "$1"
   sleep 1
   hide_keyboard
+}
+
+filter_widgets() {
+  local ui x1 y1 x2 y2
+  wait_ui 'resource-id="com.caniko.cenix:id/widget_search"' 1
+  ui="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/widget_search"')
+  tap_bounds "$x1" "$y1" "$x2" "$y2"
+  "$adb" -s "$serial" shell input text Fixture
+  sleep 1
+  hide_keyboard
+}
+
+accept_widget_bind() {
+  local ui i x1 y1 x2 y2
+  for i in $(seq 1 20); do
+    ui="$(dump_any_ui)"
+    if grep -q 'package="com.android.settings"' <<<"$ui"; then
+      read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="android:id/button1"')
+      tap_bounds "$x1" "$y1" "$x2" "$y2"
+      return 0
+    fi
+    if grep -q 'resource-id="com.caniko.cenix:id/launcherRoot"' <<<"$ui"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  fail "widget bind permission surface did not settle"
 }
 
 go_home() {
@@ -834,6 +871,104 @@ pass "context: uninstall always uses Android confirmation and cancellation prese
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 wait_ui 'content-desc="Manifest action' 0
 pass "folders/shortcuts: package uninstall reconciles folder members and pinned shortcuts"
+fi
+
+if [[ "$suite" == "widgets" || "$suite" == "full" ]]; then
+"$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+go_home
+
+ui="$(dump_ui)"
+read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+"$adb" -s "$serial" shell input swipe $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) 800
+filter_widgets
+wait_ui 'text="Fixture collection widget"' 1
+tap_pattern 'text="Fixture collection widget"'
+accept_widget_bind
+wait_ui 'text="Widget update 0"' 1
+wait_ui 'text="Row 1, update 0"' 1
+pass "widgets: picker binds and renders a real collection-backed host view"
+
+tap_pattern 'text="Open fixture"'
+wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/update_widget"'
+go_home
+wait_ui 'text="Widget update 1"' 1
+wait_ui 'text="Row 1, update 1"' 1
+pass "widgets: provider click, RemoteViews update, and collection refresh are delivered"
+
+ui="$(dump_ui)"
+read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+"$adb" -s "$serial" shell input swipe $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) 800
+filter_widgets
+wait_ui 'text="Fixture collection widget"' 1
+tap_pattern 'text="Fixture collection widget"'
+accept_widget_bind
+sleep 2
+ui="$(dump_ui)"
+widget_count="$(grep -o 'text="Widget update 1"' <<<"$ui" | wc -l)"
+[[ "$widget_count" -ge 2 ]] || fail "second widget instance was not rendered"
+pass "widgets: duplicate provider instances remain independent launcher items"
+
+long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
+wait_ui 'content-desc="Resize right"' 1
+ui="$(dump_ui)"
+read -r rx1 ry1 rx2 ry2 < <(read_bounds "$ui" 'content-desc="Resize right"')
+drag_coordinates $(((rx1 + rx2) / 2)) $(((ry1 + ry2) / 2)) $(((rx1 + rx2) / 2 + 80)) $(((ry1 + ry2) / 2))
+sleep 2
+long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
+wait_ui 'content-desc="Move"' 1
+drag_from_to 'content-desc="Move"' 'content-desc="Empty, page 1'
+sleep 2
+wait_ui 'text="Widget update 1"' 1
+pass "widgets: long-press controls resize and move through snapped reducer commands"
+
+ui="$(dump_ui)"
+read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+"$adb" -s "$serial" shell input swipe $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) 800
+filter_widgets
+wait_ui 'text="Fixture configurable widget"' 1
+tap_pattern 'text="Fixture configurable widget"'
+accept_widget_bind
+wait_resumed 'com.caniko.cenix.fixture/.FixtureWidgetConfigActivity'
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_resumed 'com.caniko.cenix/.HomeActivity'
+wait_ui 'text="Configured widget' 0
+pass "widgets: cancelled required configuration rolls back allocation and placement"
+
+ui="$(dump_ui)"
+read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+"$adb" -s "$serial" shell input swipe $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) 800
+filter_widgets
+wait_ui 'text="Fixture configurable widget"' 1
+tap_pattern 'text="Fixture configurable widget"'
+accept_widget_bind
+wait_resumed 'com.caniko.cenix.fixture/.FixtureWidgetConfigActivity'
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/complete_widget_config"'
+wait_resumed 'com.caniko.cenix/.HomeActivity'
+wait_ui 'text="Configured widget' 1
+pass "widgets: required configuration commits only after provider acceptance"
+
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_widget"'
+wait_ui 'text="Add widget to Home?"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/pin_cancel"'
+go_home
+pass "widgets: incoming pin cancellation writes no placement"
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_widget"'
+wait_ui 'text="Add widget to Home?"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/pin_confirm"'
+accept_widget_bind
+go_home
+wait_ui 'text="Widget update 1"' 1
+pass "widgets: explicit incoming pin acceptance binds and commits"
+
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
+wait_ui 'text="Widget unavailable"' 1
+tap_pattern 'content-desc="Remove"'
+sleep 1
+pass "widgets: provider removal renders a removable placeholder"
 fi
 
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
