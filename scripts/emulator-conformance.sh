@@ -796,7 +796,7 @@ long_press_pattern 'content-desc="Cenix Fixture Two, page 1'
 wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
 tap_pattern 'resource-id="com.caniko.cenix:id/context_uninstall"'
 sleep 1
-resumed | grep -Eq 'com.android.permissioncontroller|com.google.android.packageinstaller' || fail "uninstall confirmation did not open"
+resumed | grep -Eq 'com\.android\.permissioncontroller|com(\.google)?\.android\.packageinstaller' || fail "uninstall confirmation did not open"
 "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
 go_home
 wait_ui 'content-desc="Cenix Fixture Two, page 1' 1
