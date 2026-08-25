@@ -360,7 +360,7 @@ role_holders() {
 
 apply_app_rtl() {
   if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
-    "$adb" -s "$serial" shell cmd locale set-app-locales com.caniko.cenix --user 0 ar >/dev/null
+    "$adb" -s "$serial" shell cmd locale set-app-locales com.caniko.cenix --user 0 --locales ar >/dev/null
   fi
 }
 
