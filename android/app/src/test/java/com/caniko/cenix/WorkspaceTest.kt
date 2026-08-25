@@ -13,6 +13,7 @@ import com.caniko.cenix.db.WorkspaceMetadataEntity
 import com.caniko.cenix.db.WorkspacePageEntity
 import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.ShortcutItemEntity
+import com.caniko.cenix.db.WidgetItemEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -178,6 +179,30 @@ class WorkspaceTest {
         }
         assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
         assertEquals("dynamic", db.dao().workspaceShortcuts().single().shortcutId)
+        db.close()
+    }
+
+    @Test
+    fun widgetRestoreRemapHandlesIdSwapsAtomically() {
+        val db = openDb()
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        val items = listOf(
+            item(1, "WORKSPACE", 1).copy(itemKind = WorkspaceItemEntity.ITEM_WIDGET),
+            item(2, "WORKSPACE", 1).copy(cellX = 1, itemKind = WorkspaceItemEntity.ITEM_WIDGET),
+        )
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 3),
+            pages,
+            items,
+            widgets = listOf(
+                WidgetItemEntity(1, "widgets", "One", 0, 10),
+                WidgetItemEntity(2, "widgets", "Two", 0, 20),
+            ),
+        )
+        db.dao().remapWidgetIds(intArrayOf(10, 20), intArrayOf(20, 10), 100)
+        assertEquals(mapOf(1L to 20, 2L to 10), db.dao().workspaceWidgets().associate { it.itemId to it.appWidgetId })
+        assertTrue(db.dao().pendingWidgetOperations().isEmpty())
         db.close()
     }
 

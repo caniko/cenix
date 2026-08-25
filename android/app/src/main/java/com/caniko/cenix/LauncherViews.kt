@@ -15,6 +15,7 @@ import android.os.Parcelable
 import android.text.InputFilter
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.Gravity
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
@@ -319,6 +320,76 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
 }
 
 class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ListView(context, attrs)
+
+enum class WidgetResizeEdge { LEFT, RIGHT, TOP, BOTTOM }
+
+class WidgetFrame(context: Context) : FrameLayout(context) {
+    private val controls = FrameLayout(context).apply { visibility = GONE }
+
+    fun bind(
+        content: View,
+        onMove: (View) -> Unit,
+        onResize: (WidgetResizeEdge, Float, Float) -> Unit,
+        onRemove: () -> Unit,
+    ) {
+        removeAllViews()
+        addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        controls.removeAllViews()
+        controls.setBackgroundColor(Color.argb(48, 40, 110, 220))
+        addHandle("<", "Resize left", Gravity.START or Gravity.CENTER_VERTICAL, WidgetResizeEdge.LEFT, onResize)
+        addHandle(">", "Resize right", Gravity.END or Gravity.CENTER_VERTICAL, WidgetResizeEdge.RIGHT, onResize)
+        addHandle("^", "Resize top", Gravity.TOP or Gravity.CENTER_HORIZONTAL, WidgetResizeEdge.TOP, onResize)
+        addHandle("v", "Resize bottom", Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, WidgetResizeEdge.BOTTOM, onResize)
+        controls.addView(Button(context).apply {
+            text = context.getString(R.string.move_widget)
+            contentDescription = context.getString(R.string.move_widget)
+            setOnTouchListener { view, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) onMove(this@WidgetFrame)
+                false
+            }
+        }, LayoutParams(dp(72), dp(48), Gravity.START or Gravity.TOP))
+        controls.addView(Button(context).apply {
+            text = "×"
+            contentDescription = context.getString(R.string.remove_widget)
+            setOnClickListener { onRemove() }
+        }, LayoutParams(dp(48), dp(48), Gravity.END or Gravity.TOP))
+        addView(controls, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val activate = OnLongClickListener {
+            controls.visibility = VISIBLE
+            isActivated = true
+            true
+        }
+        setOnLongClickListener(activate)
+        content.setOnLongClickListener(activate)
+    }
+
+    private fun addHandle(
+        text: String,
+        description: String,
+        gravity: Int,
+        edge: WidgetResizeEdge,
+        onResize: (WidgetResizeEdge, Float, Float) -> Unit,
+    ) {
+        var downX = 0f
+        var downY = 0f
+        controls.addView(Button(context).apply {
+            this.text = text
+            contentDescription = description
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX
+                        downY = event.rawY
+                    }
+                    MotionEvent.ACTION_UP -> onResize(edge, event.rawX - downX, event.rawY - downY)
+                }
+                true
+            }
+        }, LayoutParams(dp(48), dp(48), gravity))
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+}
 
 class FolderIconView(context: Context) : LinearLayout(context) {
     private val preview = GridLayout(context).apply { columnCount = 2; rowCount = 2 }
@@ -636,6 +707,7 @@ data class LauncherDrag(
     val shortcut: LauncherShortcut? = null,
     val sourceFolderId: ULong? = null,
     val isFolder: Boolean = false,
+    val isWidget: Boolean = false,
 )
 data class DropDestination(
     val container: CellLayout?,
@@ -682,7 +754,7 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
                 updateFolderTarget(payload, event.rawX, event.rawY)
             }
             MotionEvent.ACTION_UP -> {
-                val destination = destination(event.rawX, event.rawY)
+                val destination = destination(payload, event.rawX, event.rawY)
                 finishDrag()
                 onDrop?.invoke(payload, destination)
             }
@@ -710,15 +782,19 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
         pager?.resetEdge()
     }
 
-    private fun destination(rawX: Float, rawY: Float): DropDestination {
+    private fun destination(payload: LauncherDrag, rawX: Float, rawY: Float): DropDestination {
         if (removeTarget?.contains(rawX, rawY) == true) return DropDestination(null, remove = true)
-        folderPopup?.rankAt(rawX, rawY)?.let { return DropDestination(null, folderId = folderPopup?.folderId, folderRank = it) }
-        hotseat?.cellAt(rawX, rawY)?.let { return cellDestination(hotseat, it.first, it.second, rawX, rawY) }
-        pager?.currentLayout?.cellAt(rawX, rawY)?.let { return cellDestination(pager?.currentLayout, it.first, it.second, rawX, rawY) }
+        if (!payload.isWidget) {
+            folderPopup?.rankAt(rawX, rawY)?.let { return DropDestination(null, folderId = folderPopup?.folderId, folderRank = it) }
+            hotseat?.cellAt(rawX, rawY)?.let { return cellDestination(hotseat, it.first, it.second, rawX, rawY, true) }
+        }
+        pager?.currentLayout?.cellAt(rawX, rawY)?.let {
+            return cellDestination(pager?.currentLayout, it.first, it.second, rawX, rawY, !payload.isWidget)
+        }
         return DropDestination(null)
     }
 
-    private fun cellDestination(layout: CellLayout?, x: Int, y: Int, rawX: Float, rawY: Float): DropDestination {
+    private fun cellDestination(layout: CellLayout?, x: Int, y: Int, rawX: Float, rawY: Float, allowFolder: Boolean): DropDestination {
         val view = layout?.viewAt(x, y)
         val target = view?.tag as? CellTarget
         return DropDestination(
@@ -727,18 +803,18 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
             cellY = y,
             targetItemId = target?.itemId,
             folderId = target?.folderId,
-            createFolder = target != null && target.folderId == null && view.centralContains(rawX, rawY),
+            createFolder = allowFolder && target != null && target.folderId == null && view.centralContains(rawX, rawY),
         )
     }
 
     private fun updateFolderTarget(payload: LauncherDrag, rawX: Float, rawY: Float) {
-        val destination = destination(rawX, rawY)
+        val destination = destination(payload, rawX, rawY)
         val target = when {
-            destination.folderId != null && destination.folderRank == null && !payload.isFolder -> destination.folderId
+            destination.folderId != null && destination.folderRank == null && !payload.isFolder && !payload.isWidget -> destination.folderId
             else -> null
         }
         val layout = destination.container
-        val view = if ((destination.createFolder && !payload.isFolder) || target != null) layout?.viewAt(destination.cellX, destination.cellY) else null
+        val view = if ((destination.createFolder && !payload.isFolder && !payload.isWidget) || target != null) layout?.viewAt(destination.cellX, destination.cellY) else null
         if (view !== activeTarget) {
             activeTarget?.isActivated = false
             activeTarget?.scaleX = 1f

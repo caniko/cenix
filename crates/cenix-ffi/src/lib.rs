@@ -35,6 +35,13 @@ pub struct ShortcutId {
     pub profile_id: u64,
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct WidgetProviderId {
+    pub package: String,
+    pub class: String,
+    pub profile_id: u64,
+}
+
 #[derive(Clone, Copy, uniffi::Record)]
 pub struct GridSpec {
     pub cols: i32,
@@ -61,6 +68,7 @@ pub enum ItemPayload {
     Application { component: ComponentId },
     Folder,
     Shortcut { shortcut: ShortcutId },
+    Widget { provider: WidgetProviderId },
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -114,6 +122,18 @@ pub enum WorkspaceCommand {
         item_id: u64,
         shortcut: ShortcutId,
         container: ContainerRef,
+        cell: CellRect,
+    },
+    PlaceWidget {
+        expected_generation: u64,
+        item_id: u64,
+        provider: WidgetProviderId,
+        page_id: u64,
+        cell: CellRect,
+    },
+    ResizeWidget {
+        expected_generation: u64,
+        item_id: u64,
         cell: CellRect,
     },
     Move {
@@ -387,6 +407,26 @@ impl From<core::ShortcutId> for ShortcutId {
     }
 }
 
+impl From<WidgetProviderId> for core::WidgetProviderId {
+    fn from(value: WidgetProviderId) -> Self {
+        Self {
+            package: value.package,
+            class: value.class,
+            profile_id: value.profile_id,
+        }
+    }
+}
+
+impl From<core::WidgetProviderId> for WidgetProviderId {
+    fn from(value: core::WidgetProviderId) -> Self {
+        Self {
+            package: value.package,
+            class: value.class,
+            profile_id: value.profile_id,
+        }
+    }
+}
+
 impl From<GridSpec> for core::GridSpec {
     fn from(value: GridSpec) -> Self {
         Self {
@@ -453,6 +493,7 @@ impl From<ItemPayload> for core::ItemPayload {
             ItemPayload::Application { component } => Self::Application(component.into()),
             ItemPayload::Folder => Self::Folder,
             ItemPayload::Shortcut { shortcut } => Self::Shortcut(shortcut.into()),
+            ItemPayload::Widget { provider } => Self::Widget(provider.into()),
         }
     }
 }
@@ -466,6 +507,9 @@ impl From<core::ItemPayload> for ItemPayload {
             core::ItemPayload::Folder => Self::Folder,
             core::ItemPayload::Shortcut(shortcut) => Self::Shortcut {
                 shortcut: shortcut.into(),
+            },
+            core::ItemPayload::Widget(provider) => Self::Widget {
+                provider: provider.into(),
             },
         }
     }
@@ -590,6 +634,28 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
                 item_id,
                 shortcut: shortcut.into(),
                 container: container.into(),
+                cell: cell.into(),
+            },
+            WorkspaceCommand::PlaceWidget {
+                expected_generation,
+                item_id,
+                provider,
+                page_id,
+                cell,
+            } => Self::PlaceWidget {
+                expected_generation,
+                item_id,
+                provider: provider.into(),
+                page_id,
+                cell: cell.into(),
+            },
+            WorkspaceCommand::ResizeWidget {
+                expected_generation,
+                item_id,
+                cell,
+            } => Self::ResizeWidget {
+                expected_generation,
+                item_id,
                 cell: cell.into(),
             },
             WorkspaceCommand::Move {

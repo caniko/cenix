@@ -14,6 +14,13 @@ pub struct ShortcutId {
     pub profile_id: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WidgetProviderId {
+    pub package: String,
+    pub class: String,
+    pub profile_id: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridSpec {
     pub cols: i32,
@@ -40,6 +47,7 @@ pub enum ItemPayload {
     Application(ComponentId),
     Folder,
     Shortcut(ShortcutId),
+    Widget(WidgetProviderId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +101,18 @@ pub enum WorkspaceCommand {
         item_id: u64,
         shortcut: ShortcutId,
         container: ContainerRef,
+        cell: CellRect,
+    },
+    PlaceWidget {
+        expected_generation: u64,
+        item_id: u64,
+        provider: WidgetProviderId,
+        page_id: u64,
+        cell: CellRect,
+    },
+    ResizeWidget {
+        expected_generation: u64,
+        item_id: u64,
         cell: CellRect,
     },
     Move {
@@ -230,6 +250,14 @@ impl WorkspaceCommand {
                 expected_generation,
                 ..
             }
+            | Self::PlaceWidget {
+                expected_generation,
+                ..
+            }
+            | Self::ResizeWidget {
+                expected_generation,
+                ..
+            }
             | Self::Move {
                 expected_generation,
                 ..
@@ -341,6 +369,16 @@ pub fn apply_workspace_command(
             cell,
             ..
         } => place_shortcut(&mut snapshot, item_id, shortcut, container, cell)?,
+        WorkspaceCommand::PlaceWidget {
+            item_id,
+            provider,
+            page_id,
+            cell,
+            ..
+        } => place_widget(&mut snapshot, item_id, provider, page_id, cell)?,
+        WorkspaceCommand::ResizeWidget { item_id, cell, .. } => {
+            resize_widget(&mut snapshot, item_id, cell)?
+        }
         WorkspaceCommand::Move {
             item_id,
             container,
@@ -532,6 +570,50 @@ fn place_shortcut(
     )
 }
 
+fn place_widget(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    provider: WidgetProviderId,
+    page_id: u64,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
+    validate_widget_provider(&provider)?;
+    place_payload(
+        snapshot,
+        item_id,
+        ItemPayload::Widget(provider),
+        page_id,
+        cell,
+    )
+}
+
+fn resize_widget(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
+    let item = snapshot
+        .items
+        .iter()
+        .find(|item| item.item_id == item_id)
+        .ok_or(WorkspaceError::MissingItem)?;
+    if !matches!(item.payload, ItemPayload::Widget(_)) {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    let container = item.container.clone();
+    validate_destination(snapshot, &container, cell)?;
+    if occupied(snapshot, &container, cell, Some(item_id)) {
+        return Err(WorkspaceError::Occupied);
+    }
+    snapshot
+        .items
+        .iter_mut()
+        .find(|item| item.item_id == item_id)
+        .unwrap()
+        .cell = cell;
+    Ok(())
+}
+
 fn place_payload(
     snapshot: &mut WorkspaceSnapshot,
     item_id: u64,
@@ -582,12 +664,17 @@ fn move_item(
     cell: CellRect,
     reorder: bool,
 ) -> Result<(), WorkspaceError> {
-    validate_destination(snapshot, &container, cell)?;
     let index = snapshot
         .items
         .iter()
         .position(|item| item.item_id == item_id)
         .ok_or(WorkspaceError::MissingItem)?;
+    if matches!(snapshot.items[index].payload, ItemPayload::Widget(_))
+        && matches!(container, ContainerRef::Hotseat)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    validate_destination(snapshot, &container, cell)?;
     if snapshot.items[index].container == container && snapshot.items[index].cell == cell {
         return Ok(());
     }
@@ -675,8 +762,13 @@ fn create_folder(
         .find(|item| item.item_id == second_item_id)
         .cloned()
         .ok_or(WorkspaceError::MissingItem)?;
-    if matches!(first.payload, ItemPayload::Folder) || matches!(second.payload, ItemPayload::Folder)
-    {
+    if !matches!(
+        first.payload,
+        ItemPayload::Application(_) | ItemPayload::Shortcut(_)
+    ) || !matches!(
+        second.payload,
+        ItemPayload::Application(_) | ItemPayload::Shortcut(_)
+    ) {
         return Err(WorkspaceError::InvariantViolation);
     }
     if payload_profile(&first.payload)? != payload_profile(&second.payload)? {
@@ -791,7 +883,10 @@ fn add_item_to_folder(
         .find(|item| item.item_id == item_id)
         .cloned()
     {
-        if matches!(item.payload, ItemPayload::Folder) {
+        if !matches!(
+            item.payload,
+            ItemPayload::Application(_) | ItemPayload::Shortcut(_)
+        ) {
             return Err(WorkspaceError::InvariantViolation);
         }
         snapshot.items.retain(|item| item.item_id != item_id);
@@ -859,7 +954,11 @@ fn insert_folder_member(
             .ok_or(WorkspaceError::InvariantViolation)?
             .payload,
     )?;
-    if payload_profile(&member.payload)? != profile || matches!(member.payload, ItemPayload::Folder)
+    if payload_profile(&member.payload)? != profile
+        || !matches!(
+            member.payload,
+            ItemPayload::Application(_) | ItemPayload::Shortcut(_)
+        )
     {
         return Err(WorkspaceError::CrossProfile);
     }
@@ -988,13 +1087,13 @@ fn drop_missing(
 ) -> Result<(), WorkspaceError> {
     snapshot.items.retain(|item| match &item.payload {
         ItemPayload::Application(component) => live.contains(component),
-        ItemPayload::Folder | ItemPayload::Shortcut(_) => true,
+        ItemPayload::Folder | ItemPayload::Shortcut(_) | ItemPayload::Widget(_) => true,
     });
     for folder in &mut snapshot.folders {
         folder.members.retain(|member| match &member.payload {
             ItemPayload::Application(component) => live.contains(component),
             ItemPayload::Shortcut(_) => true,
-            ItemPayload::Folder => false,
+            ItemPayload::Folder | ItemPayload::Widget(_) => false,
         });
         normalize_members(&mut folder.members);
     }
@@ -1016,13 +1115,13 @@ fn reconcile_shortcuts(
 ) -> Result<(), WorkspaceError> {
     snapshot.items.retain(|item| match &item.payload {
         ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
-        ItemPayload::Application(_) | ItemPayload::Folder => true,
+        ItemPayload::Application(_) | ItemPayload::Folder | ItemPayload::Widget(_) => true,
     });
     for folder in &mut snapshot.folders {
         folder.members.retain(|member| match &member.payload {
             ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
             ItemPayload::Application(_) => true,
-            ItemPayload::Folder => false,
+            ItemPayload::Folder | ItemPayload::Widget(_) => false,
         });
         normalize_members(&mut folder.members);
     }
@@ -1175,10 +1274,27 @@ fn validate_shortcut(shortcut: &ShortcutId) -> Result<(), WorkspaceError> {
     Ok(())
 }
 
+fn validate_widget_provider(provider: &WidgetProviderId) -> Result<(), WorkspaceError> {
+    if provider.profile_id > i64::MAX as u64 {
+        return Err(WorkspaceError::InvalidProfile);
+    }
+    if provider.package.is_empty()
+        || provider.class.is_empty()
+        || provider.package.chars().count() > 255
+        || provider.class.chars().count() > 255
+        || provider.package.chars().any(char::is_control)
+        || provider.class.chars().any(char::is_control)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    Ok(())
+}
+
 fn payload_profile(payload: &ItemPayload) -> Result<u64, WorkspaceError> {
     match payload {
         ItemPayload::Application(component) => Ok(component.profile_id),
         ItemPayload::Shortcut(shortcut) => Ok(shortcut.profile_id),
+        ItemPayload::Widget(provider) => Ok(provider.profile_id),
         ItemPayload::Folder => Err(WorkspaceError::InvariantViolation),
     }
 }
@@ -1227,6 +1343,7 @@ fn payload_exists(snapshot: &WorkspaceSnapshot, payload: &ItemPayload) -> bool {
     match payload {
         ItemPayload::Application(component) => component_exists(snapshot, component),
         ItemPayload::Shortcut(shortcut) => shortcut_exists(snapshot, shortcut),
+        ItemPayload::Widget(_) => false,
         ItemPayload::Folder => true,
     }
 }
@@ -1292,6 +1409,12 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
                     return Err(WorkspaceError::InvariantViolation);
                 }
             }
+            ItemPayload::Widget(provider) => {
+                validate_widget_provider(provider)?;
+                if matches!(item.container, ContainerRef::Hotseat) {
+                    return Err(WorkspaceError::InvariantViolation);
+                }
+            }
         }
         validate_destination(snapshot, &item.container, item.cell)?;
     }
@@ -1324,7 +1447,9 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
                         return Err(WorkspaceError::InvariantViolation);
                     }
                 }
-                ItemPayload::Folder => return Err(WorkspaceError::InvariantViolation),
+                ItemPayload::Folder | ItemPayload::Widget(_) => {
+                    return Err(WorkspaceError::InvariantViolation);
+                }
             }
             if member.rank != rank as u32
                 || payload_profile(&member.payload)? != profile
@@ -2060,5 +2185,100 @@ mod tests {
             },
         );
         assert_eq!(invalid, Err(WorkspaceError::InvariantViolation));
+    }
+
+    #[test]
+    fn widgets_allow_instances_and_reject_invalid_containers_and_resize() {
+        let provider = WidgetProviderId {
+            package: "com.example.widgets".into(),
+            class: "ClockProvider".into(),
+            profile_id: 0,
+        };
+        let mut state = apply_workspace_command(
+            snapshot(),
+            WorkspaceCommand::PlaceWidget {
+                expected_generation: 4,
+                item_id: 1,
+                provider: provider.clone(),
+                page_id: 10,
+                cell: CellRect {
+                    cell_x: 0,
+                    cell_y: 0,
+                    span_x: 2,
+                    span_y: 1,
+                },
+            },
+        )
+        .unwrap()
+        .into();
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::PlaceWidget {
+                expected_generation: 5,
+                item_id: 2,
+                provider,
+                page_id: 10,
+                cell: CellRect::single(0, 1),
+            },
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(
+            apply_workspace_command(
+                state.clone(),
+                WorkspaceCommand::ResizeWidget {
+                    expected_generation: 6,
+                    item_id: 1,
+                    cell: CellRect {
+                        cell_x: 0,
+                        cell_y: 0,
+                        span_x: 1,
+                        span_y: 2,
+                    },
+                },
+            ),
+            Err(WorkspaceError::Occupied)
+        );
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::ResizeWidget {
+                expected_generation: 6,
+                item_id: 1,
+                cell: CellRect {
+                    cell_x: 1,
+                    cell_y: 0,
+                    span_x: 1,
+                    span_y: 2,
+                },
+            },
+        )
+        .unwrap()
+        .into();
+        assert_eq!(
+            state
+                .items
+                .iter()
+                .find(|item| item.item_id == 1)
+                .unwrap()
+                .cell,
+            CellRect {
+                cell_x: 1,
+                cell_y: 0,
+                span_x: 1,
+                span_y: 2,
+            }
+        );
+        assert_eq!(
+            apply_workspace_command(
+                state,
+                WorkspaceCommand::Dock {
+                    expected_generation: 7,
+                    item_id: 1,
+                    rank: 0,
+                },
+            ),
+            Err(WorkspaceError::InvariantViolation)
+        );
     }
 }

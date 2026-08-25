@@ -34,4 +34,7 @@
     <item name="pin_confirmation" type="id" />
     <item name="pin_confirm" type="id" />
     <item name="pin_cancel" type="id" />
+    <item name="widget_picker" type="id" />
+    <item name="widget_search" type="id" />
+    <item name="action_add_widget" type="id" />
 </resources>

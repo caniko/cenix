@@ -12,6 +12,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.TypeConverter
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.caniko.cenix.StartupState
@@ -67,6 +69,7 @@ data class WorkspaceItemEntity(
         const val ITEM_APPLICATION = "APPLICATION"
         const val ITEM_FOLDER = "FOLDER"
         const val ITEM_SHORTCUT = "SHORTCUT"
+        const val ITEM_WIDGET = "WIDGET"
     }
 }
 
@@ -92,6 +95,61 @@ data class ShortcutItemEntity(
     val profileId: Long,
 )
 
+@Entity(
+    tableName = "workspace_widgets",
+    indices = [Index(value = ["appWidgetId"], unique = true)],
+)
+data class WidgetItemEntity(
+    @PrimaryKey val itemId: Long,
+    val packageName: String,
+    val className: String,
+    val profileId: Long,
+    val appWidgetId: Int?,
+)
+
+enum class WidgetOperationKind { ADD, PIN, RESTORE }
+
+enum class WidgetOperationPhase {
+    ALLOCATING,
+    ALLOCATED,
+    BIND_PERMISSION_PENDING,
+    BOUND,
+    CONFIGURATION_PENDING,
+    PLATFORM_ACCEPTED,
+    COMMITTING,
+    ROLLING_BACK,
+    RESTORE_PENDING,
+    REMAP_PENDING,
+}
+
+class WidgetOperationConverters {
+    @TypeConverter fun kind(value: WidgetOperationKind): String = value.name
+    @TypeConverter fun kind(value: String): WidgetOperationKind = WidgetOperationKind.valueOf(value)
+    @TypeConverter fun phase(value: WidgetOperationPhase): String = value.name
+    @TypeConverter fun phase(value: String): WidgetOperationPhase = WidgetOperationPhase.valueOf(value)
+}
+
+@Entity(
+    tableName = "pending_widget_operations",
+    indices = [Index(value = ["appWidgetId"], unique = true)],
+)
+data class PendingWidgetOperationEntity(
+    @PrimaryKey val itemId: Long,
+    val kind: WidgetOperationKind,
+    val phase: WidgetOperationPhase,
+    val appWidgetId: Int?,
+    val replacementAppWidgetId: Int?,
+    val packageName: String,
+    val className: String,
+    val profileId: Long,
+    val pageId: Long,
+    val cellX: Int,
+    val cellY: Int,
+    val spanX: Int,
+    val spanY: Int,
+    val updatedAt: Long,
+)
+
 @Entity(tableName = "workspace_folders")
 data class FolderEntity(
     @PrimaryKey val folderId: Long,
@@ -114,6 +172,7 @@ data class WorkspaceRows(
     val items: List<WorkspaceItemEntity>,
     val applications: List<ApplicationItemEntity>,
     val shortcuts: List<ShortcutItemEntity>,
+    val widgets: List<WidgetItemEntity>,
     val folders: List<FolderEntity>,
     val folderMembers: List<FolderMemberEntity>,
 )
@@ -147,6 +206,12 @@ interface CenixDao {
     @Query("SELECT * FROM workspace_shortcuts ORDER BY itemId")
     fun workspaceShortcuts(): List<ShortcutItemEntity>
 
+    @Query("SELECT * FROM workspace_widgets ORDER BY itemId")
+    fun workspaceWidgets(): List<WidgetItemEntity>
+
+    @Query("SELECT * FROM pending_widget_operations ORDER BY itemId")
+    fun pendingWidgetOperations(): List<PendingWidgetOperationEntity>
+
     @Query("SELECT * FROM workspace_folders ORDER BY folderId")
     fun workspaceFolders(): List<FolderEntity>
 
@@ -166,6 +231,18 @@ interface CenixDao {
     fun insertShortcuts(entities: List<ShortcutItemEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertWidgets(entities: List<WidgetItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertPendingWidgetOperation(entity: PendingWidgetOperationEntity)
+
+    @Query("DELETE FROM pending_widget_operations WHERE itemId = :itemId")
+    fun deletePendingWidgetOperation(itemId: Long)
+
+    @Query("UPDATE workspace_widgets SET appWidgetId = :appWidgetId WHERE itemId = :itemId")
+    fun updateWidgetBinding(itemId: Long, appWidgetId: Int?)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertFolders(entities: List<FolderEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -183,11 +260,45 @@ interface CenixDao {
     @Query("DELETE FROM workspace_shortcuts")
     fun clearShortcuts()
 
+    @Query("DELETE FROM workspace_widgets")
+    fun clearWidgets()
+
     @Query("DELETE FROM workspace_folders")
     fun clearFolders()
 
     @Query("DELETE FROM folder_members")
     fun clearFolderMembers()
+
+    @Transaction
+    fun remapWidgetIds(oldIds: IntArray, newIds: IntArray, now: Long) {
+        if (oldIds.size != newIds.size) throw InvalidWorkspaceTransition()
+        val widgets = workspaceWidgets().associateBy { it.appWidgetId }
+        val items = workspaceItems().associateBy { it.id }
+        val mappings = oldIds.indices.mapNotNull { index ->
+            widgets[oldIds[index]]?.let { Triple(it, items[it.itemId] ?: throw InvalidWorkspaceTransition(), newIds[index]) }
+        }
+        mappings.forEach { (widget, item, replacement) ->
+            upsertPendingWidgetOperation(
+                PendingWidgetOperationEntity(
+                    widget.itemId, WidgetOperationKind.RESTORE, WidgetOperationPhase.RESTORE_PENDING,
+                    widget.appWidgetId, replacement, widget.packageName, widget.className, widget.profileId,
+                    item.containerId, item.cellX, item.cellY, item.spanX, item.spanY, now,
+                ),
+            )
+        }
+        mappings.forEach { (widget) -> updateWidgetBinding(widget.itemId, null) }
+        mappings.forEach { (widget, item, replacement) ->
+            upsertPendingWidgetOperation(
+                PendingWidgetOperationEntity(
+                    widget.itemId, WidgetOperationKind.RESTORE, WidgetOperationPhase.REMAP_PENDING,
+                    widget.appWidgetId, replacement, widget.packageName, widget.className, widget.profileId,
+                    item.containerId, item.cellX, item.cellY, item.spanX, item.spanY, now,
+                ),
+            )
+            updateWidgetBinding(widget.itemId, replacement)
+            deletePendingWidgetOperation(widget.itemId)
+        }
+    }
 
     @Query(
         "UPDATE workspace_metadata SET generation = :nextGeneration, cols = :cols, rows = :rows, hotseatCols = :hotseatCols, " +
@@ -211,6 +322,7 @@ interface CenixDao {
         items = workspaceItems(),
         applications = workspaceApplications(),
         shortcuts = workspaceShortcuts(),
+        widgets = workspaceWidgets(),
         folders = workspaceFolders(),
         folderMembers = folderMembers(),
     )
@@ -223,10 +335,11 @@ interface CenixDao {
         items: List<WorkspaceItemEntity>,
         applications: List<ApplicationItemEntity> = emptyList(),
         shortcuts: List<ShortcutItemEntity> = emptyList(),
+        widgets: List<WidgetItemEntity> = emptyList(),
         folders: List<FolderEntity> = emptyList(),
         folderMembers: List<FolderMemberEntity> = emptyList(),
     ) {
-        validateWorkspaceRows(items, applications, shortcuts, folders, folderMembers)
+        validateWorkspaceRows(items, applications, shortcuts, widgets, folders, folderMembers)
         val currentMetadata = checkNotNull(workspaceMetadata())
         if (currentMetadata.generation != expectedGeneration) throw StaleWorkspaceGeneration()
         if (metadata.generation == expectedGeneration) {
@@ -236,6 +349,7 @@ interface CenixDao {
                 items != workspaceItems() ||
                 applications != workspaceApplications() ||
                 shortcuts != workspaceShortcuts() ||
+                widgets != workspaceWidgets() ||
                 folders != workspaceFolders() ||
                 folderMembers != this.folderMembers()
             ) {
@@ -259,6 +373,7 @@ interface CenixDao {
         }
         clearFolderMembers()
         clearFolders()
+        clearWidgets()
         clearShortcuts()
         clearApplications()
         clearWorkspace()
@@ -267,6 +382,7 @@ interface CenixDao {
         if (items.isNotEmpty()) insertWorkspace(items)
         if (applications.isNotEmpty()) insertApplications(applications)
         if (shortcuts.isNotEmpty()) insertShortcuts(shortcuts)
+        if (widgets.isNotEmpty()) insertWidgets(widgets)
         if (folders.isNotEmpty()) insertFolders(folders)
         if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
     }
@@ -275,6 +391,7 @@ interface CenixDao {
         items: List<WorkspaceItemEntity>,
         applications: List<ApplicationItemEntity>,
         shortcuts: List<ShortcutItemEntity>,
+        widgets: List<WidgetItemEntity>,
         folders: List<FolderEntity>,
         folderMembers: List<FolderMemberEntity>,
     ) {
@@ -282,14 +399,17 @@ interface CenixDao {
         val memberIds = folderMembers.map { it.itemId }.toSet()
         val applicationIds = applications.map { it.itemId }.toSet()
         val shortcutIds = shortcuts.map { it.itemId }.toSet()
+        val widgetIds = widgets.map { it.itemId }.toSet()
         val folderIds = folders.map { it.folderId }.toSet()
         val placedFolderIds = items.filter { it.itemKind == WorkspaceItemEntity.ITEM_FOLDER }.map { it.id }.toSet()
         val placedPayloadIds = items.filter { it.itemKind != WorkspaceItemEntity.ITEM_FOLDER }.map { it.id }.toSet()
         if (
             itemIds.size != items.size || memberIds.size != folderMembers.size ||
             itemIds.intersect(memberIds).isNotEmpty() ||
-            applicationIds.intersect(shortcutIds).isNotEmpty() ||
-            applicationIds + shortcutIds != placedPayloadIds + memberIds ||
+            applicationIds.intersect(shortcutIds + widgetIds).isNotEmpty() ||
+            shortcutIds.intersect(widgetIds).isNotEmpty() ||
+            widgetIds.intersect(memberIds).isNotEmpty() ||
+            applicationIds + shortcutIds + widgetIds != placedPayloadIds + memberIds ||
             folderIds != placedFolderIds ||
             folderMembers.any { it.folderId !in folderIds } ||
             folders.any { folder -> folderMembers.count { it.folderId == folder.folderId } < 2 } ||
@@ -302,9 +422,11 @@ interface CenixDao {
                     WorkspaceItemEntity.ITEM_APPLICATION,
                     WorkspaceItemEntity.ITEM_FOLDER,
                     WorkspaceItemEntity.ITEM_SHORTCUT,
+                    WorkspaceItemEntity.ITEM_WIDGET,
                 ) ||
                 (it.itemKind == WorkspaceItemEntity.ITEM_APPLICATION) != (it.id in applicationIds) ||
-                    (it.itemKind == WorkspaceItemEntity.ITEM_SHORTCUT) != (it.id in shortcutIds)
+                    (it.itemKind == WorkspaceItemEntity.ITEM_SHORTCUT) != (it.id in shortcutIds) ||
+                    (it.itemKind == WorkspaceItemEntity.ITEM_WIDGET) != (it.id in widgetIds)
             }
         ) {
             throw InvalidWorkspaceTransition()
@@ -349,18 +471,21 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
         WorkspaceItemEntity::class,
         ApplicationItemEntity::class,
         ShortcutItemEntity::class,
+        WidgetItemEntity::class,
+        PendingWidgetOperationEntity::class,
         FolderEntity::class,
         FolderMemberEntity::class,
     ],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
+@TypeConverters(WidgetOperationConverters::class)
 abstract class CenixDatabase : RoomDatabase() {
     abstract fun dao(): CenixDao
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 5
+        const val VERSION = 6
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -454,9 +579,26 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_widgets` (`itemId` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `className` TEXT NOT NULL, `profileId` INTEGER NOT NULL, `appWidgetId` INTEGER, PRIMARY KEY(`itemId`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_widgets_appWidgetId` ON `workspace_widgets` (`appWidgetId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pending_widget_operations` (`itemId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `phase` TEXT NOT NULL, `appWidgetId` INTEGER, `replacementAppWidgetId` INTEGER, `packageName` TEXT NOT NULL, `className` TEXT NOT NULL, `profileId` INTEGER NOT NULL, `pageId` INTEGER NOT NULL, `cellX` INTEGER NOT NULL, `cellY` INTEGER NOT NULL, `spanX` INTEGER NOT NULL, `spanY` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`itemId`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_pending_widget_operations_appWidgetId` ON `pending_widget_operations` (`appWidgetId`)",
+                )
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             return builder.build().also { it.ensureSeed() }
         }

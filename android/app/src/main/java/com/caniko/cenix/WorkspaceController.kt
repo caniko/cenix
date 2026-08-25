@@ -9,6 +9,7 @@ import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceException
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
+import com.caniko.cenix.uniffi.WidgetProviderId
 
 class WorkspaceController(
     private val repository: LauncherRepository,
@@ -44,9 +45,37 @@ class WorkspaceController(
         )
     }
 
+    fun placeWidget(
+        itemId: ULong,
+        provider: WidgetProviderId,
+        appWidgetId: Int,
+        pageId: ULong,
+        cell: CellRect,
+    ): WorkspaceTransition? {
+        val state = snapshot()
+        if (!nativeAvailable()) return null
+        val command = WorkspaceCommand.PlaceWidget(state.generation, itemId, provider, pageId, cell)
+        return try {
+            repository.applyWidget(command, itemId, appWidgetId)
+        } catch (error: WorkspaceException) {
+            CenixLog.event(
+                EventId.WORKSPACE_TRANSITION,
+                Severity.WARN,
+                mapOf("result" to "rejected", "category" to error.javaClass.simpleName),
+            )
+            null
+        }
+    }
+
+    fun resizeWidget(itemId: ULong, cell: CellRect): WorkspaceTransition? {
+        val state = snapshot()
+        return execute("widget-resize", WorkspaceCommand.ResizeWidget(state.generation, itemId, cell))
+    }
+
     fun move(itemId: ULong, container: ContainerRef, cellX: Int, cellY: Int, reorder: Boolean = true): WorkspaceTransition? {
         val state = snapshot()
-        val cell = CellRect(cellX, cellY, 1, 1)
+        val source = state.items.firstOrNull { it.itemId == itemId } ?: return null
+        val cell = CellRect(cellX, cellY, source.cell.spanX, source.cell.spanY)
         val command = if (reorder) WorkspaceCommand.Reorder(state.generation, itemId, container, cell)
         else WorkspaceCommand.Move(state.generation, itemId, container, cell)
         return execute("move", command)

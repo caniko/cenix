@@ -1491,6 +1491,42 @@ public object FfiConverterTypeShortcutId: FfiConverterRustBuffer<ShortcutId> {
 
 
 
+data class WidgetProviderId (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetProviderId: FfiConverterRustBuffer<WidgetProviderId> {
+    override fun read(buf: ByteBuffer): WidgetProviderId {
+        return WidgetProviderId(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetProviderId) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`)
+    )
+
+    override fun write(value: WidgetProviderId, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+    }
+}
+
+
+
 data class WorkspaceItem (
     var `itemId`: kotlin.ULong,
     var `payload`: ItemPayload,
@@ -1822,6 +1858,11 @@ sealed class ItemPayload {
         companion object
     }
 
+    data class Widget(
+        val `provider`: WidgetProviderId) : ItemPayload() {
+        companion object
+    }
+
 
 
     companion object
@@ -1839,6 +1880,9 @@ public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
             2 -> ItemPayload.Folder
             3 -> ItemPayload.Shortcut(
                 FfiConverterTypeShortcutId.read(buf),
+                )
+            4 -> ItemPayload.Widget(
+                FfiConverterTypeWidgetProviderId.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
@@ -1865,6 +1909,13 @@ public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
                 + FfiConverterTypeShortcutId.allocationSize(value.`shortcut`)
             )
         }
+        is ItemPayload.Widget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeWidgetProviderId.allocationSize(value.`provider`)
+            )
+        }
     }
 
     override fun write(value: ItemPayload, buf: ByteBuffer) {
@@ -1881,6 +1932,11 @@ public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
             is ItemPayload.Shortcut -> {
                 buf.putInt(3)
                 FfiConverterTypeShortcutId.write(value.`shortcut`, buf)
+                Unit
+            }
+            is ItemPayload.Widget -> {
+                buf.putInt(4)
+                FfiConverterTypeWidgetProviderId.write(value.`provider`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1907,6 +1963,22 @@ sealed class WorkspaceCommand {
         val `itemId`: kotlin.ULong,
         val `shortcut`: ShortcutId,
         val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class PlaceWidget(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `provider`: WidgetProviderId,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class ResizeWidget(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
         val `cell`: CellRect) : WorkspaceCommand() {
         companion object
     }
@@ -2066,98 +2138,110 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 FfiConverterTypeContainerRef.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            3 -> WorkspaceCommand.Move(
+            3 -> WorkspaceCommand.PlaceWidget(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeWidgetProviderId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            4 -> WorkspaceCommand.ResizeWidget(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            5 -> WorkspaceCommand.Move(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeContainerRef.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            4 -> WorkspaceCommand.Remove(
+            6 -> WorkspaceCommand.Remove(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            5 -> WorkspaceCommand.Dock(
+            7 -> WorkspaceCommand.Dock(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterInt.read(buf),
                 )
-            6 -> WorkspaceCommand.Undock(
+            8 -> WorkspaceCommand.Undock(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            7 -> WorkspaceCommand.Reorder(
+            9 -> WorkspaceCommand.Reorder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeContainerRef.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            8 -> WorkspaceCommand.CreateFolder(
+            10 -> WorkspaceCommand.CreateFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            9 -> WorkspaceCommand.AddFromAllAppsToFolder(
+            11 -> WorkspaceCommand.AddFromAllAppsToFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeComponentId.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterUInt.read(buf),
                 )
-            10 -> WorkspaceCommand.AddShortcutToFolder(
+            12 -> WorkspaceCommand.AddShortcutToFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeShortcutId.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterUInt.read(buf),
                 )
-            11 -> WorkspaceCommand.AddItemToFolder(
+            13 -> WorkspaceCommand.AddItemToFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterUInt.read(buf),
                 )
-            12 -> WorkspaceCommand.MoveFolderMember(
+            14 -> WorkspaceCommand.MoveFolderMember(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterUInt.read(buf),
                 )
-            13 -> WorkspaceCommand.RemoveItemFromFolder(
+            15 -> WorkspaceCommand.RemoveItemFromFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterTypeContainerRef.read(buf),
                 FfiConverterTypeCellRect.read(buf),
                 )
-            14 -> WorkspaceCommand.RenameFolder(
+            16 -> WorkspaceCommand.RenameFolder(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterString.read(buf),
                 )
-            15 -> WorkspaceCommand.AddPage(
+            17 -> WorkspaceCommand.AddPage(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            16 -> WorkspaceCommand.RemoveEmptyPage(
+            18 -> WorkspaceCommand.RemoveEmptyPage(
                 FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            17 -> WorkspaceCommand.SetGrid(
+            19 -> WorkspaceCommand.SetGrid(
                 FfiConverterULong.read(buf),
                 FfiConverterTypeGridSpec.read(buf),
                 )
-            18 -> WorkspaceCommand.DropMissing(
+            20 -> WorkspaceCommand.DropMissing(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceTypeComponentId.read(buf),
                 )
-            19 -> WorkspaceCommand.ReconcileShortcuts(
+            21 -> WorkspaceCommand.ReconcileShortcuts(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceTypeShortcutId.read(buf),
                 )
-            20 -> WorkspaceCommand.Cancelled(
+            22 -> WorkspaceCommand.Cancelled(
                 FfiConverterULong.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
@@ -2184,6 +2268,26 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 + FfiConverterULong.allocationSize(value.`itemId`)
                 + FfiConverterTypeShortcutId.allocationSize(value.`shortcut`)
                 + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.PlaceWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeWidgetProviderId.allocationSize(value.`provider`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.ResizeWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
                 + FfiConverterTypeCellRect.allocationSize(value.`cell`)
             )
         }
@@ -2375,8 +2479,24 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 FfiConverterTypeCellRect.write(value.`cell`, buf)
                 Unit
             }
-            is WorkspaceCommand.Move -> {
+            is WorkspaceCommand.PlaceWidget -> {
                 buf.putInt(3)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeWidgetProviderId.write(value.`provider`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.ResizeWidget -> {
+                buf.putInt(4)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Move -> {
+                buf.putInt(5)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterTypeContainerRef.write(value.`container`, buf)
@@ -2384,20 +2504,20 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.Remove -> {
-                buf.putInt(4)
+                buf.putInt(6)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 Unit
             }
             is WorkspaceCommand.Dock -> {
-                buf.putInt(5)
+                buf.putInt(7)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterInt.write(value.`rank`, buf)
                 Unit
             }
             is WorkspaceCommand.Undock -> {
-                buf.putInt(6)
+                buf.putInt(8)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterULong.write(value.`pageId`, buf)
@@ -2405,7 +2525,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.Reorder -> {
-                buf.putInt(7)
+                buf.putInt(9)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterTypeContainerRef.write(value.`container`, buf)
@@ -2413,7 +2533,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.CreateFolder -> {
-                buf.putInt(8)
+                buf.putInt(10)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`folderId`, buf)
                 FfiConverterULong.write(value.`firstItemId`, buf)
@@ -2421,7 +2541,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.AddFromAllAppsToFolder -> {
-                buf.putInt(9)
+                buf.putInt(11)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterTypeComponentId.write(value.`component`, buf)
@@ -2430,7 +2550,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.AddShortcutToFolder -> {
-                buf.putInt(10)
+                buf.putInt(12)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterTypeShortcutId.write(value.`shortcut`, buf)
@@ -2439,7 +2559,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.AddItemToFolder -> {
-                buf.putInt(11)
+                buf.putInt(13)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
                 FfiConverterULong.write(value.`folderId`, buf)
@@ -2447,7 +2567,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.MoveFolderMember -> {
-                buf.putInt(12)
+                buf.putInt(14)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`folderId`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
@@ -2455,7 +2575,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.RemoveItemFromFolder -> {
-                buf.putInt(13)
+                buf.putInt(15)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`folderId`, buf)
                 FfiConverterULong.write(value.`itemId`, buf)
@@ -2464,44 +2584,44 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 Unit
             }
             is WorkspaceCommand.RenameFolder -> {
-                buf.putInt(14)
+                buf.putInt(16)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`folderId`, buf)
                 FfiConverterString.write(value.`title`, buf)
                 Unit
             }
             is WorkspaceCommand.AddPage -> {
-                buf.putInt(15)
+                buf.putInt(17)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`pageId`, buf)
                 Unit
             }
             is WorkspaceCommand.RemoveEmptyPage -> {
-                buf.putInt(16)
+                buf.putInt(18)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterULong.write(value.`pageId`, buf)
                 Unit
             }
             is WorkspaceCommand.SetGrid -> {
-                buf.putInt(17)
+                buf.putInt(19)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterTypeGridSpec.write(value.`grid`, buf)
                 Unit
             }
             is WorkspaceCommand.DropMissing -> {
-                buf.putInt(18)
+                buf.putInt(20)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterSequenceTypeComponentId.write(value.`live`, buf)
                 Unit
             }
             is WorkspaceCommand.ReconcileShortcuts -> {
-                buf.putInt(19)
+                buf.putInt(21)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterSequenceTypeShortcutId.write(value.`live`, buf)
                 Unit
             }
             is WorkspaceCommand.Cancelled -> {
-                buf.putInt(20)
+                buf.putInt(22)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 Unit
             }

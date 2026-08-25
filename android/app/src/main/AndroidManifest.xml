@@ -46,5 +46,30 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Exported only for Android's validated launcher pin-widget confirmation contract. -->
+        <activity
+            android:name=".PinWidgetActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/Theme.Cenix">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_APPWIDGET" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".WidgetPickerActivity"
+            android:exported="false" />
+
+        <!-- Exported for Android's protected app-widget host restore broadcast. -->
+        <receiver
+            android:name=".WidgetRestoreReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_HOST_RESTORED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

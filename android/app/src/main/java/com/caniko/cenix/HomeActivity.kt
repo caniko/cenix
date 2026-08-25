@@ -36,6 +36,7 @@ import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
+import com.caniko.cenix.db.WidgetItemEntity
 import kotlin.math.max
 import kotlin.math.min
 
@@ -54,6 +55,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var pager: WorkspacePager
     private lateinit var hotseat: HotseatView
     private lateinit var pageIndicator: PageIndicator
+    private lateinit var widgetHost: WidgetHostController
     private var folderPopup: FolderPopup? = null
     private var contextPopup: ContextPopup? = null
     private var controller: WorkspaceController? = null
@@ -62,6 +64,7 @@ class HomeActivity : AppCompatActivity() {
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
     private val shortcuts = mutableMapOf<ShortcutId, LauncherShortcut>()
+    private val widgetBindings = mutableMapOf<Long, WidgetItemEntity>()
     private var contextQueryToken = 0
 
     private val packageCallback = object : LauncherApps.Callback() {
@@ -108,6 +111,14 @@ class HomeActivity : AppCompatActivity() {
         )
         setContentView(R.layout.activity_home)
         bindViews()
+        widgetHost = WidgetHostController(
+            this,
+            { app.database },
+            { controller },
+            { rendered },
+            { pager.currentLayout },
+            { scheduleReload("widget") },
+        )
         catalog.register(packageCallback)
         scheduleReload("create")
     }
@@ -201,8 +212,19 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        widgetHost.start()
         scheduleReload("start")
         applyForceNativeFailure()
+    }
+
+    override fun onStop() {
+        widgetHost.stop()
+        super.onStop()
+    }
+
+    @Deprecated("Activity result is required by AppWidgetHost configuration")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (!widgetHost.onActivityResult(requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -227,6 +249,7 @@ class HomeActivity : AppCompatActivity() {
         dragLayer.cancel("lifecycle")
         catalog.unregister(packageCallback)
         search.close()
+        widgetHost.destroy()
         super.onDestroy()
     }
 
@@ -236,6 +259,7 @@ class HomeActivity : AppCompatActivity() {
             if (!app.awaitReady()) return@io
             val database = app.database ?: return@io
             val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
+            widgetHost.recover()
             try {
                 val loaded = catalog.load()
                 dragLayer.post {
@@ -254,6 +278,7 @@ class HomeActivity : AppCompatActivity() {
                 } ?: state
                 shortcutCatalog.pin(state.shortcutIds())
                 val profiles = catalog.visibleProfiles()
+                val bindings = database.dao().workspaceWidgets()
                 val matches = try {
                     app.activeFilter().filter(loaded, query, profiles)
                 } catch (_: Throwable) {
@@ -267,6 +292,8 @@ class HomeActivity : AppCompatActivity() {
                     apps.addAll(loaded)
                     shortcuts.clear()
                     shortcuts.putAll(resolvedShortcuts)
+                    widgetBindings.clear()
+                    widgetBindings.putAll(bindings.associateBy { it.itemId })
                     bindList(matches)
                     render(state)
                     applySurface()
@@ -289,10 +316,22 @@ class HomeActivity : AppCompatActivity() {
                 contentDescription = "Workspace $pageIndex"
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 val items = snapshot.items.filter { (it.container as? ContainerRef.Workspace)?.pageId == page.pageId }
-                    .associateBy { it.cell.cellX to it.cell.cellY }
                 for (y in 0 until rows) for (x in 0 until columns) {
-                    val item = items[x to y]
-                    addCell(createCell(item, folders[item?.itemId], byComponent, "page ${pageIndex + 1}", x, y), x, y)
+                    val item = items.firstOrNull {
+                        x >= it.cell.cellX && x < it.cell.cellX + it.cell.spanX &&
+                            y >= it.cell.cellY && y < it.cell.cellY + it.cell.spanY
+                    }
+                    if (item == null) {
+                        addCell(createCell(null, null, byComponent, "page ${pageIndex + 1}", x, y, page.pageId), x, y)
+                    } else if (item.cell.cellX == x && item.cell.cellY == y) {
+                        addCell(
+                            createCell(item, folders[item.itemId], byComponent, "page ${pageIndex + 1}", x, y, page.pageId),
+                            x,
+                            y,
+                            item.cell.spanX,
+                            item.cell.spanY,
+                        )
+                    }
                 }
             }
         }
@@ -309,7 +348,7 @@ class HomeActivity : AppCompatActivity() {
         val dock = snapshot.items.filter { it.container is ContainerRef.Hotseat }.associateBy { it.cell.cellX }
         for (x in 0 until hotseat.columns) {
             val item = dock[x]
-            hotseat.addCell(createCell(item, folders[item?.itemId], byComponent, "hotseat", x, 0), x, 0)
+            hotseat.addCell(createCell(item, folders[item?.itemId], byComponent, "hotseat", x, 0, null), x, 0)
         }
         folderPopup?.let { popup ->
             folders[popup.folderId]?.let { bindFolderPopup(popup, it, byComponent) } ?: closeFolder("dissolved")
@@ -323,6 +362,7 @@ class HomeActivity : AppCompatActivity() {
         location: String,
         x: Int,
         y: Int,
+        pageId: ULong?,
     ): View {
         if (item != null && folder != null && item.payload is ItemPayload.Folder) {
             return FolderIconView(this).apply {
@@ -338,6 +378,23 @@ class HomeActivity : AppCompatActivity() {
                 addAccessibilityMoves(this, item, x, y, folder.folderId)
             }
         }
+        if (item?.payload is ItemPayload.Widget) {
+            val binding = widgetBindings[item.itemId.toLong()]
+            val remove = { widgetHost.remove(item.itemId, binding, item.cell, checkNotNull(pageId)) }
+            val hosted = widgetHost.view(item.itemId, binding, checkNotNull(pageId), item.cell, remove)
+            return WidgetFrame(this).apply {
+                tag = CellTarget(item.itemId)
+                contentDescription = "${hosted.contentDescription}, $location, row ${y + 1}, column ${x + 1}"
+                isFocusable = true
+                bind(
+                    hosted,
+                    onMove = { dragLayer.beginDrag(this, LauncherDrag(null, item.itemId, isWidget = true)) },
+                    onResize = { edge, deltaX, deltaY -> widgetHost.resize(item.itemId, binding, edge, deltaX, deltaY) },
+                    onRemove = remove,
+                )
+                addAccessibilityMoves(this, item, x, y, onRemove = remove, allowDock = false)
+            }
+        }
         val appItem = (item?.payload as? ItemPayload.Application)?.component?.let { byComponent[it.key()] }
         val shortcutItem = (item?.payload as? ItemPayload.Shortcut)?.shortcut?.let(shortcuts::get)
         val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
@@ -347,6 +404,23 @@ class HomeActivity : AppCompatActivity() {
         view.contentDescription = if (label == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
         else "$label, $location, row ${y + 1}, column ${x + 1}"
         view.isFocusable = label != null
+        if (item == null && pageId != null) {
+            view.setOnLongClickListener { widgetHost.pick(pageId, x, y); true }
+            view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_add_widget, getString(R.string.add_widget)))
+                }
+
+                override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+                    if (action == R.id.action_add_widget) {
+                        widgetHost.pick(pageId, x, y)
+                        return true
+                    }
+                    return super.performAccessibilityAction(host, action, args)
+                }
+            }
+        }
         if (appItem != null) {
             view.tag = CellTarget(item.itemId)
             view.setOnClickListener { launch(appItem) }
@@ -355,7 +429,7 @@ class HomeActivity : AppCompatActivity() {
                 onPopup = { openContext(view, appItem, item.itemId, null) },
                 onDrag = { dragLayer.beginDrag(view, LauncherDrag(appItem, item.itemId)) },
             )
-            addAccessibilityMoves(view, item, x, y) { openContext(view, appItem, item.itemId, null) }
+            addAccessibilityMoves(view, item, x, y, onContext = { openContext(view, appItem, item.itemId, null) })
         } else if (shortcutItem != null) {
             view.tag = CellTarget(item!!.itemId)
             view.setOnClickListener { launch(shortcutItem) }
@@ -364,7 +438,7 @@ class HomeActivity : AppCompatActivity() {
                 onPopup = { openShortcutContext(view, shortcutItem, item.itemId, null) },
                 onDrag = { dragLayer.beginDrag(view, LauncherDrag(null, item.itemId, shortcut = shortcutItem)) },
             )
-            addAccessibilityMoves(view, item, x, y) { openShortcutContext(view, shortcutItem, item.itemId, null) }
+            addAccessibilityMoves(view, item, x, y, onContext = { openShortcutContext(view, shortcutItem, item.itemId, null) })
         }
         return view
     }
@@ -398,6 +472,8 @@ class HomeActivity : AppCompatActivity() {
         y: Int,
         folderId: ULong? = null,
         onContext: (() -> Unit)? = null,
+        onRemove: (() -> Unit)? = null,
+        allowDock: Boolean = true,
     ) {
         view.accessibilityDelegate = object : View.AccessibilityDelegate() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
@@ -408,7 +484,7 @@ class HomeActivity : AppCompatActivity() {
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_down, "Move down"))
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_previous_page, "Move to previous page"))
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_next_page, "Move to next page"))
-                info.addAction(AccessibilityNodeInfo.AccessibilityAction(if (item.container is ContainerRef.Hotseat) R.id.action_undock else R.id.action_dock, if (item.container is ContainerRef.Hotseat) "Undock" else "Dock"))
+                if (allowDock) info.addAction(AccessibilityNodeInfo.AccessibilityAction(if (item.container is ContainerRef.Hotseat) R.id.action_undock else R.id.action_dock, if (item.container is ContainerRef.Hotseat) "Undock" else "Dock"))
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_DISMISS, "Remove"))
                 if (folderId != null) {
                     info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_open_folder, getString(R.string.open_folder)))
@@ -429,7 +505,7 @@ class HomeActivity : AppCompatActivity() {
                     R.id.action_move_next_page -> { movePage(item, 1); return true }
                     R.id.action_dock -> { mutate { it.dock(item.itemId) }; return true }
                     R.id.action_undock -> { rendered.pages.getOrNull(pager.currentPage)?.let { page -> mutate { it.undock(item.itemId, page.pageId) } }; return true }
-                    AccessibilityNodeInfo.ACTION_DISMISS -> { mutate { it.remove(item.itemId) }; return true }
+                    AccessibilityNodeInfo.ACTION_DISMISS -> { onRemove?.invoke() ?: mutate { it.remove(item.itemId) }; return true }
                     R.id.action_open_folder -> { folderId?.let(::openFolder); return true }
                     R.id.action_rename_folder -> {
                         folderId?.let(::openFolder)
@@ -517,13 +593,13 @@ class HomeActivity : AppCompatActivity() {
         is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.let {
             FolderEntry(this, it.label, it.icon, shortcut = it)
         }
-        is ItemPayload.Folder -> null
+        is ItemPayload.Folder, is ItemPayload.Widget -> null
     }
 
     private fun FolderMember.icon(byComponent: Map<Triple<String, String, Long>, LaunchableApp>) = when (val memberPayload = payload) {
         is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.icon
         is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.icon
-        is ItemPayload.Folder -> null
+        is ItemPayload.Folder, is ItemPayload.Widget -> null
     }
 
     private fun openContext(source: View, appItem: LaunchableApp, itemId: ULong?, sourceFolderId: ULong?) : Boolean {
@@ -756,6 +832,8 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun applySurface() {
+        if (app.emergency) widgetHost.stop()
+        else if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) widgetHost.start()
         val target = when {
             app.emergency -> LauncherSurface.EMERGENCY
             root.surface == LauncherSurface.EMERGENCY -> LauncherSurface.HOME
@@ -924,6 +1002,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun resetState() {
+        widgetHost.deleteHost()
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
             app.resetLocalState()

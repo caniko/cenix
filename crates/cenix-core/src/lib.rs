@@ -4,8 +4,8 @@ mod workspace;
 
 pub use workspace::{
     CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload, ShortcutId,
-    WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspacePage, WorkspaceSnapshot,
-    WorkspaceTransition, apply_workspace_command,
+    WidgetProviderId, WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspacePage,
+    WorkspaceSnapshot, WorkspaceTransition, apply_workspace_command,
 };
 
 pub const MAX_APPLICATIONS: usize = 10_000;

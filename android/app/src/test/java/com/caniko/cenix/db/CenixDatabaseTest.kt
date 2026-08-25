@@ -58,7 +58,39 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV5KeepsMetadata() {
+    fun widgetJournalIsTypedAndIndependentFromWorkspaceCommits() {
+        val db = openDb()
+        val operation = PendingWidgetOperationEntity(
+            itemId = 9,
+            kind = WidgetOperationKind.PIN,
+            phase = WidgetOperationPhase.BIND_PERMISSION_PENDING,
+            appWidgetId = 42,
+            replacementAppWidgetId = null,
+            packageName = "widgets",
+            className = "Clock",
+            profileId = 0,
+            pageId = 1,
+            cellX = 0,
+            cellY = 0,
+            spanX = 2,
+            spanY = 1,
+            updatedAt = 10,
+        )
+        db.dao().upsertPendingWidgetOperation(operation)
+        db.dao().commitWorkspace(
+            expectedGeneration = 0,
+            metadata = WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 5, hotseatCols = 4),
+            pages = listOf(WorkspacePageEntity(1, 0)),
+            items = emptyList(),
+        )
+        assertEquals(operation, db.dao().pendingWidgetOperations().single())
+        db.dao().deletePendingWidgetOperation(9)
+        assertTrue(db.dao().pendingWidgetOperations().isEmpty())
+        db.close()
+    }
+
+    @Test
+    fun migratesV1ToV6KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -82,6 +114,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_2_3,
                 CenixDatabase.MIGRATION_3_4,
                 CenixDatabase.MIGRATION_4_5,
+                CenixDatabase.MIGRATION_5_6,
             )
             .allowMainThreadQueries()
             .build()
@@ -96,7 +129,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV2ToV5PreservesPagesHotseatAndProfiles() {
+    fun migratesV2ToV6PreservesPagesHotseatAndProfiles() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-v2-v3.db"
         context.deleteDatabase(name)
@@ -114,7 +147,7 @@ class CenixDatabaseTest {
         sqlite.version = 2
         sqlite.close()
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5)
+            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
         val items = db.dao().workspaceItems().associateBy { it.id }
