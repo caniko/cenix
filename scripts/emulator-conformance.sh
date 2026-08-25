@@ -538,6 +538,8 @@ tap_pattern 'resource-id="com.caniko.cenix:id/folder_title"'
 "$adb" -s "$serial" shell input keyevent KEYCODE_ENTER
 wait_ui 'text="Utilities".*resource-id="com.caniko.cenix:id/folder_title"' 1
 "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
 wait_ui 'content-desc="Utilities, folder, 2 applications' 1
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
