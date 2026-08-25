@@ -21,3 +21,4 @@
 | [0017](0017-internal-drag-layer.md) | Kotlin-only internal drag layer |
 | [0018](0018-deterministic-reorder.md) | Deterministic occupied-cell reorder |
 | [0019](0019-production-shell.md) | Separate production HOME and All Apps surfaces |
+| [0020](0020-shortcuts-context.md) | Typed shortcuts and platform-owned actions |
