@@ -7,6 +7,13 @@ pub struct ComponentId {
     pub profile_id: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShortcutId {
+    pub package: String,
+    pub shortcut_id: String,
+    pub profile_id: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridSpec {
     pub cols: i32,
@@ -32,6 +39,7 @@ pub enum ContainerRef {
 pub enum ItemPayload {
     Application(ComponentId),
     Folder,
+    Shortcut(ShortcutId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +59,7 @@ pub struct WorkspaceItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderMember {
     pub item_id: u64,
-    pub component: ComponentId,
+    pub payload: ItemPayload,
     pub rank: u32,
 }
 
@@ -78,6 +86,13 @@ pub enum WorkspaceCommand {
         item_id: u64,
         component: ComponentId,
         page_id: u64,
+        cell: CellRect,
+    },
+    PlaceShortcut {
+        expected_generation: u64,
+        item_id: u64,
+        shortcut: ShortcutId,
+        container: ContainerRef,
         cell: CellRect,
     },
     Move {
@@ -117,6 +132,13 @@ pub enum WorkspaceCommand {
         expected_generation: u64,
         item_id: u64,
         component: ComponentId,
+        folder_id: u64,
+        rank: u32,
+    },
+    AddShortcutToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        shortcut: ShortcutId,
         folder_id: u64,
         rank: u32,
     },
@@ -160,6 +182,10 @@ pub enum WorkspaceCommand {
         expected_generation: u64,
         live: Vec<ComponentId>,
     },
+    ReconcileShortcuts {
+        expected_generation: u64,
+        live: Vec<ShortcutId>,
+    },
     Cancelled {
         expected_generation: u64,
     },
@@ -200,6 +226,10 @@ impl WorkspaceCommand {
                 expected_generation,
                 ..
             }
+            | Self::PlaceShortcut {
+                expected_generation,
+                ..
+            }
             | Self::Move {
                 expected_generation,
                 ..
@@ -225,6 +255,10 @@ impl WorkspaceCommand {
                 ..
             }
             | Self::AddFromAllAppsToFolder {
+                expected_generation,
+                ..
+            }
+            | Self::AddShortcutToFolder {
                 expected_generation,
                 ..
             }
@@ -257,6 +291,10 @@ impl WorkspaceCommand {
                 ..
             }
             | Self::DropMissing {
+                expected_generation,
+                ..
+            }
+            | Self::ReconcileShortcuts {
                 expected_generation,
                 ..
             }
@@ -296,6 +334,13 @@ pub fn apply_workspace_command(
             cell,
             ..
         } => place_from_all_apps(&mut snapshot, item_id, component, page_id, cell)?,
+        WorkspaceCommand::PlaceShortcut {
+            item_id,
+            shortcut,
+            container,
+            cell,
+            ..
+        } => place_shortcut(&mut snapshot, item_id, shortcut, container, cell)?,
         WorkspaceCommand::Move {
             item_id,
             container,
@@ -341,6 +386,13 @@ pub fn apply_workspace_command(
             rank,
             ..
         } => add_from_all_apps_to_folder(&mut snapshot, item_id, component, folder_id, rank)?,
+        WorkspaceCommand::AddShortcutToFolder {
+            item_id,
+            shortcut,
+            folder_id,
+            rank,
+            ..
+        } => add_shortcut_to_folder(&mut snapshot, item_id, shortcut, folder_id, rank)?,
         WorkspaceCommand::AddItemToFolder {
             item_id,
             folder_id,
@@ -390,6 +442,13 @@ pub fn apply_workspace_command(
             }
             let live: HashSet<_> = live.into_iter().collect();
             drop_missing(&mut snapshot, &live)?;
+        }
+        WorkspaceCommand::ReconcileShortcuts { live, .. } => {
+            for shortcut in &live {
+                validate_shortcut(shortcut)?;
+            }
+            let live: HashSet<_> = live.into_iter().collect();
+            reconcile_shortcuts(&mut snapshot, &live)?;
         }
         WorkspaceCommand::Cancelled { .. } => {}
     }
@@ -447,21 +506,69 @@ fn place_from_all_apps(
     cell: CellRect,
 ) -> Result<(), WorkspaceError> {
     validate_component(&component)?;
+    place_payload(
+        snapshot,
+        item_id,
+        ItemPayload::Application(component),
+        page_id,
+        cell,
+    )
+}
+
+fn place_shortcut(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    shortcut: ShortcutId,
+    container: ContainerRef,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
+    validate_shortcut(&shortcut)?;
+    place_payload_in_container(
+        snapshot,
+        item_id,
+        ItemPayload::Shortcut(shortcut),
+        container,
+        cell,
+    )
+}
+
+fn place_payload(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    payload: ItemPayload,
+    page_id: u64,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
+    place_payload_in_container(
+        snapshot,
+        item_id,
+        payload,
+        ContainerRef::Workspace { page_id },
+        cell,
+    )
+}
+
+fn place_payload_in_container(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    payload: ItemPayload,
+    container: ContainerRef,
+    cell: CellRect,
+) -> Result<(), WorkspaceError> {
     if item_id == 0
         || item_id >= i64::MAX as u64
         || snapshot.items.iter().any(|item| item.item_id == item_id)
-        || component_exists(snapshot, &component)
+        || payload_exists(snapshot, &payload)
     {
         return Err(WorkspaceError::InvariantViolation);
     }
-    let container = ContainerRef::Workspace { page_id };
     validate_destination(snapshot, &container, cell)?;
     if occupied(snapshot, &container, cell, None) {
         return Err(WorkspaceError::Occupied);
     }
     snapshot.items.push(WorkspaceItem {
         item_id,
-        payload: ItemPayload::Application(component),
+        payload,
         container,
         cell,
     });
@@ -511,8 +618,29 @@ fn remove_item(snapshot: &mut WorkspaceSnapshot, item_id: u64) -> Result<(), Wor
         .items
         .iter()
         .find(|item| item.item_id == item_id)
-        .cloned()
-        .ok_or(WorkspaceError::MissingItem)?;
+        .cloned();
+    if item.is_none() {
+        let folder_id = snapshot
+            .folders
+            .iter()
+            .find(|folder| {
+                folder
+                    .members
+                    .iter()
+                    .any(|member| member.item_id == item_id)
+            })
+            .map(|folder| folder.folder_id)
+            .ok_or(WorkspaceError::MissingItem)?;
+        let folder = snapshot
+            .folders
+            .iter_mut()
+            .find(|folder| folder.folder_id == folder_id)
+            .expect("folder exists");
+        folder.members.retain(|member| member.item_id != item_id);
+        normalize_members(&mut folder.members);
+        return dissolve_if_needed(snapshot, folder_id);
+    }
+    let item = item.expect("checked above");
     snapshot.items.retain(|item| item.item_id != item_id);
     if item.payload == ItemPayload::Folder {
         snapshot
@@ -547,13 +675,11 @@ fn create_folder(
         .find(|item| item.item_id == second_item_id)
         .cloned()
         .ok_or(WorkspaceError::MissingItem)?;
-    let ItemPayload::Application(first_component) = first.payload else {
+    if matches!(first.payload, ItemPayload::Folder) || matches!(second.payload, ItemPayload::Folder)
+    {
         return Err(WorkspaceError::InvariantViolation);
-    };
-    let ItemPayload::Application(second_component) = second.payload else {
-        return Err(WorkspaceError::InvariantViolation);
-    };
-    if first_component.profile_id != second_component.profile_id {
+    }
+    if payload_profile(&first.payload)? != payload_profile(&second.payload)? {
         return Err(WorkspaceError::CrossProfile);
     }
 
@@ -572,12 +698,12 @@ fn create_folder(
         members: vec![
             FolderMember {
                 item_id: second_item_id,
-                component: second_component,
+                payload: second.payload,
                 rank: 0,
             },
             FolderMember {
                 item_id: first_item_id,
-                component: first_component,
+                payload: first.payload,
                 rank: 1,
             },
         ],
@@ -605,7 +731,34 @@ fn add_from_all_apps_to_folder(
         folder_id,
         FolderMember {
             item_id,
-            component,
+            payload: ItemPayload::Application(component),
+            rank,
+        },
+        rank,
+    )
+}
+
+fn add_shortcut_to_folder(
+    snapshot: &mut WorkspaceSnapshot,
+    item_id: u64,
+    shortcut: ShortcutId,
+    folder_id: u64,
+    rank: u32,
+) -> Result<(), WorkspaceError> {
+    validate_shortcut(&shortcut)?;
+    if item_id == 0
+        || item_id >= i64::MAX as u64
+        || id_exists(snapshot, item_id)
+        || shortcut_exists(snapshot, &shortcut)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    insert_folder_member(
+        snapshot,
+        folder_id,
+        FolderMember {
+            item_id,
+            payload: ItemPayload::Shortcut(shortcut),
             rank,
         },
         rank,
@@ -630,19 +783,19 @@ fn add_item_to_folder(
     {
         return move_folder_member(snapshot, folder_id, item_id, rank);
     }
-    let destination_profile = destination.members[0].component.profile_id;
+    let destination_profile = payload_profile(&destination.members[0].payload)?;
 
-    let (component, source_folder) = if let Some(item) = snapshot
+    let (payload, source_folder) = if let Some(item) = snapshot
         .items
         .iter()
         .find(|item| item.item_id == item_id)
         .cloned()
     {
-        let ItemPayload::Application(component) = item.payload else {
+        if matches!(item.payload, ItemPayload::Folder) {
             return Err(WorkspaceError::InvariantViolation);
-        };
+        }
         snapshot.items.retain(|item| item.item_id != item_id);
-        (component, None)
+        (item.payload, None)
     } else {
         let source_id = snapshot
             .folders
@@ -668,9 +821,9 @@ fn add_item_to_folder(
             .expect("source member exists");
         source.members.retain(|member| member.item_id != item_id);
         normalize_members(&mut source.members);
-        (member.component, Some(source_id))
+        (member.payload, Some(source_id))
     };
-    if component.profile_id != destination_profile {
+    if payload_profile(&payload)? != destination_profile {
         return Err(WorkspaceError::CrossProfile);
     }
     if let Some(source_id) = source_folder {
@@ -681,7 +834,7 @@ fn add_item_to_folder(
         folder_id,
         FolderMember {
             item_id,
-            component,
+            payload,
             rank,
         },
         rank,
@@ -699,13 +852,15 @@ fn insert_folder_member(
         .iter_mut()
         .find(|folder| folder.folder_id == folder_id)
         .ok_or(WorkspaceError::MissingFolder)?;
-    let profile = folder
-        .members
-        .first()
-        .ok_or(WorkspaceError::InvariantViolation)?
-        .component
-        .profile_id;
-    if member.component.profile_id != profile {
+    let profile = payload_profile(
+        &folder
+            .members
+            .first()
+            .ok_or(WorkspaceError::InvariantViolation)?
+            .payload,
+    )?;
+    if payload_profile(&member.payload)? != profile || matches!(member.payload, ItemPayload::Folder)
+    {
         return Err(WorkspaceError::CrossProfile);
     }
     let index = usize::try_from(rank)
@@ -771,7 +926,7 @@ fn remove_item_from_folder(
     normalize_members(&mut folder.members);
     snapshot.items.push(WorkspaceItem {
         item_id,
-        payload: ItemPayload::Application(member.component),
+        payload: member.payload,
         container,
         cell,
     });
@@ -819,7 +974,7 @@ fn dissolve_if_needed(
     if let Some(member) = folder.members.into_iter().next() {
         snapshot.items.push(WorkspaceItem {
             item_id: member.item_id,
-            payload: ItemPayload::Application(member.component),
+            payload: member.payload,
             container: placement.container,
             cell: placement.cell,
         });
@@ -833,12 +988,42 @@ fn drop_missing(
 ) -> Result<(), WorkspaceError> {
     snapshot.items.retain(|item| match &item.payload {
         ItemPayload::Application(component) => live.contains(component),
-        ItemPayload::Folder => true,
+        ItemPayload::Folder | ItemPayload::Shortcut(_) => true,
     });
     for folder in &mut snapshot.folders {
-        folder
-            .members
-            .retain(|member| live.contains(&member.component));
+        folder.members.retain(|member| match &member.payload {
+            ItemPayload::Application(component) => live.contains(component),
+            ItemPayload::Shortcut(_) => true,
+            ItemPayload::Folder => false,
+        });
+        normalize_members(&mut folder.members);
+    }
+    let dissolve: Vec<_> = snapshot
+        .folders
+        .iter()
+        .filter(|folder| folder.members.len() <= 1)
+        .map(|folder| folder.folder_id)
+        .collect();
+    for folder_id in dissolve {
+        dissolve_if_needed(snapshot, folder_id)?;
+    }
+    Ok(())
+}
+
+fn reconcile_shortcuts(
+    snapshot: &mut WorkspaceSnapshot,
+    live: &HashSet<ShortcutId>,
+) -> Result<(), WorkspaceError> {
+    snapshot.items.retain(|item| match &item.payload {
+        ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
+        ItemPayload::Application(_) | ItemPayload::Folder => true,
+    });
+    for folder in &mut snapshot.folders {
+        folder.members.retain(|member| match &member.payload {
+            ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
+            ItemPayload::Application(_) => true,
+            ItemPayload::Folder => false,
+        });
         normalize_members(&mut folder.members);
     }
     let dissolve: Vec<_> = snapshot
@@ -974,6 +1159,30 @@ fn validate_component(component: &ComponentId) -> Result<(), WorkspaceError> {
     Ok(())
 }
 
+fn validate_shortcut(shortcut: &ShortcutId) -> Result<(), WorkspaceError> {
+    if shortcut.profile_id > i64::MAX as u64 {
+        return Err(WorkspaceError::InvalidProfile);
+    }
+    if shortcut.package.is_empty()
+        || shortcut.shortcut_id.is_empty()
+        || shortcut.package.chars().count() > 255
+        || shortcut.shortcut_id.chars().count() > 100
+        || shortcut.package.chars().any(char::is_control)
+        || shortcut.shortcut_id.chars().any(char::is_control)
+    {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+    Ok(())
+}
+
+fn payload_profile(payload: &ItemPayload) -> Result<u64, WorkspaceError> {
+    match payload {
+        ItemPayload::Application(component) => Ok(component.profile_id),
+        ItemPayload::Shortcut(shortcut) => Ok(shortcut.profile_id),
+        ItemPayload::Folder => Err(WorkspaceError::InvariantViolation),
+    }
+}
+
 fn validate_title(title: &str) -> Result<(), WorkspaceError> {
     if title.chars().count() > 80 || title.chars().any(char::is_control) {
         return Err(WorkspaceError::InvalidTitle);
@@ -999,8 +1208,27 @@ fn component_exists(snapshot: &WorkspaceSnapshot, component: &ComponentId) -> bo
         folder
             .members
             .iter()
-            .any(|member| &member.component == component)
+            .any(|member| matches!(&member.payload, ItemPayload::Application(existing) if existing == component))
     })
+}
+
+fn shortcut_exists(snapshot: &WorkspaceSnapshot, shortcut: &ShortcutId) -> bool {
+    snapshot.items.iter().any(
+        |item| matches!(&item.payload, ItemPayload::Shortcut(existing) if existing == shortcut),
+    ) || snapshot.folders.iter().any(|folder| {
+        folder
+            .members
+            .iter()
+            .any(|member| matches!(&member.payload, ItemPayload::Shortcut(existing) if existing == shortcut))
+    })
+}
+
+fn payload_exists(snapshot: &WorkspaceSnapshot, payload: &ItemPayload) -> bool {
+    match payload {
+        ItemPayload::Application(component) => component_exists(snapshot, component),
+        ItemPayload::Shortcut(shortcut) => shortcut_exists(snapshot, shortcut),
+        ItemPayload::Folder => true,
+    }
 }
 
 fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
@@ -1034,6 +1262,7 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
 
     let mut item_ids = HashSet::new();
     let mut components = HashSet::new();
+    let mut shortcuts = HashSet::new();
     let folder_ids: HashSet<_> = snapshot
         .folders
         .iter()
@@ -1057,6 +1286,12 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
                 return Err(WorkspaceError::InvariantViolation);
             }
             ItemPayload::Folder => {}
+            ItemPayload::Shortcut(shortcut) => {
+                validate_shortcut(shortcut)?;
+                if !shortcuts.insert(shortcut.clone()) {
+                    return Err(WorkspaceError::InvariantViolation);
+                }
+            }
         }
         validate_destination(snapshot, &item.container, item.cell)?;
     }
@@ -1074,15 +1309,28 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
         {
             return Err(WorkspaceError::InvariantViolation);
         }
-        let profile = folder.members[0].component.profile_id;
+        let profile = payload_profile(&folder.members[0].payload)?;
         for (rank, member) in folder.members.iter().enumerate() {
-            validate_component(&member.component)?;
+            match &member.payload {
+                ItemPayload::Application(component) => {
+                    validate_component(component)?;
+                    if !components.insert(component.clone()) {
+                        return Err(WorkspaceError::InvariantViolation);
+                    }
+                }
+                ItemPayload::Shortcut(shortcut) => {
+                    validate_shortcut(shortcut)?;
+                    if !shortcuts.insert(shortcut.clone()) {
+                        return Err(WorkspaceError::InvariantViolation);
+                    }
+                }
+                ItemPayload::Folder => return Err(WorkspaceError::InvariantViolation),
+            }
             if member.rank != rank as u32
-                || member.component.profile_id != profile
+                || payload_profile(&member.payload)? != profile
                 || member.item_id == 0
                 || member.item_id >= i64::MAX as u64
                 || !item_ids.insert(member.item_id)
-                || !components.insert(member.component.clone())
             {
                 return Err(WorkspaceError::InvariantViolation);
             }
@@ -1215,6 +1463,14 @@ mod tests {
         ComponentId {
             package: name.into(),
             class: "Main".into(),
+            profile_id: 0,
+        }
+    }
+
+    fn shortcut(name: &str) -> ShortcutId {
+        ShortcutId {
+            package: "com.example".into(),
+            shortcut_id: name.into(),
             profile_id: 0,
         }
     }
@@ -1464,12 +1720,26 @@ mod tests {
             let mut state = snapshot();
             for step in 0..32_u64 {
                 let id = seed * 100 + step + 1;
-                let command = WorkspaceCommand::PlaceFromAllApps {
-                    expected_generation: state.generation,
-                    item_id: id,
-                    component: component(&format!("{seed}.{step}")),
-                    page_id: 10,
-                    cell: CellRect::single((step % 2) as i32, ((step / 2) % 2) as i32),
+                let command = if step % 3 == 0 {
+                    WorkspaceCommand::PlaceShortcut {
+                        expected_generation: state.generation,
+                        item_id: id,
+                        shortcut: ShortcutId {
+                            package: format!("p{seed}"),
+                            shortcut_id: format!("s{step}"),
+                            profile_id: 0,
+                        },
+                        container: ContainerRef::Workspace { page_id: 10 },
+                        cell: CellRect::single((step % 2) as i32, ((step / 2) % 2) as i32),
+                    }
+                } else {
+                    WorkspaceCommand::PlaceFromAllApps {
+                        expected_generation: state.generation,
+                        item_id: id,
+                        component: component(&format!("{seed}.{step}")),
+                        page_id: 10,
+                        cell: CellRect::single((step % 2) as i32, ((step / 2) % 2) as i32),
+                    }
                 };
                 let left = apply_workspace_command(state.clone(), command.clone());
                 let right = apply_workspace_command(state.clone(), command);
@@ -1669,5 +1939,126 @@ mod tests {
         assert!(state.folders.is_empty());
         assert_eq!(state.items[0].item_id, 1);
         assert_eq!(state.items[0].cell, CellRect::single(1, 0));
+    }
+
+    #[test]
+    fn shortcut_identity_placement_folder_and_reconciliation() {
+        let mut state = snapshot();
+        state.generation = 0;
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::PlaceFromAllApps {
+                expected_generation: 0,
+                item_id: 1,
+                component: ComponentId {
+                    package: "com.example".into(),
+                    class: "Main".into(),
+                    profile_id: 0,
+                },
+                page_id: 10,
+                cell: CellRect::single(0, 0),
+            },
+        )
+        .unwrap()
+        .into();
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::PlaceShortcut {
+                expected_generation: 1,
+                item_id: 2,
+                shortcut: shortcut("manifest"),
+                container: ContainerRef::Workspace { page_id: 10 },
+                cell: CellRect::single(1, 0),
+            },
+        )
+        .unwrap()
+        .into();
+        assert_eq!(state.items.len(), 2, "parent app and shortcut coexist");
+
+        let duplicate = apply_workspace_command(
+            state.clone(),
+            WorkspaceCommand::PlaceShortcut {
+                expected_generation: 2,
+                item_id: 3,
+                shortcut: shortcut("manifest"),
+                container: ContainerRef::Workspace { page_id: 10 },
+                cell: CellRect::single(0, 1),
+            },
+        );
+        assert_eq!(duplicate, Err(WorkspaceError::InvariantViolation));
+
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::CreateFolder {
+                expected_generation: 2,
+                folder_id: 3,
+                first_item_id: 2,
+                second_item_id: 1,
+            },
+        )
+        .unwrap()
+        .into();
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::AddShortcutToFolder {
+                expected_generation: 3,
+                item_id: 4,
+                shortcut: shortcut("dynamic"),
+                folder_id: 3,
+                rank: 0,
+            },
+        )
+        .unwrap()
+        .into();
+        assert_eq!(
+            state.folders[0]
+                .members
+                .iter()
+                .map(|m| m.rank)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+
+        let cross_profile = apply_workspace_command(
+            state.clone(),
+            WorkspaceCommand::AddShortcutToFolder {
+                expected_generation: 4,
+                item_id: 5,
+                shortcut: ShortcutId {
+                    package: "com.example".into(),
+                    shortcut_id: "work".into(),
+                    profile_id: 1,
+                },
+                folder_id: 3,
+                rank: 0,
+            },
+        );
+        assert_eq!(cross_profile, Err(WorkspaceError::CrossProfile));
+
+        state = apply_workspace_command(
+            state,
+            WorkspaceCommand::ReconcileShortcuts {
+                expected_generation: 4,
+                live: vec![shortcut("manifest")],
+            },
+        )
+        .unwrap()
+        .into();
+        assert_eq!(state.folders[0].members.len(), 2);
+        assert!(state.folders[0].members.iter().any(|member| {
+            matches!(&member.payload, ItemPayload::Shortcut(id) if id.shortcut_id == "manifest")
+        }));
+
+        let invalid = apply_workspace_command(
+            state,
+            WorkspaceCommand::PlaceShortcut {
+                expected_generation: 5,
+                item_id: 6,
+                shortcut: shortcut(""),
+                container: ContainerRef::Workspace { page_id: 10 },
+                cell: CellRect::single(0, 1),
+            },
+        );
+        assert_eq!(invalid, Err(WorkspaceError::InvariantViolation));
     }
 }

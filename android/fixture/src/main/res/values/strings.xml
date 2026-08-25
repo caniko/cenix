@@ -1,4 +1,15 @@
 <resources>
     <string name="app_name">Cenix Fixture</string>
     <string name="app_name_two">Cenix Fixture Two</string>
+    <string name="app_name_three">Cenix Fixture Three</string>
+    <string name="app_name_four">Cenix Fixture Four</string>
+    <string name="manifest_shortcut">Manifest action</string>
+    <string name="dynamic_shortcut">Dynamic action</string>
+    <string name="dynamic_shortcut_updated">Updated dynamic action</string>
+    <string name="manifest_destination">Manifest shortcut destination</string>
+    <string name="dynamic_destination">Dynamic shortcut destination</string>
+    <string name="pin_dynamic">Request dynamic shortcut pin</string>
+    <string name="update_dynamic">Update dynamic shortcut</string>
+    <string name="disable_dynamic">Disable dynamic shortcut</string>
+    <string name="remove_dynamic">Remove dynamic shortcut</string>
 </resources>

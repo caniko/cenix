@@ -58,7 +58,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV4KeepsMetadata() {
+    fun migratesV1ToV5KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -77,7 +77,12 @@ class CenixDatabaseTest {
         sqlite.close()
 
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_1_2, CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4)
+            .addMigrations(
+                CenixDatabase.MIGRATION_1_2,
+                CenixDatabase.MIGRATION_2_3,
+                CenixDatabase.MIGRATION_3_4,
+                CenixDatabase.MIGRATION_4_5,
+            )
             .allowMainThreadQueries()
             .build()
         val metadata = db.dao().metadata()
@@ -91,7 +96,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV2ToV4PreservesPagesHotseatAndProfiles() {
+    fun migratesV2ToV5PreservesPagesHotseatAndProfiles() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-v2-v3.db"
         context.deleteDatabase(name)
@@ -109,7 +114,7 @@ class CenixDatabaseTest {
         sqlite.version = 2
         sqlite.close()
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4)
+            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         val items = db.dao().workspaceItems().associateBy { it.id }
@@ -119,6 +124,7 @@ class CenixDatabaseTest {
         assertEquals(12L, db.dao().workspaceApplications().associateBy { it.itemId }[9]!!.profileId)
         assertEquals(10L, db.dao().workspaceMetadata()!!.nextItemId)
         assertEquals(3L, db.dao().workspaceMetadata()!!.nextPageId)
+        assertTrue(db.dao().workspaceShortcuts().isEmpty())
         db.close()
         context.deleteDatabase(name)
     }

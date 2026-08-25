@@ -15,8 +15,8 @@ if ! grep -q 'android.intent.category.HOME' "$manifest"; then
   exit 1
 fi
 exported="$(grep -c 'android:exported="true"' "$manifest" || true)"
-if [[ "$exported" -ne 1 ]]; then
-  echo "exactly one exported component is allowed (HOME), found $exported" >&2
+if [[ "$exported" -ne 2 ]] || ! grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' "$manifest"; then
+  echo "only HOME and pin-shortcut confirmation may be exported, found $exported" >&2
   exit 1
 fi
 if grep -R --include='*.kt' --include='*.xml' -nE 'WebView|cuscon|Cuscon|cenix_jni|FilterProtocol|NativeBridge|harbor-js' "$root/android" \
@@ -25,6 +25,10 @@ if grep -R --include='*.kt' --include='*.xml' -nE 'WebView|cuscon|Cuscon|cenix_j
   exit 1
 fi
 apk="${1:-$root/android/app/build/outputs/apk/debug/app-debug.apk}"
+expected_abis="${2:-${CENIX_EXPECTED_ABIS:-}}"
+if [[ -z "$expected_abis" ]]; then
+  expected_abis="$([[ "$apk" == *release* ]] && printf arm64-v8a || printf arm64-v8a,x86_64)"
+fi
 if [[ ! -f "$apk" ]]; then
   echo "apk not found: $apk" >&2
   exit 1
@@ -32,22 +36,23 @@ fi
 listing="$(unzip -l "$apk")"
 omit="${CENIX_OMIT_NATIVE:-0}"
 if [[ "$omit" == "1" ]]; then
-  if echo "$listing" | grep -q 'libcenix_ffi.so'; then
+  if grep -q 'libcenix_ffi.so' <<<"$listing"; then
     echo "libcenix_ffi.so must be absent when CENIX_OMIT_NATIVE=1" >&2
     exit 1
   fi
 else
-  echo "$listing" | grep -q 'libcenix_ffi.so' || { echo "libcenix_ffi.so missing" >&2; exit 1; }
-  echo "$listing" | grep -q 'libjnidispatch.so' || { echo "libjnidispatch.so missing" >&2; exit 1; }
-  echo "$listing" | grep -q 'lib/arm64-v8a/libcenix_ffi.so' || { echo "arm64-v8a libcenix_ffi.so missing" >&2; exit 1; }
-  if [[ "$apk" != *release* ]]; then
-    echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so' || { echo "x86_64 libcenix_ffi.so missing" >&2; exit 1; }
-  elif echo "$listing" | grep -q 'lib/x86_64/libcenix_ffi.so'; then
-    echo "release APK must contain only the arm64-v8a Cenix library" >&2
-    exit 1
-  fi
+  grep -q 'libcenix_ffi.so' <<<"$listing" || { echo "libcenix_ffi.so missing" >&2; exit 1; }
+  grep -q 'libjnidispatch.so' <<<"$listing" || { echo "libjnidispatch.so missing" >&2; exit 1; }
+  for abi in arm64-v8a x86_64; do
+    if [[ ",$expected_abis," == *",$abi,"* ]]; then
+      grep -q "lib/$abi/libcenix_ffi.so" <<<"$listing" || { echo "$abi libcenix_ffi.so missing" >&2; exit 1; }
+    elif grep -q "lib/$abi/libcenix_ffi.so" <<<"$listing"; then
+      echo "$abi libcenix_ffi.so violates expected ABI policy $expected_abis" >&2
+      exit 1
+    fi
+  done
 fi
-echo "$listing" | grep -qiE 'cenix_jni|harbor-js|cuscon' && { echo "obsolete artifact in APK listing" >&2; exit 1; }
+grep -qiE 'cenix_jni|harbor-js|cuscon' <<<"$listing" && { echo "obsolete artifact in APK listing" >&2; exit 1; }
 
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 aapt_bin="$(echo "$sdk"/build-tools/*/aapt | awk '{print $1}')"
@@ -60,10 +65,11 @@ if [[ ! -x "${aapt_bin:-}" ]]; then
 fi
 badging="$("$aapt_bin" dump badging "$apk")"
 xmltree="$("$aapt_bin" dump xmltree "$apk" AndroidManifest.xml)"
-echo "$xmltree" | grep -q 'android.permission.INTERNET' && { echo "INTERNET in merged manifest" >&2; exit 1; }
-echo "$xmltree" | grep -q 'QUERY_ALL_PACKAGES' && { echo "QUERY_ALL_PACKAGES in merged manifest" >&2; exit 1; }
-echo "$xmltree" | grep -q 'android.intent.category.HOME' || { echo "HOME missing from merged manifest" >&2; exit 1; }
-echo "$badging" | grep -qiE 'cuscon|harbor-js|cenix_jni' && { echo "forbidden string in badging" >&2; exit 1; }
+grep -q 'android.permission.INTERNET' <<<"$xmltree" && { echo "INTERNET in merged manifest" >&2; exit 1; }
+grep -q 'QUERY_ALL_PACKAGES' <<<"$xmltree" && { echo "QUERY_ALL_PACKAGES in merged manifest" >&2; exit 1; }
+grep -q 'android.intent.category.HOME' <<<"$xmltree" || { echo "HOME missing from merged manifest" >&2; exit 1; }
+grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' <<<"$xmltree" || { echo "pin shortcut confirmation missing from merged manifest" >&2; exit 1; }
+grep -qiE 'cuscon|harbor-js|cenix_jni' <<<"$badging" && { echo "forbidden string in badging" >&2; exit 1; }
 python3 - "$apk" <<'PY' || { echo "Play Services reference in APK" >&2; exit 1; }
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as archive:
@@ -71,11 +77,11 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
 raise SystemExit(1 if bad else 0)
 PY
 if [[ "$apk" == *release* ]]; then
-  echo "$badging" | grep -q 'application-debuggable' && { echo "release APK is debuggable" >&2; exit 1; }
+  grep -q 'application-debuggable' <<<"$badging" && { echo "release APK is debuggable" >&2; exit 1; }
   apksigner_bin="$sdk/build-tools/35.0.0/apksigner"
   [[ -x "$apksigner_bin" ]] || { echo "apksigner 35.0.0 is required" >&2; exit 1; }
   signature="$($apksigner_bin verify --print-certs "$apk" 2>&1 || true)"
-  echo "$signature" | grep -q 'CN=Android Debug' && { echo "release APK is debug-signed" >&2; exit 1; }
+  grep -q 'CN=Android Debug' <<<"$signature" && { echo "release APK is debug-signed" >&2; exit 1; }
   if [[ "${CENIX_ALLOW_SIGNED_RELEASE:-0}" != "1" ]] && "$apksigner_bin" verify "$apk" >/dev/null 2>&1; then
     echo "production release must be unsigned before the external signing workflow" >&2
     exit 1
@@ -99,5 +105,5 @@ if [[ $# -eq 0 ]]; then
   release_apk="$root/android/app/build/outputs/apk/release/app-release-unsigned.apk"
   export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
   (cd "$root/android" && ./gradlew --offline :app:assembleRelease)
-  "$0" "$release_apk"
+  "$0" "$release_apk" arm64-v8a
 fi

@@ -66,6 +66,7 @@ data class WorkspaceItemEntity(
         const val CONTAINER_HOTSEAT = "HOTSEAT"
         const val ITEM_APPLICATION = "APPLICATION"
         const val ITEM_FOLDER = "FOLDER"
+        const val ITEM_SHORTCUT = "SHORTCUT"
     }
 }
 
@@ -77,6 +78,17 @@ data class ApplicationItemEntity(
     @PrimaryKey val itemId: Long,
     val packageName: String,
     val className: String,
+    val profileId: Long,
+)
+
+@Entity(
+    tableName = "workspace_shortcuts",
+    indices = [Index(value = ["packageName", "shortcutId", "profileId"], unique = true)],
+)
+data class ShortcutItemEntity(
+    @PrimaryKey val itemId: Long,
+    val packageName: String,
+    val shortcutId: String,
     val profileId: Long,
 )
 
@@ -101,6 +113,7 @@ data class WorkspaceRows(
     val pages: List<WorkspacePageEntity>,
     val items: List<WorkspaceItemEntity>,
     val applications: List<ApplicationItemEntity>,
+    val shortcuts: List<ShortcutItemEntity>,
     val folders: List<FolderEntity>,
     val folderMembers: List<FolderMemberEntity>,
 )
@@ -131,6 +144,9 @@ interface CenixDao {
     @Query("SELECT * FROM workspace_applications ORDER BY itemId")
     fun workspaceApplications(): List<ApplicationItemEntity>
 
+    @Query("SELECT * FROM workspace_shortcuts ORDER BY itemId")
+    fun workspaceShortcuts(): List<ShortcutItemEntity>
+
     @Query("SELECT * FROM workspace_folders ORDER BY folderId")
     fun workspaceFolders(): List<FolderEntity>
 
@@ -147,6 +163,9 @@ interface CenixDao {
     fun insertApplications(entities: List<ApplicationItemEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertShortcuts(entities: List<ShortcutItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertFolders(entities: List<FolderEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -160,6 +179,9 @@ interface CenixDao {
 
     @Query("DELETE FROM workspace_applications")
     fun clearApplications()
+
+    @Query("DELETE FROM workspace_shortcuts")
+    fun clearShortcuts()
 
     @Query("DELETE FROM workspace_folders")
     fun clearFolders()
@@ -188,6 +210,7 @@ interface CenixDao {
         pages = workspacePages(),
         items = workspaceItems(),
         applications = workspaceApplications(),
+        shortcuts = workspaceShortcuts(),
         folders = workspaceFolders(),
         folderMembers = folderMembers(),
     )
@@ -199,9 +222,11 @@ interface CenixDao {
         pages: List<WorkspacePageEntity>,
         items: List<WorkspaceItemEntity>,
         applications: List<ApplicationItemEntity> = emptyList(),
+        shortcuts: List<ShortcutItemEntity> = emptyList(),
         folders: List<FolderEntity> = emptyList(),
         folderMembers: List<FolderMemberEntity> = emptyList(),
     ) {
+        validateWorkspaceRows(items, applications, shortcuts, folders, folderMembers)
         val currentMetadata = checkNotNull(workspaceMetadata())
         if (currentMetadata.generation != expectedGeneration) throw StaleWorkspaceGeneration()
         if (metadata.generation == expectedGeneration) {
@@ -210,6 +235,7 @@ interface CenixDao {
                 pages != workspacePages() ||
                 items != workspaceItems() ||
                 applications != workspaceApplications() ||
+                shortcuts != workspaceShortcuts() ||
                 folders != workspaceFolders() ||
                 folderMembers != this.folderMembers()
             ) {
@@ -233,14 +259,56 @@ interface CenixDao {
         }
         clearFolderMembers()
         clearFolders()
+        clearShortcuts()
         clearApplications()
         clearWorkspace()
         clearPages()
         insertPages(pages)
         if (items.isNotEmpty()) insertWorkspace(items)
         if (applications.isNotEmpty()) insertApplications(applications)
+        if (shortcuts.isNotEmpty()) insertShortcuts(shortcuts)
         if (folders.isNotEmpty()) insertFolders(folders)
         if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
+    }
+
+    private fun validateWorkspaceRows(
+        items: List<WorkspaceItemEntity>,
+        applications: List<ApplicationItemEntity>,
+        shortcuts: List<ShortcutItemEntity>,
+        folders: List<FolderEntity>,
+        folderMembers: List<FolderMemberEntity>,
+    ) {
+        val itemIds = items.map { it.id }.toSet()
+        val memberIds = folderMembers.map { it.itemId }.toSet()
+        val applicationIds = applications.map { it.itemId }.toSet()
+        val shortcutIds = shortcuts.map { it.itemId }.toSet()
+        val folderIds = folders.map { it.folderId }.toSet()
+        val placedFolderIds = items.filter { it.itemKind == WorkspaceItemEntity.ITEM_FOLDER }.map { it.id }.toSet()
+        val placedPayloadIds = items.filter { it.itemKind != WorkspaceItemEntity.ITEM_FOLDER }.map { it.id }.toSet()
+        if (
+            itemIds.size != items.size || memberIds.size != folderMembers.size ||
+            itemIds.intersect(memberIds).isNotEmpty() ||
+            applicationIds.intersect(shortcutIds).isNotEmpty() ||
+            applicationIds + shortcutIds != placedPayloadIds + memberIds ||
+            folderIds != placedFolderIds ||
+            folderMembers.any { it.folderId !in folderIds } ||
+            folders.any { folder -> folderMembers.count { it.folderId == folder.folderId } < 2 } ||
+            folders.any { folder ->
+                folderMembers.filter { it.folderId == folder.folderId }.sortedBy { it.rank }
+                    .map { it.rank } != (0 until folderMembers.count { it.folderId == folder.folderId }).toList()
+            } ||
+            items.any {
+                it.itemKind !in setOf(
+                    WorkspaceItemEntity.ITEM_APPLICATION,
+                    WorkspaceItemEntity.ITEM_FOLDER,
+                    WorkspaceItemEntity.ITEM_SHORTCUT,
+                ) ||
+                (it.itemKind == WorkspaceItemEntity.ITEM_APPLICATION) != (it.id in applicationIds) ||
+                    (it.itemKind == WorkspaceItemEntity.ITEM_SHORTCUT) != (it.id in shortcutIds)
+            }
+        ) {
+            throw InvalidWorkspaceTransition()
+        }
     }
 
     @Transaction
@@ -280,6 +348,7 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
         WorkspacePageEntity::class,
         WorkspaceItemEntity::class,
         ApplicationItemEntity::class,
+        ShortcutItemEntity::class,
         FolderEntity::class,
         FolderMemberEntity::class,
     ],
@@ -291,7 +360,7 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 4
+        const val VERSION = 5
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -374,9 +443,20 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `workspace_shortcuts` (`itemId` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `shortcutId` TEXT NOT NULL, `profileId` INTEGER NOT NULL, PRIMARY KEY(`itemId`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_workspace_shortcuts_packageName_shortcutId_profileId` ON `workspace_shortcuts` (`packageName`, `shortcutId`, `profileId`)",
+                )
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             return builder.build().also { it.ensureSeed() }
         }

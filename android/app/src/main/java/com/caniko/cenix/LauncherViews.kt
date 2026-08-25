@@ -47,6 +47,11 @@ class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeS
             shellVelocity = null
             return dragLayer.handleMotionEvent(event)
         }
+        if (findViewById<View>(R.id.context_popup) != null) {
+            shellVelocity?.recycle()
+            shellVelocity = null
+            return super.dispatchTouchEvent(event)
+        }
         shellVelocity = (shellVelocity ?: VelocityTracker.obtain()).also { it.addMovement(event) }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> shellDownY = event.y
@@ -221,6 +226,7 @@ class WorkspacePager @JvmOverloads constructor(context: Context, attrs: Attribut
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        if (rootView.findViewById<View>(R.id.context_popup) != null) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> downX = event.x
             MotionEvent.ACTION_MOVE -> if (abs(event.x - downX) > 16) return true
@@ -372,8 +378,8 @@ class FolderPopup(context: Context) : FrameLayout(context) {
         private set
     var onClose: (() -> Unit)? = null
     var onRename: ((String) -> Unit)? = null
-    var onLaunch: ((LaunchableApp) -> Unit)? = null
-    var onBeginDrag: ((View, LaunchableApp, FolderMember) -> Unit)? = null
+    var onLaunch: ((FolderEntry) -> Unit)? = null
+    var onDirectDrag: ((View, FolderEntry) -> Unit)? = null
     var onMove: ((FolderMember, UInt) -> Unit)? = null
     var onRemove: ((FolderMember) -> Unit)? = null
 
@@ -403,7 +409,7 @@ class FolderPopup(context: Context) : FrameLayout(context) {
     fun bind(
         id: ULong,
         currentTitle: String,
-        entries: List<Pair<FolderMember, LaunchableApp>>,
+        entries: List<FolderEntry>,
     ) {
         folderId = id
         title.setText(currentTitle)
@@ -412,23 +418,24 @@ class FolderPopup(context: Context) : FrameLayout(context) {
         memberScroll.layoutParams = (memberScroll.layoutParams as LinearLayout.LayoutParams).apply {
             height = (((entries.size + 2) / 3).coerceAtLeast(1) * dp(76)).coerceAtMost(dp(300))
         }
-        entries.forEachIndexed { index, (member, app) ->
+        entries.forEachIndexed { index, entry ->
+            val member = entry.member
             val cell = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER
                 isFocusable = true
-                contentDescription = app.label
+                contentDescription = "${entry.label}, rank ${index + 1}"
                 addView(ImageView(context).apply {
-                    setImageDrawable(app.icon)
+                    setImageDrawable(entry.icon)
                     contentDescription = null
                 }, LinearLayout.LayoutParams(dp(40), dp(40)))
                 addView(TextView(context).apply {
-                    text = app.label
+                    text = entry.label
                     gravity = android.view.Gravity.CENTER
                     maxLines = 1
                 }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-                setOnClickListener { onLaunch?.invoke(app) }
-                setOnLongClickListener { onBeginDrag?.invoke(this, app, member); true }
+                setOnClickListener { onLaunch?.invoke(entry) }
+                setOnLongClickListener { onDirectDrag?.invoke(this, entry); true }
                 accessibilityDelegate = object : View.AccessibilityDelegate() {
                     override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                         super.onInitializeAccessibilityNodeInfo(host, info)
@@ -492,10 +499,141 @@ class FolderPopup(context: Context) : FrameLayout(context) {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
 
+data class FolderEntry(
+    val member: FolderMember,
+    val label: String,
+    val icon: Drawable?,
+    val app: LaunchableApp? = null,
+    val shortcut: LauncherShortcut? = null,
+)
+
+class ContextPopup(context: Context) : FrameLayout(context) {
+    private val panel = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = GradientDrawable().apply {
+            setColor(resolveBackgroundColor())
+            cornerRadius = dp(16).toFloat()
+        }
+        elevation = dp(12).toFloat()
+        isClickable = true
+        isFocusable = true
+    }
+    private val title = TextView(context).apply {
+        maxLines = 2
+        textSize = 18f
+        setPadding(dp(8), dp(8), dp(8), dp(8))
+    }
+    private val shortcuts = LinearLayout(context).apply {
+        id = R.id.context_shortcuts
+        orientation = LinearLayout.VERTICAL
+    }
+    private val drag = action(R.id.context_drag, R.string.drag)
+    private val appInfo = action(R.id.context_app_info, R.string.app_info)
+    private val uninstall = action(R.id.context_uninstall, R.string.uninstall)
+    private val remove = action(R.id.context_remove, R.string.remove)
+    var onClose: (() -> Unit)? = null
+    var onDragApp: (() -> Unit)? = null
+    var onAppInfo: (() -> Unit)? = null
+    var onUninstall: (() -> Unit)? = null
+    var onRemove: (() -> Unit)? = null
+    var onLaunchShortcut: ((LauncherShortcut) -> Unit)? = null
+    var onDragShortcut: ((View, LauncherShortcut) -> Unit)? = null
+    var onPinShortcut: ((LauncherShortcut) -> Unit)? = null
+
+    init {
+        id = R.id.context_popup
+        isClickable = true
+        isFocusable = true
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        contentDescription = context.getString(R.string.context_actions)
+        setOnClickListener { onClose?.invoke() }
+        panel.setOnClickListener { }
+        panel.addView(title, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        panel.addView(shortcuts, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        panel.addView(drag)
+        panel.addView(appInfo)
+        panel.addView(uninstall)
+        panel.addView(remove)
+        addView(panel, LayoutParams(dp(280), LayoutParams.WRAP_CONTENT))
+        drag.setOnClickListener { onDragApp?.invoke() }
+        appInfo.setOnClickListener { onAppInfo?.invoke() }
+        uninstall.setOnClickListener { onUninstall?.invoke() }
+        remove.setOnClickListener { onRemove?.invoke() }
+    }
+
+    fun bind(label: String, entries: List<LauncherShortcut>, canUninstall: Boolean, canRemove: Boolean) {
+        title.text = ShortcutCatalog.safeLabel(label)
+        shortcuts.removeAllViews()
+        entries.forEach { shortcut ->
+            val row = LinearLayout(context).apply {
+                id = R.id.shortcut_row
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                minimumHeight = dp(48)
+                isFocusable = true
+                isEnabled = shortcut.enabled
+                contentDescription = if (shortcut.enabled) shortcut.label else "${shortcut.label}, ${context.getString(R.string.shortcut_unavailable)}"
+                addView(ImageView(context).apply {
+                    setImageDrawable(shortcut.icon)
+                    contentDescription = null
+                }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                addView(TextView(context).apply {
+                    text = shortcut.label
+                    maxLines = 2
+                }, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+                addView(Button(context).apply {
+                    id = R.id.shortcut_pin
+                    text = context.getString(R.string.pin_shortcut)
+                    isEnabled = shortcut.enabled
+                    setOnClickListener { onPinShortcut?.invoke(shortcut) }
+                }, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)))
+                setOnClickListener { if (shortcut.enabled) onLaunchShortcut?.invoke(shortcut) }
+                setOnLongClickListener {
+                    if (shortcut.enabled) onDragShortcut?.invoke(this, shortcut)
+                    shortcut.enabled
+                }
+            }
+            shortcuts.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+        uninstall.visibility = if (canUninstall) VISIBLE else GONE
+        remove.visibility = if (canRemove) VISIBLE else GONE
+    }
+
+    fun anchor(source: View) {
+        post {
+            val sourceLocation = IntArray(2)
+            val ownLocation = IntArray(2)
+            source.getLocationOnScreen(sourceLocation)
+            getLocationOnScreen(ownLocation)
+            val params = panel.layoutParams as LayoutParams
+            params.gravity = android.view.Gravity.TOP or android.view.Gravity.LEFT
+            params.leftMargin = (sourceLocation[0] - ownLocation[0]).coerceIn(0, (width - panel.measuredWidth).coerceAtLeast(0))
+            params.topMargin = (sourceLocation[1] - ownLocation[1] + source.height)
+                .coerceIn(0, (height - panel.measuredHeight).coerceAtLeast(0))
+            panel.layoutParams = params
+            panel.requestFocus()
+        }
+    }
+
+    private fun action(id: Int, label: Int) = Button(context).apply {
+        this.id = id
+        text = context.getString(label)
+        minimumHeight = dp(48)
+    }
+
+    private fun resolveBackgroundColor(): Int = context.obtainStyledAttributes(intArrayOf(android.R.attr.colorBackground)).use {
+        it.getColor(0, Color.WHITE)
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+}
+
 data class CellTarget(val itemId: ULong, val folderId: ULong? = null)
 data class LauncherDrag(
     val app: LaunchableApp?,
     val itemId: ULong?,
+    val shortcut: LauncherShortcut? = null,
     val sourceFolderId: ULong? = null,
     val isFolder: Boolean = false,
 )

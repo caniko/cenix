@@ -3,7 +3,7 @@
 mod workspace;
 
 pub use workspace::{
-    CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload,
+    CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload, ShortcutId,
     WorkspaceCommand, WorkspaceError, WorkspaceItem, WorkspacePage, WorkspaceSnapshot,
     WorkspaceTransition, apply_workspace_command,
 };

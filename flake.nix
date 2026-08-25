@@ -88,7 +88,7 @@
         cargoNdkPlatform = 35;
         ndkVersion = androidNdkVersion;
         pname = "cenix-debug";
-        buildCommand = "nix build .#apk-debug";
+        buildCommand = "nix build .#apk-debug-arm64 --option sandbox false";
       };
       apkDebug = apkDebugBase.overrideAttrs (old: {
         CENIX_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
@@ -116,7 +116,7 @@
       cfg = forSystem system;
     in {
       default = cfg.checks.test;
-      apk-debug = cfg.apkDebug;
+      apk-debug-arm64 = cfg.apkDebug;
     });
 
     checks = nixpkgs.lib.genAttrs systems (system: (forSystem system).checks);

@@ -4,6 +4,7 @@ import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.ApplicationItemEntity
 import com.caniko.cenix.db.FolderEntity
 import com.caniko.cenix.db.FolderMemberEntity
+import com.caniko.cenix.db.ShortcutItemEntity
 import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.WorkspaceMetadataEntity
 import com.caniko.cenix.db.WorkspacePageEntity
@@ -14,6 +15,7 @@ import com.caniko.cenix.uniffi.Folder
 import com.caniko.cenix.uniffi.FolderMember
 import com.caniko.cenix.uniffi.GridSpec
 import com.caniko.cenix.uniffi.ItemPayload
+import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceCommand
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspacePage
@@ -24,12 +26,13 @@ class LauncherRepository(private val db: CenixDatabase) {
     fun snapshot(): WorkspaceSnapshot {
         val rows = db.dao().workspaceState()
         val applications = rows.applications.associateBy { it.itemId }
+        val shortcuts = rows.shortcuts.associateBy { it.itemId }
         val members = rows.folderMembers.groupBy { it.folderId }
         return WorkspaceSnapshot(
             generation = rows.metadata.generation.toULong(),
             grid = GridSpec(rows.metadata.cols, rows.metadata.rows, rows.metadata.hotseatCols),
             pages = rows.pages.map { WorkspacePage(it.pageId.toULong(), it.rank) },
-            items = rows.items.map { toModel(it, applications) },
+            items = rows.items.map { toModel(it, applications, shortcuts) },
             folders = rows.folders.map { folder ->
                 Folder(
                     folder.folderId.toULong(),
@@ -37,7 +40,7 @@ class LauncherRepository(private val db: CenixDatabase) {
                     members[folder.folderId].orEmpty().map { member ->
                         FolderMember(
                             member.itemId.toULong(),
-                            checkNotNull(applications[member.itemId]).toComponent(),
+                            payloadFor(member.itemId, applications, shortcuts),
                             member.rank.toUInt(),
                         )
                     },
@@ -55,9 +58,14 @@ class LauncherRepository(private val db: CenixDatabase) {
         val transition = NativeWorkspace.apply(before, command)
         val memberIds = transition.folders.flatMap { it.members }.map { it.itemId }
         val maxItemId = (transition.items.map { it.itemId } + memberIds).maxOrNull() ?: 0UL
-        val applicationItems = transition.items.mapNotNull { item ->
-            (item.payload as? ItemPayload.Application)?.let { item.itemId to it.component }
-        } + transition.folders.flatMap { folder -> folder.members.map { it.itemId to it.component } }
+        val payloads = transition.items.map { it.itemId to it.payload } +
+            transition.folders.flatMap { folder -> folder.members.map { it.itemId to it.payload } }
+        val applicationItems = payloads.mapNotNull { (itemId, payload) ->
+            (payload as? ItemPayload.Application)?.let { itemId to it.component }
+        }
+        val shortcutItems = payloads.mapNotNull { (itemId, payload) ->
+            (payload as? ItemPayload.Shortcut)?.let { itemId to it.shortcut }
+        }
         try {
             db.dao().commitWorkspace(
                 expectedGeneration = before.generation.toLong(),
@@ -72,6 +80,7 @@ class LauncherRepository(private val db: CenixDatabase) {
                 pages = transition.pages.map { WorkspacePageEntity(it.pageId.toLong(), it.rank) },
                 items = transition.items.map(::toEntity),
                 applications = applicationItems.map { (itemId, component) -> component.toEntity(itemId) }.sortedBy { it.itemId },
+                shortcuts = shortcutItems.map { (itemId, shortcut) -> shortcut.toEntity(itemId) }.sortedBy { it.itemId },
                 folders = transition.folders.map { FolderEntity(it.folderId.toLong(), it.title) },
                 folderMembers = transition.folders.flatMap { folder ->
                     folder.members.map { FolderMemberEntity(it.itemId.toLong(), folder.folderId.toLong(), it.rank.toInt()) }
@@ -93,12 +102,15 @@ class LauncherRepository(private val db: CenixDatabase) {
 
     fun nextPageId(): ULong = checkNotNull(db.dao().workspaceMetadata()).nextPageId.toULong()
 
-    private fun toModel(entity: WorkspaceItemEntity, applications: Map<Long, ApplicationItemEntity>): WorkspaceItem = WorkspaceItem(
+    private fun toModel(
+        entity: WorkspaceItemEntity,
+        applications: Map<Long, ApplicationItemEntity>,
+        shortcuts: Map<Long, ShortcutItemEntity>,
+    ): WorkspaceItem = WorkspaceItem(
         itemId = entity.id.toULong(),
-        payload = if (entity.itemKind == WorkspaceItemEntity.ITEM_FOLDER) {
-            ItemPayload.Folder
-        } else {
-            ItemPayload.Application(checkNotNull(applications[entity.id]).toComponent())
+        payload = when (entity.itemKind) {
+            WorkspaceItemEntity.ITEM_FOLDER -> ItemPayload.Folder
+            else -> payloadFor(entity.id, applications, shortcuts)
         },
         container = if (entity.containerKind == WorkspaceItemEntity.CONTAINER_HOTSEAT) {
             ContainerRef.Hotseat
@@ -118,7 +130,11 @@ class LauncherRepository(private val db: CenixDatabase) {
             cellY = item.cell.cellY,
             spanX = item.cell.spanX,
             spanY = item.cell.spanY,
-            itemKind = if (item.payload is ItemPayload.Folder) WorkspaceItemEntity.ITEM_FOLDER else WorkspaceItemEntity.ITEM_APPLICATION,
+            itemKind = when (item.payload) {
+                is ItemPayload.Application -> WorkspaceItemEntity.ITEM_APPLICATION
+                is ItemPayload.Shortcut -> WorkspaceItemEntity.ITEM_SHORTCUT
+                is ItemPayload.Folder -> WorkspaceItemEntity.ITEM_FOLDER
+            },
         )
     }
 
@@ -130,6 +146,23 @@ class LauncherRepository(private val db: CenixDatabase) {
         `class`,
         profileId.toLong(),
     )
+
+    private fun ShortcutId.toEntity(itemId: ULong) = ShortcutItemEntity(
+        itemId.toLong(),
+        `package`,
+        shortcutId,
+        profileId.toLong(),
+    )
+
+    private fun payloadFor(
+        itemId: Long,
+        applications: Map<Long, ApplicationItemEntity>,
+        shortcuts: Map<Long, ShortcutItemEntity>,
+    ): ItemPayload = applications[itemId]?.let { ItemPayload.Application(it.toComponent()) }
+        ?: shortcuts[itemId]?.let {
+            ItemPayload.Shortcut(ShortcutId(it.packageName, it.shortcutId, it.profileId.toULong()))
+        }
+        ?: throw IllegalStateException("item payload missing")
 
     private fun durationBucket(nanos: Long): String = when {
         nanos < 5_000_000 -> "lt5ms"

@@ -5,6 +5,7 @@ import com.caniko.cenix.uniffi.CellRect
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.GridSpec
+import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceException
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
@@ -24,6 +25,20 @@ class WorkspaceController(
                 repository.nextItemId(),
                 ComponentId(app.packageName, app.className, app.profileId.toULong()),
                 pageId,
+                CellRect(cellX, cellY, 1, 1),
+            ),
+        )
+    }
+
+    fun placeShortcut(shortcut: ShortcutId, container: ContainerRef, cellX: Int, cellY: Int): WorkspaceTransition? {
+        val state = snapshot()
+        return execute(
+            "shortcut-place",
+            WorkspaceCommand.PlaceShortcut(
+                state.generation,
+                repository.nextItemId(),
+                shortcut,
+                container,
                 CellRect(cellX, cellY, 1, 1),
             ),
         )
@@ -63,6 +78,20 @@ class WorkspaceController(
                 state.generation,
                 repository.nextItemId(),
                 ComponentId(app.packageName, app.className, app.profileId.toULong()),
+                folderId,
+                rank,
+            ),
+        )
+    }
+
+    fun addShortcutToFolder(shortcut: ShortcutId, folderId: ULong, rank: UInt): WorkspaceTransition? {
+        val state = snapshot()
+        return execute(
+            "shortcut-folder-add",
+            WorkspaceCommand.AddShortcutToFolder(
+                state.generation,
+                repository.nextItemId(),
+                shortcut,
                 folderId,
                 rank,
             ),
@@ -132,6 +161,11 @@ class WorkspaceController(
         val state = snapshot()
         val ids = live.map { ComponentId(it.packageName, it.className, it.profileId.toULong()) }
         return execute("drop-missing", WorkspaceCommand.DropMissing(state.generation, ids))
+    }
+
+    fun reconcileShortcuts(live: Collection<ShortcutId>): WorkspaceTransition? {
+        val state = snapshot()
+        return execute("shortcut-reconcile", WorkspaceCommand.ReconcileShortcuts(state.generation, live.toList()))
     }
 
     fun execute(category: String, command: WorkspaceCommand): WorkspaceTransition? {

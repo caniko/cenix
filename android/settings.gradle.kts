@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "cenix"
 include(":app")
 include(":fixture")
+include(":fixture-secondary")

@@ -18,4 +18,20 @@
     <item name="folder_popup" type="id" />
     <item name="folder_title" type="id" />
     <item name="folder_members" type="id" />
+    <item name="context_popup" type="id" />
+    <item name="context_shortcuts" type="id" />
+    <item name="context_drag" type="id" />
+    <item name="context_app_info" type="id" />
+    <item name="context_uninstall" type="id" />
+    <item name="context_remove" type="id" />
+    <item name="shortcut_row" type="id" />
+    <item name="shortcut_pin" type="id" />
+    <item name="action_open_context" type="id" />
+    <item name="action_launch_shortcut" type="id" />
+    <item name="action_pin_shortcut" type="id" />
+    <item name="action_app_info" type="id" />
+    <item name="action_uninstall" type="id" />
+    <item name="pin_confirmation" type="id" />
+    <item name="pin_confirm" type="id" />
+    <item name="pin_cancel" type="id" />
 </resources>

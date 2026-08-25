@@ -59,6 +59,23 @@ class HomeConformanceTest {
         assertTrue(device.hasObject(By.res(PKG, "workspaceGrid")))
     }
 
+    @Test
+    fun allAppsLongPressShowsTransientContextActions() {
+        openAllApps()
+        val field = device.findObject(By.res(PKG, "searchField"))
+        field.click()
+        field.setText("fixture")
+        val app = device.wait(Until.findObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000)
+        assertTrue(app != null)
+        val bounds = app.visibleBounds
+        device.executeShellCommand("input touchscreen swipe ${bounds.centerX()} ${bounds.centerY()} ${bounds.centerX()} ${bounds.centerY()} 800")
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "context_popup")), 5_000))
+        assertTrue(device.hasObject(By.text("Manifest action")))
+        assertTrue(device.hasObject(By.text("Dynamic action")))
+        device.pressBack()
+        assertTrue(device.wait(Until.gone(By.res(PKG, "context_popup")), 5_000))
+    }
+
     private fun openAllApps() {
         swipeRoot(up = true)
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))

@@ -182,8 +182,8 @@ dump_ui() {
     "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
       xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
-      if printf '%s\n' "$xml" | grep -q 'package="com.caniko.cenix"' &&
-        printf '%s\n' "$xml" | grep -q 'com.caniko.cenix:id/launcherRoot'; then
+      if grep -q 'package="com.caniko.cenix"' <<<"$xml" &&
+        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation)' <<<"$xml"; then
         printf '%s\n' "$xml"
         return 0
       fi
@@ -194,11 +194,18 @@ dump_ui() {
   fail "uiautomator dump failed"
 }
 
+dump_any_ui() {
+  local xml
+  "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-any-ui.xml >/dev/null
+  xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-any-ui.xml)"
+  printf '%s\n' "$xml"
+}
+
 wait_ui() {
   local needle="$1" want="${2:-1}" i xml
   for i in $(seq 1 20); do
     xml="$(dump_ui)"
-    if printf '%s\n' "$xml" | grep -q "$needle"; then
+    if grep -q "$needle" <<<"$xml"; then
       [[ "$want" == "1" ]] && return 0
     else
       [[ "$want" == "0" ]] && return 0
@@ -236,6 +243,13 @@ tap_pattern() {
   tap_bounds "$x1" "$y1" "$x2" "$y2"
 }
 
+tap_any_pattern() {
+  local xml x1 y1 x2 y2
+  xml="$(dump_any_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  tap_bounds "$x1" "$y1" "$x2" "$y2"
+}
+
 long_press_pattern() {
   local xml x1 y1 x2 y2 x y
   xml="$(dump_ui)"
@@ -245,19 +259,47 @@ long_press_pattern() {
   "$adb" -s "$serial" shell input swipe "$x" "$y" "$x" "$y" 800
 }
 
+drag_coordinates() {
+  "$adb" -s "$serial" shell input motionevent DOWN "$1" "$2"
+  sleep 0.8
+  "$adb" -s "$serial" shell input motionevent MOVE "$3" "$4"
+  sleep 0.1
+  "$adb" -s "$serial" shell input motionevent UP "$3" "$4"
+}
+
 drag_from_to() {
   local xml x1 y1 x2 y2 tx1 ty1 tx2 ty2
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   read -r tx1 ty1 tx2 ty2 < <(read_bounds "$xml" "$2")
-  "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2)) 1600
+  if [[ "$1" == *appLabel* ]]; then
+    drag_coordinates $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
+  else
+    "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2)) 1600
+  fi
 }
 
 drag_pattern_to_bounds() {
   local xml x1 y1 x2 y2
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
-  "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) "$2" "$3" 1600
+  drag_coordinates $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) "$2" "$3"
+}
+
+drag_hold_open() {
+  local xml x1 y1 x2 y2 hx1 hy1 hx2 hy2 tx1 ty1 tx2 ty2
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  read -r hx1 hy1 hx2 hy2 < <(read_bounds "$xml" "$2")
+  "$adb" -s "$serial" shell input motionevent DOWN $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+  sleep 0.8
+  "$adb" -s "$serial" shell input motionevent MOVE $(((hx1 + hx2) / 2)) $(((hy1 + hy2) / 2))
+  sleep 1
+  wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
+  xml="$(dump_ui)"
+  read -r tx1 ty1 tx2 ty2 < <(read_bounds "$xml" "$3")
+  "$adb" -s "$serial" shell input motionevent MOVE $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
+  "$adb" -s "$serial" shell input motionevent UP $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
 }
 
 drag_to_workspace_edge() {
@@ -267,9 +309,9 @@ drag_to_workspace_edge() {
   read -r wx1 wy1 wx2 wy2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
   if [[ "$edge" == "next" && "$workspace_rtl" == "0" ]] ||
     [[ "$edge" == "prev" && "$workspace_rtl" == "1" ]]; then
-    target=$((wx2 - 4))
+    target=$((wx2 - 24))
   else
-    target=$((wx1 + 4))
+    target=$((wx1 + 24))
   fi
   "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) "$target" $(((wy1 + wy2) / 2)) 1800
 }
@@ -354,6 +396,12 @@ go_home() {
   wait_resumed 'com.caniko.cenix/.HomeActivity'
 }
 
+open_fixture_control() {
+  "$adb" -s "$serial" shell am force-stop com.caniko.cenix.fixture
+  "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+  wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
+}
+
 role_holders() {
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r'
 }
@@ -422,6 +470,8 @@ pass "shell: initial state is full-screen HOME"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+"$adb" -s "$serial" shell input keyevent KEYCODE_HOME
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
 pass "instrumentation: HomeConformanceTest"
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
@@ -443,6 +493,9 @@ echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"' || fail "catal
 pass "discovery: nonempty catalog, Cenix hidden"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+go_home
 set_search "Fixture"
 wait_ui 'text="Cenix Fixture"' 1
 pass "package callback: fixture appeared without restart"
@@ -473,6 +526,8 @@ clear_search
 pass "package callback: fixture disappeared without restart"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+go_home
 set_search "Fixture"
 wait_ui 'text="Cenix Fixture"' 1
 close_all_apps
@@ -553,7 +608,7 @@ wait_ui 'folder, .* applications' 1
 pass "folders: central occupied-cell drop creates two-member folder"
 tap_pattern 'folder, .* applications'
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
-wait_ui 'content-desc="Cenix Fixture Two"' 1
+wait_ui 'content-desc="Cenix Fixture Two, rank 2"' 1
 pass "folders: popup exposes ranked members"
 tap_pattern 'resource-id="com.caniko.cenix:id/folder_title"'
 "$adb" -s "$serial" shell input text "Utilities"
@@ -568,16 +623,188 @@ wait_ui 'content-desc="Utilities, folder, .* applications' 1
 go_home
 wait_ui 'content-desc="Utilities, folder, .* applications' 1
 pass "folders: title and membership survive process recreation"
+
+set_search "Three"
+wait_ui 'text="Cenix Fixture Three"' 1
+drag_from_to 'text="Cenix Fixture Three".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+wait_ui 'content-desc="Utilities, folder, .* applications' 1
+tap_pattern 'content-desc="Utilities, folder, .* applications'
+wait_ui 'content-desc="Cenix Fixture Three, rank 3"' 1
+pass "folders: closed-folder append adds the final rank"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
+
 ui="$(dump_ui)"
 read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
-tap_pattern 'content-desc="Utilities, folder, .* applications'
+set_search "Four"
+wait_ui 'text="Cenix Fixture Four"' 1
+drag_pattern_to_bounds 'text="Cenix Fixture Four".*resource-id="com.caniko.cenix:id/appLabel"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'content-desc="Cenix Fixture Four, page 1' 1
+drag_hold_open 'content-desc="Cenix Fixture Four, page 1' 'content-desc="Utilities, folder,' 'content-desc="Cenix Fixture, rank 1"'
+wait_ui 'content-desc="Cenix Fixture Four, rank 1"' 1
+pass "folders: 800ms spring-open retains payload and adds at semantic rank"
+drag_from_to 'content-desc="Cenix Fixture Three, rank 4"' 'content-desc="Cenix Fixture Four, rank 1"'
+wait_ui 'content-desc="Cenix Fixture Three, rank 1"' 1
+pass "folders: open member reorder normalizes ranks"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+
+long_press_pattern 'content-desc="Utilities, folder,'
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'content-desc="Utilities, folder,' 1
+pass "folders: cancelled folder drag preserves committed state"
+drag_from_to 'content-desc="Utilities, folder,' 'content-desc="Empty, page 1'
+wait_ui 'content-desc="Utilities, folder,' 1
+drag_to_workspace_edge 'content-desc="Utilities, folder,' next
+wait_ui 'content-desc="Utilities, folder, .*page 2' 1
+drag_from_to 'content-desc="Utilities, folder, .*page 2' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
+wait_ui 'content-desc="Utilities, folder, .*hotseat' 1
+drag_from_to 'content-desc="Utilities, folder, .*hotseat' 'content-desc="Empty, page 1'
+wait_ui 'content-desc="Utilities, folder, .*page 1' 1
+tap_pattern 'content-desc="Utilities, folder, .*page 1'
+wait_ui 'content-desc="Cenix Fixture Three, rank 1"' 1
+pass "folders: cell, page, hotseat, and workspace moves preserve member order"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+
+set_search "Auxiliary"
+wait_ui 'text="Cenix Auxiliary"' 1
+drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+tap_pattern 'content-desc="Utilities, folder,'
+wait_ui 'content-desc="Cenix Auxiliary, rank 5"' 1
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture.secondary >/dev/null
+wait_ui 'content-desc="Cenix Auxiliary' 0
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 1
-drag_pattern_to_bounds 'content-desc="Cenix Fixture Two"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+pass "folders: package removal refreshes an open popup without changing title"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+
+"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+set_search "Auxiliary"
+drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+tap_pattern 'content-desc="Utilities, folder,'
+ui="$(dump_ui)"
+read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Cenix Auxiliary, rank 5"')
+"$adb" -s "$serial" shell input motionevent DOWN $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+sleep 0.8
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture.secondary >/dev/null
+"$adb" -s "$serial" shell input motionevent UP $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'content-desc="Cenix Auxiliary' 0
+pass "folders: package removal cancels an active member drag safely"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+
+"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+set_search "Auxiliary"
+drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture.secondary >/dev/null
+wait_ui 'content-desc="Utilities, folder,' 1
+pass "folders: package removal reconciles a closed folder"
+
+"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+set_search "Auxiliary"
+drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+tap_pattern 'content-desc="Utilities, folder,'
+"$adb" -s "$serial" shell settings put system user_rotation 1
+sleep 2
+wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
+"$adb" -s "$serial" shell settings put system user_rotation 0
+sleep 2
+wait_ui 'content-desc="Utilities, folder,' 1
+tap_pattern 'content-desc="Utilities, folder,'
+pass "folders: rotation closes transient popup and preserves durable membership"
+for member in "Cenix Fixture Two" "Cenix Fixture Four" "Cenix Fixture Three"; do
+  ui="$(dump_ui)"
+  read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  drag_pattern_to_bounds "content-desc=\"$member, rank" $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+done
+wait_ui 'content-desc="Cenix Auxiliary, rank 2"' 1
+"$adb" -s "$serial" uninstall com.caniko.cenix.fixture.secondary >/dev/null
 wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
 wait_ui 'content-desc="Cenix Fixture, page 1' 1
-wait_ui 'folder, .* applications' 0
+wait_ui 'content-desc="Utilities, folder,' 0
+pass "folders: package removal transactionally dissolves a two-member folder"
+
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
+long_press_pattern 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+wait_ui 'text="Manifest action"' 1
+wait_ui 'text="Dynamic action"' 1
+tap_pattern 'text="Manifest action"'
+wait_resumed 'com.caniko.cenix.fixture/.ManifestShortcutActivity'
+go_home
+pass "shortcuts: All Apps context shows and launches manifest and dynamic shortcuts"
+
+long_press_pattern 'content-desc="Cenix Fixture, page 1'
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/context_app_info"'
+wait_resumed 'com.android.settings'
+go_home
+pass "context: workspace app info opens the profile-aware system surface"
+
+long_press_pattern 'content-desc="Cenix Fixture, page 1'
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+ui="$(dump_ui)"
+read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+drag_pattern_to_bounds 'content-desc="Manifest action"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+wait_ui 'content-desc="Manifest action, page 1' 1
+drag_from_to 'content-desc="Manifest action, page 1' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
+wait_ui 'content-desc="Manifest action, hotseat' 1
+drag_from_to 'content-desc="Manifest action, hotseat' 'content-desc="Empty, page 1'
+wait_ui 'content-desc="Manifest action, page 1' 1
+pass "shortcuts: popup drag places, docks, and undocks a typed shortcut"
+
+drag_from_to 'content-desc="Manifest action, page 1' 'content-desc="Cenix Fixture, page 1'
+wait_ui 'folder, .* applications' 1
+tap_pattern 'folder, .* applications'
+wait_ui 'content-desc="Manifest action, rank 2"' 1
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+pass "shortcuts: application and shortcut coexist in a same-profile folder"
+
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_dynamic"'
+wait_ui 'resource-id="com.caniko.cenix:id/pin_confirmation"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/pin_cancel"'
+go_home
+wait_ui 'content-desc="Dynamic action, page' 0
+pass "shortcuts: incoming pin cancellation writes nothing"
+
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_dynamic"'
+wait_ui 'resource-id="com.caniko.cenix:id/pin_confirmation"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/pin_confirm"'
+go_home
+wait_ui 'content-desc="Dynamic action, page 1' 1
+pass "shortcuts: explicit incoming pin acceptance commits one durable item"
+
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/update_dynamic"'
+go_home
+wait_ui 'content-desc="Updated dynamic action, page 1' 1
+pass "shortcuts: dynamic label and rank refresh from LauncherApps"
+
+long_press_pattern 'content-desc="Updated dynamic action, page 1'
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 0
+pass "context: pinned shortcut popup closes with Back and is not restored"
+
+open_fixture_control
+tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/disable_dynamic"'
+go_home
+wait_ui 'content-desc="Updated dynamic action, page 1' 0
+pass "shortcuts: disabled shortcut callback reconciles durable placement"
+
+long_press_pattern 'content-desc="Cenix Fixture Two, page 1'
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/context_uninstall"'
+sleep 1
+resumed | grep -Eq 'com.android.permissioncontroller|com.google.android.packageinstaller' || fail "uninstall confirmation did not open"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+go_home
+wait_ui 'content-desc="Cenix Fixture Two, page 1' 1
+pass "context: uninstall always uses Android confirmation and cancellation preserves package"
+
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
-pass "folders: dragging a member out dissolves the single-member folder"
+wait_ui 'content-desc="Manifest action' 0
+pass "folders/shortcuts: package uninstall reconciles folder members and pinned shortcuts"
 
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
 wait_ui 'Emergency mode' 1

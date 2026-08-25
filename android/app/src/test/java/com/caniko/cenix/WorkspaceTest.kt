@@ -12,6 +12,7 @@ import com.caniko.cenix.db.InvalidWorkspaceTransition
 import com.caniko.cenix.db.WorkspaceMetadataEntity
 import com.caniko.cenix.db.WorkspacePageEntity
 import com.caniko.cenix.db.WorkspaceItemEntity
+import com.caniko.cenix.db.ShortcutItemEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -126,12 +127,57 @@ class WorkspaceTest {
         val applications = listOf(app(1, "a"), app(2, "b"))
         val folders = listOf(FolderEntity(10, "Tools"))
         val members = listOf(FolderMemberEntity(1, 10, 0), FolderMemberEntity(2, 10, 1))
-        db.dao().commitWorkspace(0, metadata, pages, items, applications, folders, members)
+        db.dao().commitWorkspace(
+            0,
+            metadata,
+            pages,
+            items,
+            applications = applications,
+            folders = folders,
+            folderMembers = members,
+        )
 
         val rows = db.dao().workspaceState()
         assertEquals(listOf(1L, 2L), rows.folderMembers.map { it.itemId })
-        db.dao().commitWorkspace(1, metadata, pages, items, applications, folders, members)
+        db.dao().commitWorkspace(
+            1,
+            metadata,
+            pages,
+            items,
+            applications = applications,
+            folders = folders,
+            folderMembers = members,
+        )
         assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        db.close()
+    }
+
+    @Test
+    fun shortcutPayloadIsUniqueAndOneOfValidationRollsBack() {
+        val db = openDb()
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        val shortcutItem = item(1, "WORKSPACE", 1).copy(itemKind = WorkspaceItemEntity.ITEM_SHORTCUT)
+        val shortcut = ShortcutItemEntity(1, "pkg", "dynamic", 0)
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2),
+            pages,
+            listOf(shortcutItem),
+            shortcuts = listOf(shortcut),
+        )
+        assertEquals("dynamic", db.dao().workspaceShortcuts().single().shortcutId)
+        assertThrows(InvalidWorkspaceTransition::class.java) {
+            db.dao().commitWorkspace(
+                1,
+                WorkspaceMetadataEntity(generation = 2, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2),
+                pages,
+                listOf(shortcutItem.copy(itemKind = WorkspaceItemEntity.ITEM_APPLICATION)),
+                applications = listOf(app(1, "pkg")),
+                shortcuts = listOf(shortcut),
+            )
+        }
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        assertEquals("dynamic", db.dao().workspaceShortcuts().single().shortcutId)
         db.close()
     }
 

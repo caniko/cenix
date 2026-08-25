@@ -3,12 +3,14 @@ package com.caniko.cenix
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.LauncherApps
+import android.content.pm.ApplicationInfo
+import android.content.pm.ShortcutInfo
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -30,6 +32,7 @@ import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.Folder
 import com.caniko.cenix.uniffi.FolderMember
 import com.caniko.cenix.uniffi.ItemPayload
+import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
@@ -39,6 +42,7 @@ import kotlin.math.min
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
     private lateinit var catalog: AppCatalog
+    private lateinit var shortcutCatalog: ShortcutCatalog
     private lateinit var search: SearchController
     private lateinit var root: LauncherRoot
     private lateinit var homeSurface: HomeSurface
@@ -51,11 +55,14 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var hotseat: HotseatView
     private lateinit var pageIndicator: PageIndicator
     private var folderPopup: FolderPopup? = null
+    private var contextPopup: ContextPopup? = null
     private var controller: WorkspaceController? = null
     private var rendered = emptySnapshot()
     private var selectedPageId: ULong? = null
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
+    private val shortcuts = mutableMapOf<ShortcutId, LauncherShortcut>()
+    private var contextQueryToken = 0
 
     private val packageCallback = object : LauncherApps.Callback() {
         override fun onPackageAdded(packageName: String, user: android.os.UserHandle) = scheduleReload("add")
@@ -65,6 +72,7 @@ class HomeActivity : AppCompatActivity() {
         override fun onPackagesUnavailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) = scheduleReload("unavailable")
         override fun onPackagesSuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("suspended")
         override fun onPackagesUnsuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("unsuspended")
+        override fun onShortcutsChanged(packageName: String, shortcuts: MutableList<ShortcutInfo>, user: android.os.UserHandle) = scheduleReload("shortcuts")
     }
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
@@ -86,6 +94,7 @@ class HomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         app = application as CenixApplication
         catalog = AppCatalog(this)
+        shortcutCatalog = ShortcutCatalog(this, catalog)
         selectedPageId = savedInstanceState?.getLong(STATE_PAGE_ID)?.toULong()
         search = SearchController(
             filterOf = { app.activeFilter() },
@@ -141,23 +150,38 @@ class HomeActivity : AppCompatActivity() {
         })
         appList.adapter = AppAdapter()
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
-        val gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(event: android.view.MotionEvent) = true
-
-            override fun onLongPress(event: android.view.MotionEvent) {
-                if (app.emergency) return
-                val position = appList.pointToPosition(event.x.toInt(), event.y.toInt())
-                if (position == android.widget.AdapterView.INVALID_POSITION) return
-                val view = appList.getChildAt(position - appList.firstVisiblePosition) ?: return
-                val payload = LauncherDrag(visible[position], null)
-                getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
-                searchField.clearFocus()
-                setSurface(LauncherSurface.HOME, false)
-                dragLayer.beginDrag(view, payload)
-            }
-        })
+        val allAppsLongPress = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
+        var allAppsSource: View? = null
+        var allAppsItem: LaunchableApp? = null
+        appList.setOnItemLongClickListener { _, view, position, _ ->
+            if (app.emergency) return@setOnItemLongClickListener false
+            getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
+            searchField.clearFocus()
+            allAppsLongPress.longPress()
+            openContext(view, visible[position], null, null)
+        }
         appList.setOnTouchListener { _, event ->
-            gestures.onTouchEvent(event)
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    allAppsLongPress.down(event.x, event.y)
+                    val position = appList.pointToPosition(event.x.toInt(), event.y.toInt())
+                    allAppsSource = appList.getChildAt(position - appList.firstVisiblePosition)
+                    allAppsItem = visible.getOrNull(position)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> if (
+                    allAppsLongPress.move(event.x, event.y) == LongPressDragPolicy.State.DRAG_STARTED
+                ) {
+                    val source = allAppsSource
+                    val item = allAppsItem
+                    if (source != null && item != null) {
+                        closeContext("drag")
+                        setSurface(LauncherSurface.HOME, false)
+                        if (dragLayer.beginDrag(source, LauncherDrag(item, null))) dragLayer.handleMotionEvent(event)
+                    }
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> allAppsLongPress.cancel()
+                android.view.MotionEvent.ACTION_UP -> allAppsLongPress.finish()
+            }
             false
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -180,6 +204,7 @@ class HomeActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         closeFolder("home")
+        closeContext("home")
         selectedPageId = rendered.pages.firstOrNull()?.pageId
         pager.setCurrentPage(0, false)
         setSurface(LauncherShell.homeIntent(app.emergency), false)
@@ -188,6 +213,7 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         closeFolder("lifecycle")
+        closeContext("lifecycle")
         dragLayer.cancel("lifecycle")
         catalog.unregister(packageCallback)
         search.close()
@@ -202,13 +228,21 @@ class HomeActivity : AppCompatActivity() {
             val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
                 val loaded = catalog.load()
-                dragLayer.post { dragLayer.cancel(if (reason == "remove" || reason == "unavailable") "package" else "reload") }
+                dragLayer.post {
+                    dragLayer.cancel(if (reason == "remove" || reason == "unavailable" || reason == "shortcuts") "package" else "reload")
+                    if (reason in setOf("remove", "unavailable", "shortcuts")) closeContext("catalog")
+                }
                 workspace.dropMissing(loaded)
                 val metrics = resources.displayMetrics
                 val widthDp = metrics.widthPixels / metrics.density
                 val heightDp = metrics.heightPixels / metrics.density
                 val desired = PhoneGrid.pick(min(widthDp, heightDp), max(widthDp, heightDp))
-                val state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
+                var state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
+                val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
+                state = workspace.reconcileShortcuts(resolvedShortcuts.keys)?.asSnapshot()?.also {
+                    CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
+                } ?: state
+                shortcutCatalog.pin(state.shortcutIds())
                 val profiles = catalog.visibleProfiles()
                 val matches = try {
                     app.activeFilter().filter(loaded, query, profiles)
@@ -221,6 +255,8 @@ class HomeActivity : AppCompatActivity() {
                 runOnUiThread {
                     apps.clear()
                     apps.addAll(loaded)
+                    shortcuts.clear()
+                    shortcuts.putAll(resolvedShortcuts)
                     bindList(matches)
                     render(state)
                     applySurface()
@@ -283,7 +319,7 @@ class HomeActivity : AppCompatActivity() {
                 bind(
                     folder.title,
                     folder.members.size,
-                    folder.members.take(4).map { member -> byComponent[member.component.key()]?.icon },
+                    folder.members.take(4).map { member -> member.icon(byComponent) },
                 )
                 contentDescription = "$contentDescription, $location, row ${y + 1}, column ${x + 1}"
                 tag = CellTarget(item.itemId, folder.folderId)
@@ -293,23 +329,66 @@ class HomeActivity : AppCompatActivity() {
             }
         }
         val appItem = (item?.payload as? ItemPayload.Application)?.component?.let { byComponent[it.key()] }
+        val shortcutItem = (item?.payload as? ItemPayload.Shortcut)?.shortcut?.let(shortcuts::get)
         val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
-        view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon)
-        view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label.orEmpty()
-        view.contentDescription = if (appItem == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
-        else "${appItem.label}, $location, row ${y + 1}, column ${x + 1}"
-        view.isFocusable = appItem != null
+        view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon ?: shortcutItem?.icon)
+        view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label ?: shortcutItem?.label.orEmpty()
+        val label = appItem?.label ?: shortcutItem?.label
+        view.contentDescription = if (label == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
+        else "$label, $location, row ${y + 1}, column ${x + 1}"
+        view.isFocusable = label != null
         if (appItem != null) {
-            val payload = LauncherDrag(appItem, item.itemId)
             view.tag = CellTarget(item.itemId)
             view.setOnClickListener { launch(appItem) }
-            view.setOnLongClickListener { dragLayer.beginDrag(view, payload) }
-            addAccessibilityMoves(view, item, x, y)
+            attachLongPress(
+                view,
+                onPopup = { openContext(view, appItem, item.itemId, null) },
+                onDrag = { dragLayer.beginDrag(view, LauncherDrag(appItem, item.itemId)) },
+            )
+            addAccessibilityMoves(view, item, x, y) { openContext(view, appItem, item.itemId, null) }
+        } else if (shortcutItem != null) {
+            view.tag = CellTarget(item!!.itemId)
+            view.setOnClickListener { launch(shortcutItem) }
+            attachLongPress(
+                view,
+                onPopup = { openShortcutContext(view, shortcutItem, item.itemId, null) },
+                onDrag = { dragLayer.beginDrag(view, LauncherDrag(null, item.itemId, shortcut = shortcutItem)) },
+            )
+            addAccessibilityMoves(view, item, x, y) { openShortcutContext(view, shortcutItem, item.itemId, null) }
         }
         return view
     }
 
-    private fun addAccessibilityMoves(view: View, item: WorkspaceItem, x: Int, y: Int, folderId: ULong? = null) {
+    private fun attachLongPress(view: View, onPopup: () -> Boolean, onDrag: () -> Boolean) {
+        val policy = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
+        view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> policy.down(event.x, event.y)
+                android.view.MotionEvent.ACTION_MOVE -> if (
+                    policy.move(event.x, event.y) == LongPressDragPolicy.State.DRAG_STARTED
+                ) {
+                    closeContext("drag")
+                    if (onDrag()) dragLayer.handleMotionEvent(event)
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> policy.cancel()
+                android.view.MotionEvent.ACTION_UP -> policy.finish()
+            }
+            false
+        }
+        view.setOnLongClickListener {
+            policy.longPress()
+            onPopup()
+        }
+    }
+
+    private fun addAccessibilityMoves(
+        view: View,
+        item: WorkspaceItem,
+        x: Int,
+        y: Int,
+        folderId: ULong? = null,
+        onContext: (() -> Unit)? = null,
+    ) {
         view.accessibilityDelegate = object : View.AccessibilityDelegate() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(host, info)
@@ -325,6 +404,9 @@ class HomeActivity : AppCompatActivity() {
                     info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_open_folder, getString(R.string.open_folder)))
                     info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_rename_folder, getString(R.string.rename_folder)))
                 }
+                if (onContext != null) info.addAction(
+                    AccessibilityNodeInfo.AccessibilityAction(R.id.action_open_context, getString(R.string.open_context_actions)),
+                )
             }
 
             override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
@@ -344,6 +426,7 @@ class HomeActivity : AppCompatActivity() {
                         folderPopup?.focusTitle()
                         return true
                     }
+                    R.id.action_open_context -> { onContext?.invoke(); return true }
                     else -> return super.performAccessibilityAction(host, action, args)
                 }
                 val container = item.container
@@ -376,13 +459,19 @@ class HomeActivity : AppCompatActivity() {
     private fun openFolder(folderId: ULong) {
         if (folderPopup?.folderId == folderId) return
         val folder = rendered.folders.firstOrNull { it.folderId == folderId } ?: return
+        closeContext("folder")
         closeFolder("replace")
         val popup = FolderPopup(this).apply {
             onClose = { closeFolder("action") }
             onRename = { next -> mutate { it.renameFolder(folderId, next) } }
-            onLaunch = ::launch
-            onBeginDrag = { view, app, member ->
-                dragLayer.beginDrag(view, LauncherDrag(app, member.itemId, folderId))
+            onLaunch = { entry -> entry.app?.let(::launch) ?: entry.shortcut?.let(::launch) }
+            onDirectDrag = { view, entry ->
+                closeContext("drag")
+                val payload = entry.app?.let { LauncherDrag(it, entry.member.itemId, sourceFolderId = folderId) }
+                    ?: entry.shortcut?.let {
+                        LauncherDrag(null, entry.member.itemId, shortcut = it, sourceFolderId = folderId)
+                    }
+                payload?.let { dragLayer.beginDrag(view, it) }
             }
             onMove = { member, rank -> mutate { it.moveFolderMember(folderId, member.itemId, rank) } }
             onRemove = { member -> removeMemberFromFolder(folderId, member) }
@@ -405,8 +494,164 @@ class HomeActivity : AppCompatActivity() {
         popup.bind(
             folder.folderId,
             folder.title,
-            folder.members.mapNotNull { member -> byComponent[member.component.key()]?.let { member to it } },
+            folder.members.mapNotNull { member -> member.entry(byComponent) },
         )
+    }
+
+    private fun FolderMember.entry(
+        byComponent: Map<Triple<String, String, Long>, LaunchableApp>,
+    ): FolderEntry? = when (val memberPayload = payload) {
+        is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.let {
+            FolderEntry(this, it.label, it.icon, app = it)
+        }
+        is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.let {
+            FolderEntry(this, it.label, it.icon, shortcut = it)
+        }
+        is ItemPayload.Folder -> null
+    }
+
+    private fun FolderMember.icon(byComponent: Map<Triple<String, String, Long>, LaunchableApp>) = when (val memberPayload = payload) {
+        is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.icon
+        is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.icon
+        is ItemPayload.Folder -> null
+    }
+
+    private fun openContext(source: View, appItem: LaunchableApp, itemId: ULong?, sourceFolderId: ULong?) : Boolean {
+        if (app.emergency) return false
+        closeFolder("context")
+        closeContext("replace")
+        val popup = ContextPopup(this)
+        contextPopup = popup
+        val token = ++contextQueryToken
+        configureContext(popup, source, appItem, appItem.label, itemId, sourceFolderId)
+        dragLayer.addView(popup, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        popup.anchor(source)
+        CenixLog.event(EventId.CONTEXT_POPUP_OPEN, Severity.INFO)
+        CenixExecutors.io {
+            val entries = shortcutCatalog.published(appItem)
+            CenixLog.event(EventId.SHORTCUT_QUERY, Severity.INFO, mapOf("count" to entries.size.toString()))
+            runOnUiThread {
+                if (contextPopup === popup && contextQueryToken == token) {
+                    popup.bind(appItem.label, entries, canUninstall(appItem), itemId != null)
+                }
+            }
+        }
+        return true
+    }
+
+    private fun openShortcutContext(
+        source: View,
+        shortcut: LauncherShortcut,
+        itemId: ULong,
+        sourceFolderId: ULong?,
+    ): Boolean {
+        val parent = apps.firstOrNull {
+            it.packageName == shortcut.id.`package` && it.profileId.toULong() == shortcut.id.profileId
+        } ?: return false
+        closeFolder("context")
+        closeContext("replace")
+        val popup = ContextPopup(this)
+        contextPopup = popup
+        configureContext(popup, source, parent, shortcut.label, itemId, sourceFolderId)
+        popup.bind(shortcut.label, listOf(shortcut), canUninstall(parent), true)
+        dragLayer.addView(popup, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        popup.anchor(source)
+        CenixLog.event(EventId.CONTEXT_POPUP_OPEN, Severity.INFO)
+        return true
+    }
+
+    private fun configureContext(
+        popup: ContextPopup,
+        source: View,
+        appItem: LaunchableApp,
+        label: String,
+        itemId: ULong?,
+        sourceFolderId: ULong?,
+    ) {
+        popup.onClose = { closeContext("outside") }
+        popup.onDragApp = {
+            closeContext("drag")
+            setSurface(LauncherSurface.HOME, false)
+            dragLayer.beginDrag(source, LauncherDrag(appItem, itemId, sourceFolderId = sourceFolderId))
+        }
+        popup.onAppInfo = { closeContext("app-info"); openAppInfo(appItem) }
+        popup.onUninstall = { closeContext("uninstall"); requestUninstall(appItem) }
+        popup.onRemove = { itemId?.let { mutate { workspace -> workspace.remove(it) } }; closeContext("remove") }
+        popup.onLaunchShortcut = ::launch
+        popup.onDragShortcut = { row, shortcut ->
+            closeContext("shortcut-drag")
+            setSurface(LauncherSurface.HOME, false)
+            dragLayer.beginDrag(row, LauncherDrag(null, null, shortcut = shortcut))
+        }
+        popup.onPinShortcut = { shortcut -> pinShortcut(shortcut); closeContext("shortcut-pin") }
+        popup.bind(label, emptyList(), canUninstall(appItem), itemId != null)
+    }
+
+    private fun closeContext(reason: String) {
+        val popup = contextPopup ?: return
+        contextQueryToken++
+        dragLayer.removeView(popup)
+        contextPopup = null
+        CenixLog.event(EventId.CONTEXT_POPUP_CLOSE, Severity.INFO, mapOf("category" to reason))
+    }
+
+    private fun pinShortcut(shortcut: LauncherShortcut) {
+        CenixExecutors.io {
+            val workspace = controller ?: return@io
+            val state = workspace.snapshot()
+            val page = state.pages.getOrNull(pager.currentPage) ?: return@io
+            val occupied = state.items.filter { (it.container as? ContainerRef.Workspace)?.pageId == page.pageId }
+                .map { it.cell.cellX to it.cell.cellY }.toSet()
+            val cell = (0 until state.grid.rows).flatMap { y -> (0 until state.grid.cols).map { x -> x to y } }
+                .firstOrNull { it !in occupied }
+            if (cell == null) {
+                runOnUiThread { Toast.makeText(this, R.string.workspace_full, Toast.LENGTH_SHORT).show() }
+                return@io
+            }
+            val transition = workspace.placeShortcut(
+                shortcut.id,
+                ContainerRef.Workspace(page.pageId),
+                cell.first,
+                cell.second,
+            ) ?: return@io
+            shortcutCatalog.pin(transition.asSnapshot().shortcutIds())
+            CenixLog.event(EventId.SHORTCUT_PIN, Severity.INFO, mapOf("result" to "accepted"))
+            runOnUiThread {
+                shortcuts[shortcut.id] = shortcut
+                render(transition.asSnapshot())
+            }
+        }
+    }
+
+    private fun openAppInfo(appItem: LaunchableApp) {
+        val user = appItem.user ?: catalog.userForSerial(appItem.profileId) ?: return
+        try {
+            getSystemService(LauncherApps::class.java).startAppDetailsActivity(
+                ComponentName(appItem.packageName, appItem.className), user, null, null,
+            )
+            CenixLog.event(EventId.PLATFORM_ACTION, Severity.INFO, mapOf("category" to "app-info", "result" to "accepted"))
+        } catch (_: RuntimeException) {
+            CenixLog.event(EventId.PLATFORM_ACTION, Severity.WARN, mapOf("category" to "app-info", "result" to "rejected"))
+        }
+    }
+
+    private fun canUninstall(appItem: LaunchableApp): Boolean = try {
+        appItem.packageName != packageName &&
+            packageManager.getApplicationInfo(appItem.packageName, 0).flags and ApplicationInfo.FLAG_SYSTEM == 0
+    } catch (_: RuntimeException) {
+        false
+    }
+
+    private fun requestUninstall(appItem: LaunchableApp) {
+        if (!canUninstall(appItem)) return
+        val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:${appItem.packageName}"))
+            .putExtra(Intent.EXTRA_USER, appItem.user ?: catalog.userForSerial(appItem.profileId))
+        try {
+            startActivity(intent)
+            CenixLog.event(EventId.PLATFORM_ACTION, Severity.INFO, mapOf("category" to "uninstall", "result" to "accepted"))
+        } catch (_: RuntimeException) {
+            CenixLog.event(EventId.PLATFORM_ACTION, Severity.WARN, mapOf("category" to "uninstall", "result" to "rejected"))
+        }
     }
 
     private fun closeFolder(reason: String) {
@@ -435,12 +680,16 @@ class HomeActivity : AppCompatActivity() {
     private fun ComponentId.key() = Triple(`package`, `class`, profileId.toLong())
 
     private fun onDrop(payload: LauncherDrag, destination: DropDestination) {
+        payload.shortcut?.let { shortcuts[it.id] = it }
         when {
             destination.remove && payload.itemId != null && payload.sourceFolderId == null -> mutate { it.remove(payload.itemId) }
             destination.folderId != null && !payload.isFolder -> {
                 val folder = rendered.folders.firstOrNull { it.folderId == destination.folderId } ?: return
                 val rank = destination.folderRank ?: folder.members.size.toUInt()
                 when {
+                    payload.itemId == null && payload.shortcut != null -> mutate {
+                        it.addShortcutToFolder(payload.shortcut.id, folder.folderId, rank)
+                    }
                     payload.itemId == null && payload.app != null -> mutate { it.addFromAllAppsToFolder(payload.app, folder.folderId, rank) }
                     payload.sourceFolderId == folder.folderId && destination.folderRank != null -> mutate {
                         it.moveFolderMember(folder.folderId, checkNotNull(payload.itemId), rank)
@@ -458,9 +707,15 @@ class HomeActivity : AppCompatActivity() {
                     it.move(payload.itemId, ContainerRef.Hotseat, destination.cellX, 0)
                 }
             }
+            destination.container === hotseat && payload.shortcut != null -> mutate {
+                it.placeShortcut(payload.shortcut.id, ContainerRef.Hotseat, destination.cellX, 0)
+            }
             destination.container is CellLayout -> {
                 val pageId = rendered.pages.getOrNull(pager.currentPage)?.pageId ?: return
                 when {
+                    payload.itemId == null && payload.shortcut != null -> mutate {
+                        it.placeShortcut(payload.shortcut.id, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY)
+                    }
                     payload.itemId == null && payload.app != null -> mutate { it.placeFromAllApps(payload.app, pageId, destination.cellX, destination.cellY) }
                     payload.sourceFolderId != null && payload.itemId != null -> mutate {
                         it.removeItemFromFolder(payload.sourceFolderId, payload.itemId, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY)
@@ -502,6 +757,7 @@ class HomeActivity : AppCompatActivity() {
     private fun setSurface(target: LauncherSurface, animate: Boolean = true) {
         if ((target == LauncherSurface.EMERGENCY) != app.emergency) return
         if (target != LauncherSurface.HOME) closeFolder("surface")
+        if (contextPopup != null && target != root.surface) closeContext("surface")
         root.surface = target
         allAppsContainer.animate().cancel()
         when (target) {
@@ -559,6 +815,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleBack() {
         if (dragLayer.isDragging) return dragLayer.cancel("back")
+        contextPopup?.let { closeContext("back"); return }
         val imeVisible = root.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
         folderPopup?.let { popup ->
             if (imeVisible) {
@@ -612,6 +869,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun launch(appItem: LaunchableApp) {
         closeFolder("launch")
+        closeContext("launch")
         val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
         if (user == null) return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         try {
@@ -621,6 +879,18 @@ class HomeActivity : AppCompatActivity() {
         } catch (_: Throwable) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun launch(shortcut: LauncherShortcut) {
+        closeFolder("launch")
+        closeContext("launch")
+        val launched = shortcutCatalog.launch(shortcut)
+        CenixLog.event(
+            EventId.SHORTCUT_LAUNCH,
+            if (launched) Severity.INFO else Severity.WARN,
+            mapOf("result" to if (launched) "accepted" else "rejected"),
+        )
+        if (!launched) Toast.makeText(this, R.string.shortcut_unavailable, Toast.LENGTH_SHORT).show()
     }
 
     private fun applyForceNativeFailure() {
@@ -684,3 +954,8 @@ class HomeActivity : AppCompatActivity() {
         private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList(), emptyList())
     }
 }
+
+internal fun WorkspaceSnapshot.shortcutIds(): List<ShortcutId> =
+    (items.mapNotNull { (it.payload as? ItemPayload.Shortcut)?.shortcut } +
+        folders.flatMap { folder -> folder.members.mapNotNull { (it.payload as? ItemPayload.Shortcut)?.shortcut } })
+        .distinct()

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="pin_dynamic" type="id" />
+    <item name="update_dynamic" type="id" />
+    <item name="disable_dynamic" type="id" />
+    <item name="remove_dynamic" type="id" />
+</resources>

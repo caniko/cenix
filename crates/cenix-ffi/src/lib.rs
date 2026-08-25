@@ -28,6 +28,13 @@ pub struct ComponentId {
     pub profile_id: u64,
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct ShortcutId {
+    pub package: String,
+    pub shortcut_id: String,
+    pub profile_id: u64,
+}
+
 #[derive(Clone, Copy, uniffi::Record)]
 pub struct GridSpec {
     pub cols: i32,
@@ -53,6 +60,7 @@ pub enum ContainerRef {
 pub enum ItemPayload {
     Application { component: ComponentId },
     Folder,
+    Shortcut { shortcut: ShortcutId },
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -72,7 +80,7 @@ pub struct WorkspaceItem {
 #[derive(Clone, uniffi::Record)]
 pub struct FolderMember {
     pub item_id: u64,
-    pub component: ComponentId,
+    pub payload: ItemPayload,
     pub rank: u32,
 }
 
@@ -99,6 +107,13 @@ pub enum WorkspaceCommand {
         item_id: u64,
         component: ComponentId,
         page_id: u64,
+        cell: CellRect,
+    },
+    PlaceShortcut {
+        expected_generation: u64,
+        item_id: u64,
+        shortcut: ShortcutId,
+        container: ContainerRef,
         cell: CellRect,
     },
     Move {
@@ -141,6 +156,13 @@ pub enum WorkspaceCommand {
         folder_id: u64,
         rank: u32,
     },
+    AddShortcutToFolder {
+        expected_generation: u64,
+        item_id: u64,
+        shortcut: ShortcutId,
+        folder_id: u64,
+        rank: u32,
+    },
     AddItemToFolder {
         expected_generation: u64,
         item_id: u64,
@@ -180,6 +202,10 @@ pub enum WorkspaceCommand {
     DropMissing {
         expected_generation: u64,
         live: Vec<ComponentId>,
+    },
+    ReconcileShortcuts {
+        expected_generation: u64,
+        live: Vec<ShortcutId>,
     },
     Cancelled {
         expected_generation: u64,
@@ -341,6 +367,26 @@ impl From<core::ComponentId> for ComponentId {
     }
 }
 
+impl From<ShortcutId> for core::ShortcutId {
+    fn from(value: ShortcutId) -> Self {
+        Self {
+            package: value.package,
+            shortcut_id: value.shortcut_id,
+            profile_id: value.profile_id,
+        }
+    }
+}
+
+impl From<core::ShortcutId> for ShortcutId {
+    fn from(value: core::ShortcutId) -> Self {
+        Self {
+            package: value.package,
+            shortcut_id: value.shortcut_id,
+            profile_id: value.profile_id,
+        }
+    }
+}
+
 impl From<GridSpec> for core::GridSpec {
     fn from(value: GridSpec) -> Self {
         Self {
@@ -406,6 +452,7 @@ impl From<ItemPayload> for core::ItemPayload {
         match value {
             ItemPayload::Application { component } => Self::Application(component.into()),
             ItemPayload::Folder => Self::Folder,
+            ItemPayload::Shortcut { shortcut } => Self::Shortcut(shortcut.into()),
         }
     }
 }
@@ -417,6 +464,9 @@ impl From<core::ItemPayload> for ItemPayload {
                 component: component.into(),
             },
             core::ItemPayload::Folder => Self::Folder,
+            core::ItemPayload::Shortcut(shortcut) => Self::Shortcut {
+                shortcut: shortcut.into(),
+            },
         }
     }
 }
@@ -465,7 +515,7 @@ impl From<FolderMember> for core::FolderMember {
     fn from(value: FolderMember) -> Self {
         Self {
             item_id: value.item_id,
-            component: value.component.into(),
+            payload: value.payload.into(),
             rank: value.rank,
         }
     }
@@ -475,7 +525,7 @@ impl From<core::FolderMember> for FolderMember {
     fn from(value: core::FolderMember) -> Self {
         Self {
             item_id: value.item_id,
-            component: value.component.into(),
+            payload: value.payload.into(),
             rank: value.rank,
         }
     }
@@ -527,6 +577,19 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
                 item_id,
                 component: component.into(),
                 page_id,
+                cell: cell.into(),
+            },
+            WorkspaceCommand::PlaceShortcut {
+                expected_generation,
+                item_id,
+                shortcut,
+                container,
+                cell,
+            } => Self::PlaceShortcut {
+                expected_generation,
+                item_id,
+                shortcut: shortcut.into(),
+                container: container.into(),
                 cell: cell.into(),
             },
             WorkspaceCommand::Move {
@@ -602,6 +665,19 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
                 folder_id,
                 rank,
             },
+            WorkspaceCommand::AddShortcutToFolder {
+                expected_generation,
+                item_id,
+                shortcut,
+                folder_id,
+                rank,
+            } => Self::AddShortcutToFolder {
+                expected_generation,
+                item_id,
+                shortcut: shortcut.into(),
+                folder_id,
+                rank,
+            },
             WorkspaceCommand::AddItemToFolder {
                 expected_generation,
                 item_id,
@@ -671,6 +747,13 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
                 expected_generation,
                 live,
             } => Self::DropMissing {
+                expected_generation,
+                live: live.into_iter().map(Into::into).collect(),
+            },
+            WorkspaceCommand::ReconcileShortcuts {
+                expected_generation,
+                live,
+            } => Self::ReconcileShortcuts {
                 expected_generation,
                 live: live.into_iter().map(Into::into).collect(),
             },
