@@ -20,7 +20,7 @@ class HomeConformanceTest {
     fun openHome() {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         device.pressHome()
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 20_000))
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "homeSurface")), 20_000))
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as CenixApplication
         assertTrue(app.awaitReady())
         assertEquals(BuildConfig.GIT_COMMIT, app.let { BuildConfig.GIT_COMMIT })
@@ -28,27 +28,47 @@ class HomeConformanceTest {
     }
 
     @Test
-    fun homeChromeAndCatalog() {
-        assertTrue(device.hasObject(By.res(PKG, "searchField")))
+    fun initialSurfaceIsHomeOnly() {
         assertTrue(device.hasObject(By.res(PKG, "workspaceGrid")))
         assertTrue(device.hasObject(By.res(PKG, "hotseatGrid")))
-        assertTrue(device.hasObject(By.res(PKG, "retryNative")))
-        val title = device.findObject(By.res(PKG, "statusTitle"))?.text.orEmpty()
-        assertFalse(title.contains("emergency", ignoreCase = true))
-        assertFalse(device.hasObject(By.res(PKG, "appLabel").text("Cenix")))
+        assertFalse(device.hasObject(By.res(PKG, "searchField")))
+        assertFalse(device.hasObject(By.res(PKG, "appList")))
+        assertFalse(device.hasObject(By.res(PKG, "retryNative")))
     }
 
     @Test
-    fun searchIsCaseInsensitiveAndClearRestoresWorkspace() {
+    fun allAppsSearchBackSwipeAndHomeTransitions() {
+        openAllApps()
         val field = device.findObject(By.res(PKG, "searchField"))
         field.click()
         field.setText("set")
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").textContains("Settings")), 5_000))
-        field.setText("zzznomatch")
-        device.wait(Until.gone(By.res(PKG, "appLabel").textContains("Settings")), 5_000)
-        field.setText("")
+
         device.pressBack()
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "workspaceGrid")), 5_000))
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
+        device.pressBack()
+        assertTrue(device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
+
+        openAllApps()
+        swipeRoot(up = false)
+        assertTrue(device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
+
+        openAllApps()
+        device.pressHome()
+        assertTrue(device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
+        assertTrue(device.hasObject(By.res(PKG, "workspaceGrid")))
+    }
+
+    private fun openAllApps() {
+        swipeRoot(up = true)
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
+    }
+
+    private fun swipeRoot(up: Boolean) {
+        val bounds = device.findObject(By.res(PKG, "launcherRoot")).visibleBounds
+        val startY = if (up) bounds.top + bounds.height() * 3 / 4 else bounds.top + bounds.height() / 4
+        val endY = if (up) bounds.top + bounds.height() / 4 else bounds.top + bounds.height() * 3 / 4
+        device.swipe(bounds.centerX(), startY, bounds.centerX(), endY, 30)
     }
 
     companion object {

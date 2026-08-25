@@ -177,7 +177,7 @@ dump_ui() {
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
       xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
       if printf '%s\n' "$xml" | grep -q 'package="com.caniko.cenix"' &&
-        printf '%s\n' "$xml" | grep -q 'com.caniko.cenix:id/retryNative'; then
+        printf '%s\n' "$xml" | grep -q 'com.caniko.cenix:id/launcherRoot'; then
         printf '%s\n' "$xml"
         return 0
       fi
@@ -247,6 +247,13 @@ drag_from_to() {
   "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2)) 1600
 }
 
+drag_pattern_to_bounds() {
+  local xml x1 y1 x2 y2
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) "$2" "$3" 1600
+}
+
 drag_to_workspace_edge() {
   local xml x1 y1 x2 y2 wx1 wy1 wx2 wy2 edge="$2"
   xml="$(dump_ui)"
@@ -282,10 +289,39 @@ hide_keyboard() {
 
 focus_search() {
   local xml x1 y1 x2 y2
+  open_all_apps
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/searchField"')
   tap_bounds "$x1" "$y1" "$x2" "$y2"
   sleep 0.5
+}
+
+swipe_surface() {
+  local xml x1 y1 x2 y2 x from to
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/launcherRoot"')
+  x=$(((x1 + x2) / 2))
+  if [[ "$1" == "up" ]]; then
+    from=$((y1 + (y2 - y1) * 3 / 4)); to=$((y1 + (y2 - y1) / 4))
+  else
+    from=$((y1 + (y2 - y1) / 4)); to=$((y1 + (y2 - y1) * 3 / 4))
+  fi
+  "$adb" -s "$serial" shell input swipe "$x" "$from" "$x" "$to" 350
+}
+
+open_all_apps() {
+  local ui
+  ui="$(dump_ui)"
+  if ! printf '%s\n' "$ui" | grep -q 'resource-id="com.caniko.cenix:id/searchField"'; then
+    swipe_surface up
+    wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 1
+  fi
+}
+
+close_all_apps() {
+  hide_keyboard
+  "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+  wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 0
 }
 
 clear_search() {
@@ -353,11 +389,14 @@ go_home
 pass "KEYCODE_HOME resumes com.caniko.cenix/.HomeActivity"
 
 ui="$(dump_ui)"
-echo "$ui" | grep -q 'Search apps' || fail "search field missing"
 echo "$ui" | grep -q 'workspaceGrid' || fail "workspace grid missing"
 echo "$ui" | grep -q 'hotseatGrid' || fail "hotseat grid missing"
+echo "$ui" | grep -q 'searchField' && fail "search visible on normal HOME"
+echo "$ui" | grep -q 'appList' && fail "All Apps visible on normal HOME"
+echo "$ui" | grep -q 'retryNative' && fail "recovery controls visible on normal HOME"
 echo "$ui" | grep -qi 'emergency mode' && fail "native APK started in emergency"
 printf '%s\n' "$ui" | tr '>' '\n' | grep -q 'text="Cenix".*resource-id="com.caniko.cenix:id/appLabel"' && fail "Cenix listed itself as a launch target"
+pass "shell: initial state is full-screen HOME"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
@@ -371,6 +410,7 @@ hide_keyboard
 
 set_search "Settings"
 wait_ui 'text="Settings"' 1
+pass "shell: swipe up opens All Apps"
 clear_search
 hide_keyboard
 ui="$(dump_ui)"
@@ -409,9 +449,15 @@ pass "package callback: fixture disappeared without restart"
 
 set_search "Settings"
 wait_ui 'text="Settings"' 1
-drag_from_to 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Empty,'
+close_all_apps
+ui="$(dump_ui)"
+read -r tx1 ty1 tx2 ty2 < <(read_bounds "$ui" 'content-desc="Empty, page 1, row 2, column 1"')
+set_search "Settings"
+wait_ui 'text="Settings"' 1
+drag_pattern_to_bounds 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"' $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2))
 wait_ui 'content-desc="Settings, page 1' 1
-pass "workspace: All Apps drag places into CellLayout"
+wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 0
+pass "workspace: All Apps drag reveals HOME and places into CellLayout"
 drag_from_to 'content-desc="Settings, page 1' 'content-desc="Empty,'
 wait_ui 'content-desc="Settings, page 1' 1
 pass "workspace: internal drag moves pin"
@@ -434,12 +480,8 @@ pass "hotseat: drag undocks into workspace"
 go_home
 ui="$(dump_ui)"
 echo "$ui" | grep -qi 'emergency mode' && fail "healthy restart entered emergency"
-if ! echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"'; then
-  set_search "Settings"
-  wait_ui 'text="Settings"' 1
-  clear_search
-  hide_keyboard
-fi
+echo "$ui" | grep -q 'workspaceGrid' || fail "workspace missing after process recreation"
+echo "$ui" | grep -q 'searchField' && fail "process recreation restored transient All Apps state"
 pass "process recreation: force-stop + HOME stays healthy"
 
 hide_keyboard
@@ -448,25 +490,26 @@ hide_keyboard
 sleep 2
 wait_resumed 'com.caniko.cenix/.HomeActivity'
 ui="$(dump_ui)"
-echo "$ui" | grep -q 'searchField' || fail "search missing in landscape"
-echo "$ui" | grep -q 'retryNative' || fail "retry control missing in landscape"
-set_search "Settings"
-wait_ui 'text="Settings"' 1
-clear_search
-hide_keyboard
+read -r lx1 ly1 lx2 ly2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
+(( lx2 > lx1 && ly2 > ly1 )) || fail "workspace unusable in landscape"
+echo "$ui" | grep -q 'content-desc="Settings, page 1' || fail "workspace item missing in landscape"
+echo "$ui" | grep -q 'searchField' && fail "All Apps visible on landscape HOME"
 "$adb" -s "$serial" shell settings put system user_rotation 0
 sleep 2
 wait_resumed 'com.caniko.cenix/.HomeActivity'
 ui="$(dump_ui)"
-echo "$ui" | grep -q 'searchField' || fail "search missing in portrait"
-pass "configuration: landscape/portrait recreation keeps catalog and controls"
+read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
+(( px2 > px1 && py2 > py1 )) || fail "workspace unusable in portrait"
+echo "$ui" | grep -q 'content-desc="Settings, page 1' || fail "workspace item missing after portrait restore"
+pass "configuration: landscape/portrait retain usable HOME workspace"
 
-  tap_pattern 'resource-id="com.caniko.cenix:id/searchField"'
-  sleep 1
-  ui="$(dump_ui ime)"
-  echo "$ui" | grep -q 'retryNative' || fail "retry control covered by keyboard"
-echo "$ui" | grep -q 'resetState' || fail "reset control covered by keyboard"
-pass "configuration: search keyboard leaves recovery controls operable"
+set_search "Settings"
+focus_search
+sleep 1
+ui="$(dump_ui ime)"
+echo "$ui" | grep -q 'text="Settings"' || fail "IME covered All Apps results"
+echo "$ui" | grep -q 'retryNative' && fail "normal All Apps exposed emergency controls"
+pass "configuration: IME leaves All Apps results operable"
 
 hide_keyboard
 "$adb" -s "$serial" shell settings put system user_rotation 0

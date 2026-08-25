@@ -14,6 +14,7 @@ enum class EventId {
     ROOM_COMMIT,
     ROOM_ROLLBACK,
     DRAG_CANCEL,
+    SHELL_TRANSITION,
     MIGRATION,
     EMERGENCY,
     RESET,

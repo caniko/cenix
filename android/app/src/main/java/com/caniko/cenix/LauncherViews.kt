@@ -14,25 +14,54 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.OverScroller
 import kotlin.math.abs
 
-class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : LinearLayout(context, attrs) {
-    init {
-        orientation = VERTICAL
-    }
+class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs) {
+    private var shellVelocity: VelocityTracker? = null
+    private var shellDownY = 0f
+    var surface = LauncherSurface.HOME
+    var onSurfaceRequested: ((LauncherSurface) -> Unit)? = null
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val dragLayer = findViewById<DragLayer>(R.id.dragLayer)
-        return if (dragLayer?.isDragging == true && event.actionMasked != MotionEvent.ACTION_DOWN) {
-            dragLayer.handleMotionEvent(event)
-        } else {
-            super.dispatchTouchEvent(event)
+        if (dragLayer?.isDragging == true && event.actionMasked != MotionEvent.ACTION_DOWN) {
+            shellVelocity?.recycle()
+            shellVelocity = null
+            return dragLayer.handleMotionEvent(event)
         }
+        shellVelocity = (shellVelocity ?: VelocityTracker.obtain()).also { it.addMovement(event) }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> shellDownY = event.y
+            MotionEvent.ACTION_MOVE -> requestSurface(event.y - shellDownY, 0f)
+            MotionEvent.ACTION_UP -> {
+                shellVelocity?.computeCurrentVelocity(1000)
+                requestSurface(event.y - shellDownY, shellVelocity?.yVelocity ?: 0f)
+                shellVelocity?.recycle()
+                shellVelocity = null
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                shellVelocity?.recycle()
+                shellVelocity = null
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun requestSurface(deltaY: Float, velocityY: Float) {
+        LauncherShell.swipeTarget(surface, deltaY, velocityY, height)
+            .takeIf { it != surface }
+            ?.let {
+                CenixLog.event(EventId.SHELL_TRANSITION, Severity.INFO, mapOf("source" to "swipe", "target" to it.name))
+                onSurfaceRequested?.invoke(it)
+            }
     }
 }
+
+class HomeSurface @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs)
+
+class AllAppsContainer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs)
 
 open class CellLayout @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ViewGroup(context, attrs) {
     var columns = 1
@@ -184,8 +213,7 @@ class WorkspacePager @JvmOverloads constructor(context: Context, attrs: Attribut
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 velocity?.computeCurrentVelocity(1000)
                 val delta = event.x - downX
-                val direction = if (delta < 0) 1 else -1
-                val logical = if (layoutDirection == LAYOUT_DIRECTION_RTL) -direction else direction
+                val logical = LauncherShell.pageDelta(delta < 0, layoutDirection == LAYOUT_DIRECTION_RTL)
                 setCurrentPage(if (abs(delta) > width / 5 || abs(velocity?.xVelocity ?: 0f) > 600) currentPage + logical else currentPage)
                 velocity?.recycle()
                 velocity = null
@@ -247,10 +275,11 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
         super.onDraw(canvas)
         val gap = 18f * resources.displayMetrics.density
         val start = width / 2f - (pages - 1) * gap / 2f
-        for (index in 0 until pages) {
+        for (visual in 0 until pages) {
+            val index = if (layoutDirection == LAYOUT_DIRECTION_RTL) pages - 1 - visual else visual
             paint.alpha = if (index == current) 255 else 80
             paint.color = currentTextColor()
-            canvas.drawCircle(start + index * gap, height / 2f, if (index == current) 4.5f else 3f, paint)
+            canvas.drawCircle(start + visual * gap, height / 2f, if (index == current) 4.5f else 3f, paint)
         }
     }
 

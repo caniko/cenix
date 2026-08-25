@@ -8,4 +8,8 @@
     <item name="action_move_previous_page" type="id" />
     <item name="action_dock" type="id" />
     <item name="action_undock" type="id" />
+    <item name="action_open_all_apps" type="id" />
+    <item name="action_close_all_apps" type="id" />
+    <item name="action_open_launcher_settings" type="id" />
+    <item name="action_export_diagnostics" type="id" />
 </resources>

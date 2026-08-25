@@ -18,4 +18,11 @@
     <string name="workspace_full">Workspace is full</string>
     <string name="hotseat">Hotseat</string>
     <string name="hotseat_full">Hotseat is full</string>
+    <string name="home_surface">Home</string>
+    <string name="all_apps_surface">All Apps</string>
+    <string name="remove">Remove</string>
+    <string name="open_all_apps">Open All Apps</string>
+    <string name="close_all_apps">Close All Apps</string>
+    <string name="open_launcher_settings">Open launcher settings</string>
+    <string name="export_diagnostics">Export diagnostics</string>
 </resources>

@@ -22,19 +22,24 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
+import kotlin.math.max
+import kotlin.math.min
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
     private lateinit var catalog: AppCatalog
     private lateinit var search: SearchController
-    private lateinit var statusTitle: TextView
-    private lateinit var emergencyBanner: TextView
+    private lateinit var root: LauncherRoot
+    private lateinit var homeSurface: HomeSurface
+    private lateinit var allAppsContainer: AllAppsContainer
+    private lateinit var emergencyOverlay: View
     private lateinit var searchField: EditText
     private lateinit var appList: AllAppsView
     private lateinit var dragLayer: DragLayer
@@ -82,7 +87,7 @@ class HomeActivity : AppCompatActivity() {
             onEmergency = {
                 CenixExecutors.io {
                     if (app.awaitReady()) app.requestEmergency()
-                    runOnUiThread(::applyChrome)
+                    runOnUiThread(::applySurface)
                 }
             },
             onResult = { matches -> runOnUiThread { bindList(matches) } },
@@ -94,8 +99,10 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        statusTitle = findViewById(R.id.statusTitle)
-        emergencyBanner = findViewById(R.id.emergencyBanner)
+        root = findViewById(R.id.launcherRoot)
+        homeSurface = findViewById(R.id.homeSurface)
+        allAppsContainer = findViewById(R.id.allAppsContainer)
+        emergencyOverlay = findViewById(R.id.emergencyOverlay)
         searchField = findViewById(R.id.searchField)
         appList = findViewById(R.id.appList)
         dragLayer = findViewById(R.id.dragLayer)
@@ -106,12 +113,10 @@ class HomeActivity : AppCompatActivity() {
         dragLayer.hotseat = hotseat
         dragLayer.removeTarget = findViewById(R.id.removeTarget)
         dragLayer.onDrop = ::onDrop
-        findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { _, insets ->
-            if (!dragLayer.isDragging) {
-                dragLayer.visibility = if (insets.isVisible(WindowInsets.Type.ime())) View.GONE else View.VISIBLE
-            }
-            insets
+        root.onSurfaceRequested = { target ->
+            if (target != LauncherSurface.HOME || !appList.canScrollVertically(-1)) setSurface(target)
         }
+        addRootAccessibilityActions()
         pager.onPageChanged = { page ->
             rendered.pages.getOrNull(page)?.let { selectedPageId = it.pageId }
             pageIndicator.current = page
@@ -123,8 +128,6 @@ class HomeActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
-        findViewById<Button>(R.id.setDefaultHome).setOnClickListener { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
-        statusTitle.setOnLongClickListener { exportDiagnostics.launch("cenix-diagnostics.txt"); true }
         searchField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -136,19 +139,24 @@ class HomeActivity : AppCompatActivity() {
             override fun onDown(event: android.view.MotionEvent) = true
 
             override fun onLongPress(event: android.view.MotionEvent) {
+                if (app.emergency) return
                 val position = appList.pointToPosition(event.x.toInt(), event.y.toInt())
                 if (position == android.widget.AdapterView.INVALID_POSITION) return
                 val view = appList.getChildAt(position - appList.firstVisiblePosition) ?: return
+                val payload = LauncherDrag(visible[position], null)
                 getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
                 searchField.clearFocus()
-                dragLayer.visibility = View.VISIBLE
-                dragLayer.beginDrag(view, LauncherDrag(visible[position], null))
+                setSurface(LauncherSurface.HOME, false)
+                dragLayer.beginDrag(view, payload)
             }
         })
         appList.setOnTouchListener { _, event ->
             gestures.onTouchEvent(event)
             false
         }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = handleBack()
+        })
     }
 
     override fun onStart() {
@@ -165,6 +173,9 @@ class HomeActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        selectedPageId = rendered.pages.firstOrNull()?.pageId
+        pager.setCurrentPage(0, false)
+        setSurface(LauncherShell.homeIntent(app.emergency), false)
         applyForceNativeFailure()
     }
 
@@ -185,7 +196,10 @@ class HomeActivity : AppCompatActivity() {
                 val loaded = catalog.load()
                 dragLayer.post { dragLayer.cancel(if (reason == "remove" || reason == "unavailable") "package" else "reload") }
                 workspace.dropMissing(loaded)
-                val desired = resources.displayMetrics.let { PhoneGrid.pick(it.widthPixels / it.density, it.heightPixels / it.density) }
+                val metrics = resources.displayMetrics
+                val widthDp = metrics.widthPixels / metrics.density
+                val heightDp = metrics.heightPixels / metrics.density
+                val desired = PhoneGrid.pick(min(widthDp, heightDp), max(widthDp, heightDp))
                 val state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
                 val profiles = catalog.visibleProfiles()
                 val matches = try {
@@ -201,11 +215,11 @@ class HomeActivity : AppCompatActivity() {
                     apps.addAll(loaded)
                     bindList(matches)
                     render(state)
-                    applyChrome()
+                    applySurface()
                 }
             } catch (_: Throwable) {
                 app.requestEmergency()
-                runOnUiThread(::applyChrome)
+                runOnUiThread(::applySurface)
             }
         }
     }
@@ -349,10 +363,114 @@ class HomeActivity : AppCompatActivity() {
         search.submit(apps.toList(), query, catalog.visibleProfiles())
     }
 
-    private fun applyChrome() {
-        statusTitle.setText(if (app.emergency) R.string.status_emergency else R.string.status_ready)
-        emergencyBanner.visibility = if (app.emergency) View.VISIBLE else View.GONE
-        statusTitle.contentDescription = getString(if (app.emergency) R.string.status_emergency else R.string.status_ready)
+    private fun applySurface() {
+        val target = when {
+            app.emergency -> LauncherSurface.EMERGENCY
+            root.surface == LauncherSurface.EMERGENCY -> LauncherSurface.HOME
+            else -> root.surface
+        }
+        setSurface(target, false)
+    }
+
+    private fun setSurface(target: LauncherSurface, animate: Boolean = true) {
+        if ((target == LauncherSurface.EMERGENCY) != app.emergency) return
+        root.surface = target
+        allAppsContainer.animate().cancel()
+        when (target) {
+            LauncherSurface.HOME -> {
+                homeSurface.visibility = View.VISIBLE
+                homeSurface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                emergencyOverlay.visibility = View.GONE
+                allAppsContainer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                searchField.clearFocus()
+                hideKeyboard()
+                searchField.text?.clear()
+                if (animate && allAppsContainer.visibility == View.VISIBLE) {
+                    allAppsContainer.animate().translationY(root.height.toFloat()).setDuration(SURFACE_ANIMATION_MS)
+                        .withEndAction {
+                            if (root.surface == LauncherSurface.HOME) {
+                                allAppsContainer.visibility = View.GONE
+                                allAppsContainer.translationY = 0f
+                            }
+                        }.start()
+                } else {
+                    allAppsContainer.visibility = View.GONE
+                    allAppsContainer.translationY = 0f
+                }
+            }
+            LauncherSurface.ALL_APPS -> {
+                homeSurface.visibility = View.VISIBLE
+                homeSurface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                emergencyOverlay.visibility = View.GONE
+                setAllAppsTopPadding()
+                allAppsContainer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                allAppsContainer.visibility = View.VISIBLE
+                if (animate) {
+                    allAppsContainer.translationY = root.height.toFloat()
+                    allAppsContainer.animate().translationY(0f).setDuration(SURFACE_ANIMATION_MS).start()
+                } else {
+                    allAppsContainer.translationY = 0f
+                }
+            }
+            LauncherSurface.EMERGENCY -> {
+                homeSurface.visibility = View.GONE
+                allAppsContainer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                allAppsContainer.visibility = View.VISIBLE
+                allAppsContainer.translationY = 0f
+                emergencyOverlay.visibility = View.VISIBLE
+                emergencyOverlay.post { setAllAppsTopPadding(emergencyOverlay.height) }
+            }
+        }
+        root.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    }
+
+    private fun setAllAppsTopPadding(extraTop: Int = 0) {
+        val edge = (16 * resources.displayMetrics.density).toInt()
+        allAppsContainer.setPadding(edge, edge + extraTop, edge, edge)
+    }
+
+    private fun handleBack() {
+        if (dragLayer.isDragging) return dragLayer.cancel("back")
+        val imeVisible = root.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
+        if (root.surface == LauncherSurface.ALL_APPS && imeVisible) {
+            searchField.clearFocus()
+            hideKeyboard()
+            return
+        }
+        setSurface(LauncherShell.backTarget(root.surface, imeVisible))
+    }
+
+    private fun hideKeyboard() {
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
+    }
+
+    private fun addRootAccessibilityActions() {
+        root.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                val surfaceAction = when (root.surface) {
+                    LauncherSurface.HOME -> AccessibilityNodeInfo.AccessibilityAction(R.id.action_open_all_apps, getString(R.string.open_all_apps))
+                    LauncherSurface.ALL_APPS -> AccessibilityNodeInfo.AccessibilityAction(R.id.action_close_all_apps, getString(R.string.close_all_apps))
+                    LauncherSurface.EMERGENCY -> null
+                }
+                surfaceAction?.let(info::addAction)
+                info.addAction(
+                    AccessibilityNodeInfo.AccessibilityAction(
+                        R.id.action_open_launcher_settings,
+                        getString(R.string.open_launcher_settings),
+                    ),
+                )
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_export_diagnostics, getString(R.string.export_diagnostics)))
+            }
+
+            override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean = when (action) {
+                R.id.action_open_all_apps -> { setSurface(LauncherSurface.ALL_APPS); true }
+                R.id.action_close_all_apps -> { setSurface(LauncherSurface.HOME); true }
+                R.id.action_open_launcher_settings -> { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)); true }
+                R.id.action_export_diagnostics -> { exportDiagnostics.launch("cenix-diagnostics.txt"); true }
+                else -> super.performAccessibilityAction(host, action, args)
+            }
+        }
     }
 
     private fun launch(appItem: LaunchableApp) {
@@ -372,15 +490,18 @@ class HomeActivity : AppCompatActivity() {
         intent.removeExtra(EXTRA_FORCE_NATIVE_FAILURE)
         CenixExecutors.io {
             if (app.awaitReady()) app.requestEmergency()
-            runOnUiThread(::applyChrome)
+            runOnUiThread(::applySurface)
         }
     }
 
     private fun retryNative() {
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
-            app.retryNative()
-            runOnUiThread { applyChrome(); scheduleReload("retry") }
+            val restored = app.retryNative()
+            runOnUiThread {
+                if (restored) setSurface(LauncherSurface.HOME, false) else applySurface()
+                scheduleReload("retry")
+            }
         }
     }
 
@@ -420,6 +541,7 @@ class HomeActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_FORCE_NATIVE_FAILURE = "com.caniko.cenix.FORCE_NATIVE_FAILURE"
+        private const val SURFACE_ANIMATION_MS = 220L
         private const val STATE_PAGE_ID = "workspace.pageId"
         private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList())
     }
