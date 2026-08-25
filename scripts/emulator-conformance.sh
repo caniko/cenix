@@ -260,7 +260,8 @@ drag_to_workspace_edge() {
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   read -r wx1 wy1 wx2 wy2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
-  if [[ "$edge" == "next" ]]; then
+  if [[ "$edge" == "next" && "${CENIX_FORCE_RTL:-false}" != "true" ]] ||
+    [[ "$edge" == "prev" && "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
     target=$((wx2 - 4))
   else
     target=$((wx1 + 4))
