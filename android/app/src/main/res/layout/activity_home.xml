@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.caniko.cenix.LauncherRoot xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
-    android:orientation="vertical"
     android:padding="16dp">
 
     <TextView
@@ -11,8 +10,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:contentDescription="@string/status_ready"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
         android:paddingBottom="8dp"
         android:text="@string/status_ready"
         android:textAppearance="?android:attr/textAppearanceMedium" />
@@ -21,6 +18,7 @@
         android:id="@+id/emergencyBanner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:accessibilityLiveRegion="polite"
         android:background="#332B0000"
         android:padding="12dp"
         android:text="@string/emergency_banner"
@@ -30,50 +28,42 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
-
-        <Button
-            android:id="@+id/retryNative"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/retry_native" />
-
-        <Button
-            android:id="@+id/resetState"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/reset_state" />
-
-        <Button
-            android:id="@+id/setDefaultHome"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/set_default_home" />
+        android:paddingVertical="4dp">
+        <Button android:id="@+id/retryNative" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/retry_native" />
+        <Button android:id="@+id/resetState" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/reset_state" />
+        <Button android:id="@+id/setDefaultHome" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/set_default_home" />
     </LinearLayout>
 
-    <GridView
-        android:id="@+id/workspaceGrid"
+    <com.caniko.cenix.DragLayer
+        android:id="@+id/dragLayer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:contentDescription="@string/workspace"
-        android:gravity="center"
-        android:horizontalSpacing="4dp"
-        android:stretchMode="columnWidth"
-        android:verticalSpacing="4dp" />
-
-    <GridView
-        android:id="@+id/hotseatGrid"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:contentDescription="@string/hotseat"
-        android:gravity="center"
-        android:horizontalSpacing="4dp"
-        android:stretchMode="columnWidth"
-        android:verticalSpacing="4dp" />
+        android:layout_height="@dimen/drag_layer_height">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:paddingTop="@dimen/remove_target_strip">
+            <com.caniko.cenix.WorkspacePager
+                android:id="@+id/workspaceGrid"
+                android:layout_width="match_parent"
+                android:layout_height="184dp"
+                android:contentDescription="@string/workspace" />
+            <com.caniko.cenix.PageIndicator
+                android:id="@+id/pageIndicator"
+                android:layout_width="match_parent"
+                android:layout_height="16dp" />
+            <com.caniko.cenix.HotseatView
+                android:id="@+id/hotseatGrid"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:contentDescription="@string/hotseat" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/removeTarget"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="#CC7F0000"
+            android:gravity="center"
+            android:text="Remove"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
+    </com.caniko.cenix.DragLayer>
 
     <EditText
         android:id="@+id/searchField"
@@ -86,10 +76,10 @@
         android:inputType="text"
         android:minHeight="48dp" />
 
-    <ListView
+    <com.caniko.cenix.AllAppsView
         android:id="@+id/appList"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:paddingTop="8dp" />
-</LinearLayout>
+</com.caniko.cenix.LauncherRoot>

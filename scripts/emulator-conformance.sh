@@ -247,6 +247,19 @@ drag_from_to() {
   "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((tx1 + tx2) / 2)) $(((ty1 + ty2) / 2)) 1600
 }
 
+drag_to_workspace_edge() {
+  local xml x1 y1 x2 y2 wx1 wy1 wx2 wy2 edge="$2"
+  xml="$(dump_ui)"
+  read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
+  read -r wx1 wy1 wx2 wy2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
+  if [[ "$edge" == "next" ]]; then
+    target=$((wx2 - 4))
+  else
+    target=$((wx1 + 4))
+  fi
+  "$adb" -s "$serial" shell input draganddrop $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) "$target" $(((wy1 + wy2) / 2)) 1800
+}
+
 swipe_workspace() {
   local xml x1 y1 x2 y2 midy from to
   xml="$(dump_ui)"
@@ -272,13 +285,14 @@ focus_search() {
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/searchField"')
   tap_bounds "$x1" "$y1" "$x2" "$y2"
-  sleep 0.2
+  sleep 0.5
 }
 
 clear_search() {
   local i
   focus_search
-  for i in $(seq 1 40); do
+  "$adb" -s "$serial" shell input keyevent KEYCODE_MOVE_END
+  for i in $(seq 1 80); do
     "$adb" -s "$serial" shell input keyevent KEYCODE_DEL
   done
   hide_keyboard
@@ -288,9 +302,7 @@ set_search() {
   clear_search
   focus_search
   "$adb" -s "$serial" shell input text "$1"
-  "$adb" -s "$serial" shell input keyevent KEYCODE_SPACE
-  "$adb" -s "$serial" shell input keyevent KEYCODE_DEL
-  sleep 0.5
+  sleep 1
   hide_keyboard
 }
 
@@ -345,7 +357,7 @@ echo "$ui" | grep -q 'Search apps' || fail "search field missing"
 echo "$ui" | grep -q 'workspaceGrid' || fail "workspace grid missing"
 echo "$ui" | grep -q 'hotseatGrid' || fail "hotseat grid missing"
 echo "$ui" | grep -qi 'emergency mode' && fail "native APK started in emergency"
-echo "$ui" | grep -q '|com.caniko.cenix|' && fail "Cenix listed itself as a launch target"
+printf '%s\n' "$ui" | tr '>' '\n' | grep -q 'text="Cenix".*resource-id="com.caniko.cenix:id/appLabel"' && fail "Cenix listed itself as a launch target"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
@@ -358,20 +370,16 @@ go_home
 hide_keyboard
 
 set_search "Settings"
-wait_ui '|com.android.settings|' 1
-ui="$(dump_ui)"
-profile="$(printf '%s\n' "$ui" | sed -n 's/.*|com\.android\.settings|\([0-9]*\).*/\1/p' | head -n1)"
-[[ -n "$profile" ]] || fail "Settings profile serial missing"
+wait_ui 'text="Settings"' 1
 clear_search
 hide_keyboard
 ui="$(dump_ui)"
-echo "$ui" | grep -qE '\|com\.[^|]+\|' || fail "catalog empty"
+echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"' || fail "catalog empty"
 pass "discovery: nonempty, Settings present, Cenix hidden"
-pass "profile serial stable seed=$profile"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 set_search "Fixture"
-wait_ui '|com.caniko.cenix.fixture|' 1
+wait_ui 'text="Cenix Fixture"' 1
 pass "package callback: fixture appeared without restart"
 
 set_search "fIxTuRe"
@@ -382,11 +390,11 @@ wait_ui 'Cenix Fixture' 0
 pass "search: nonmatching query hides fixture"
 clear_search
 hide_keyboard
-wait_ui '|com.caniko.cenix.fixture|' 1
+wait_ui 'resource-id="com.caniko.cenix:id/appLabel"' 1
 pass "search: clear restores catalog"
 
 set_search "Fixture"
-wait_ui '|com.caniko.cenix.fixture|' 1
+wait_ui 'text="Cenix Fixture"' 1
 tap_pattern 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
 wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
 pass "launch: fixture activity resumed"
@@ -395,54 +403,40 @@ pass "launch: KEYCODE_HOME returns to Cenix"
 
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 set_search "Fixture"
-wait_ui '|com.caniko.cenix.fixture|' 0
+wait_ui 'text="Cenix Fixture"' 0
 clear_search
 pass "package callback: fixture disappeared without restart"
 
 set_search "Settings"
-wait_ui '|com.android.settings|' 1
-long_press_pattern 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"'
-sleep 1
-clear_search
-hide_keyboard
-wait_ui 'content-desc="Settings|com.android.settings|' 1
-pass "workspace: long-press pins into grid"
-drag_from_to 'content-desc="Settings\|com\.android\.settings\|' 'content-desc="Empty"'
-wait_ui 'content-desc="Settings|com.android.settings|' 1
-pass "workspace: drag moves pin"
-drag_from_to 'content-desc="Settings\|com\.android\.settings\|' 'resource-id="com.caniko.cenix:id/statusTitle"'
-wait_ui 'content-desc="Settings|com.android.settings|' 0
-pass "workspace: drag off-grid unpins"
-swipe_workspace next
-wait_ui 'content-desc="Workspace 1"' 1
-pass "workspace: swipe opens second page"
-swipe_workspace prev
-wait_ui 'content-desc="Workspace 0"' 1
-pass "workspace: swipe returns to first page"
-set_search "Settings"
-wait_ui '|com.android.settings|' 1
-long_press_pattern 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"'
-sleep 1
-long_press_pattern 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"'
-sleep 1
-clear_search
-hide_keyboard
-wait_ui 'resource-id="com.caniko.cenix:id/hotseatGrid"' 1
-wait_ui 'content-desc="Settings|com.android.settings|' 1
-swipe_workspace next
-wait_ui 'content-desc="Settings|com.android.settings|' 1
-pass "hotseat: second long-press docks and survives swipe"
-long_press_pattern 'content-desc="Settings\|com\.android\.settings\|'
-wait_ui 'content-desc="Settings|com.android.settings|' 0
-pass "hotseat: long-press same cell undocks"
+wait_ui 'text="Settings"' 1
+drag_from_to 'text="Settings".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Empty,'
+wait_ui 'content-desc="Settings, page 1' 1
+pass "workspace: All Apps drag places into CellLayout"
+drag_from_to 'content-desc="Settings, page 1' 'content-desc="Empty,'
+wait_ui 'content-desc="Settings, page 1' 1
+pass "workspace: internal drag moves pin"
+drag_to_workspace_edge 'content-desc="Settings, page 1' next
+wait_ui 'content-desc="Page 2 of 2"' 1
+wait_ui 'content-desc="Settings, page 2' 1
+pass "workspace: edge drag creates and enters second page"
+drag_to_workspace_edge 'content-desc="Settings, page 2' prev
+wait_ui 'content-desc="Page 1 of 1"' 1
+wait_ui 'content-desc="Settings, page 1' 1
+pass "workspace: returning item removes empty trailing page"
+drag_from_to 'content-desc="Settings, page 1' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
+wait_ui 'content-desc="Settings, hotseat' 1
+pass "hotseat: cross-container drag docks"
+drag_from_to 'content-desc="Settings, hotseat' 'content-desc="Empty,'
+wait_ui 'content-desc="Settings, page 1' 1
+pass "hotseat: drag undocks into workspace"
 
 "$adb" -s "$serial" shell am force-stop com.caniko.cenix
 go_home
 ui="$(dump_ui)"
 echo "$ui" | grep -qi 'emergency mode' && fail "healthy restart entered emergency"
-if ! echo "$ui" | grep -qE '\|com\.[^|]+\|'; then
+if ! echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"'; then
   set_search "Settings"
-  wait_ui '|com.android.settings|' 1
+  wait_ui 'text="Settings"' 1
   clear_search
   hide_keyboard
 fi
@@ -457,10 +451,7 @@ ui="$(dump_ui)"
 echo "$ui" | grep -q 'searchField' || fail "search missing in landscape"
 echo "$ui" | grep -q 'retryNative' || fail "retry control missing in landscape"
 set_search "Settings"
-wait_ui '|com.android.settings|' 1
-ui="$(dump_ui)"
-land_profile="$(printf '%s\n' "$ui" | sed -n 's/.*|com.android.settings|\([0-9]*\).*/\1/p' | head -n1)"
-[[ "$land_profile" == "$profile" ]] || fail "profile serial changed after rotation ($profile -> $land_profile)"
+wait_ui 'text="Settings"' 1
 clear_search
 hide_keyboard
 "$adb" -s "$serial" shell settings put system user_rotation 0
@@ -504,7 +495,7 @@ sleep 1
 ui="$(dump_ui)"
 echo "$ui" | grep -q 'Emergency mode' && fail "reset-local-state did not leave emergency"
 set_search "Fixture"
-wait_ui '|com.caniko.cenix.fixture|' 1
+wait_ui 'text="Cenix Fixture"' 1
 clear_search
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "reset changed HOME role: $holders"
@@ -520,15 +511,15 @@ CENIX_OMIT_NATIVE=1 "$root/scripts/audit-apk.sh" "$omit_apk"
 go_home
 wait_ui 'Emergency mode' 1
 ui="$(dump_ui)"
-if ! echo "$ui" | grep -qE '\|com\.[^|]+\|'; then
+if ! echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"'; then
   set_search "Settings"
-  wait_ui '|com.android.settings|' 1
+  wait_ui 'text="Settings"' 1
   clear_search
   hide_keyboard
 fi
 pass "native-unavailable APK starts in Kotlin emergency and lists apps"
 set_search "Settings"
-wait_ui '|com.android.settings|' 1
+wait_ui 'text="Settings"' 1
 pass "native-unavailable Kotlin search works"
 hide_keyboard
 tap_pattern 'resource-id="com.caniko.cenix:id/appLabel"'

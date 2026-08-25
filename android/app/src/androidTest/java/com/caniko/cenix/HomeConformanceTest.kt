@@ -47,6 +47,7 @@ class HomeConformanceTest {
         field.setText("zzznomatch")
         device.wait(Until.gone(By.res(PKG, "appLabel").textContains("Settings")), 5_000)
         field.setText("")
+        device.pressBack()
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "workspaceGrid")), 5_000))
     }
 

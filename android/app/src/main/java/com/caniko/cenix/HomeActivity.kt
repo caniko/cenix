@@ -1,65 +1,60 @@
 package com.caniko.cenix
 
-import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.net.Uri
 import android.os.Bundle
-import android.os.UserHandle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.DragEvent
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
-import android.view.ViewConfiguration
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
+import android.view.WindowInsets
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.GridView
 import android.widget.ImageView
-import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.caniko.cenix.uniffi.ContainerRef
+import com.caniko.cenix.uniffi.WorkspaceItem
+import com.caniko.cenix.uniffi.WorkspaceSnapshot
+import com.caniko.cenix.uniffi.WorkspaceTransition
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
     private lateinit var catalog: AppCatalog
+    private lateinit var search: SearchController
     private lateinit var statusTitle: TextView
     private lateinit var emergencyBanner: TextView
     private lateinit var searchField: EditText
-    private lateinit var appList: ListView
-    private lateinit var workspaceGrid: GridView
-    private lateinit var hotseatGrid: GridView
-    private lateinit var grid: PhoneGrid
-    private lateinit var search: SearchController
-    private var workspace: Workspace? = null
-    private var screen = 0
+    private lateinit var appList: AllAppsView
+    private lateinit var dragLayer: DragLayer
+    private lateinit var pager: WorkspacePager
+    private lateinit var hotseat: HotseatView
+    private lateinit var pageIndicator: PageIndicator
+    private var controller: WorkspaceController? = null
+    private var rendered = emptySnapshot()
+    private var selectedPageId: ULong? = null
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
-    private val slots = mutableListOf<LaunchableApp?>()
-    private val dock = mutableListOf<LaunchableApp?>()
-    private var dragFromPin = false
-    private var dragLanded = false
-    private var dragStartScreen = 0
-    private var dragStartX = 0
-    private var dragStartY = 0
 
     private val packageCallback = object : LauncherApps.Callback() {
-        override fun onPackageAdded(packageName: String, user: UserHandle) = scheduleReload("add")
-        override fun onPackageRemoved(packageName: String, user: UserHandle) = scheduleReload("remove")
-        override fun onPackageChanged(packageName: String, user: UserHandle) = scheduleReload("change")
-        override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = scheduleReload("available")
-        override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = scheduleReload("unavailable")
-        override fun onPackagesSuspended(packageNames: Array<out String>, user: UserHandle) = scheduleReload("suspended")
-        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: UserHandle) = scheduleReload("unsuspended")
+        override fun onPackageAdded(packageName: String, user: android.os.UserHandle) = scheduleReload("add")
+        override fun onPackageRemoved(packageName: String, user: android.os.UserHandle) = scheduleReload("remove")
+        override fun onPackageChanged(packageName: String, user: android.os.UserHandle) = scheduleReload("change")
+        override fun onPackagesAvailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) = scheduleReload("available")
+        override fun onPackagesUnavailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) = scheduleReload("unavailable")
+        override fun onPackagesSuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("suspended")
+        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("unsuspended")
     }
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
@@ -81,93 +76,79 @@ class HomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         app = application as CenixApplication
         catalog = AppCatalog(this)
-        val dm = resources.displayMetrics
-        grid = PhoneGrid.pick(dm.widthPixels / dm.density, dm.heightPixels / dm.density)
+        selectedPageId = savedInstanceState?.getLong(STATE_PAGE_ID)?.toULong()
         search = SearchController(
             filterOf = { app.activeFilter() },
             onEmergency = {
                 CenixExecutors.io {
                     if (app.awaitReady()) app.requestEmergency()
-                    runOnUiThread { applyChrome() }
+                    runOnUiThread(::applyChrome)
                 }
             },
             onResult = { matches -> runOnUiThread { bindList(matches) } },
         )
         setContentView(R.layout.activity_home)
+        bindViews()
+        catalog.register(packageCallback)
+        scheduleReload("create")
+    }
+
+    private fun bindViews() {
         statusTitle = findViewById(R.id.statusTitle)
         emergencyBanner = findViewById(R.id.emergencyBanner)
         searchField = findViewById(R.id.searchField)
         appList = findViewById(R.id.appList)
-        workspaceGrid = findViewById(R.id.workspaceGrid)
-        hotseatGrid = findViewById(R.id.hotseatGrid)
+        dragLayer = findViewById(R.id.dragLayer)
+        pager = findViewById(R.id.workspaceGrid)
+        hotseat = findViewById(R.id.hotseatGrid)
+        pageIndicator = findViewById(R.id.pageIndicator)
+        dragLayer.pager = pager
+        dragLayer.hotseat = hotseat
+        dragLayer.removeTarget = findViewById(R.id.removeTarget)
+        dragLayer.onDrop = ::onDrop
+        findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { _, insets ->
+            if (!dragLayer.isDragging) {
+                dragLayer.visibility = if (insets.isVisible(WindowInsets.Type.ime())) View.GONE else View.VISIBLE
+            }
+            insets
+        }
+        pager.onPageChanged = { page ->
+            rendered.pages.getOrNull(page)?.let { selectedPageId = it.pageId }
+            pageIndicator.current = page
+        }
+        pager.onBeyondEdge = {
+            mutate { workspace ->
+                workspace.addPage()?.also { transition -> selectedPageId = transition.createdPageIds.lastOrNull() }
+            }
+        }
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
-        findViewById<Button>(R.id.setDefaultHome).setOnClickListener { promptDefaultHome() }
-        statusTitle.setOnLongClickListener {
-            exportDiagnostics.launch("cenix-diagnostics.txt")
-            true
-        }
-        val cell = (48 * resources.displayMetrics.density).toInt()
-        val reserved = (200 * resources.displayMetrics.density).toInt()
-        workspaceGrid.numColumns = grid.cols
-        workspaceGrid.layoutParams = workspaceGrid.layoutParams.apply {
-            val budget = (resources.displayMetrics.heightPixels - reserved - cell).coerceAtLeast(cell)
-            height = minOf(grid.rows * cell, budget / cell * cell)
-        }
-        workspaceGrid.adapter = WorkspaceAdapter()
-        workspaceGrid.setOnItemClickListener { _, _, position, _ -> slots[position]?.let(::launch) }
-        workspaceGrid.setOnItemLongClickListener { _, view, position, _ ->
-            slots[position]?.let { beginDrag(view, it, fromPin = true) }
-            true
-        }
-        workspaceGrid.setOnDragListener { view, event ->
-            onGridDrag(view, event, screen, grid.cols, grid.rows)
-        }
-        statusTitle.setOnDragListener { _, event -> onOffGridDrag(event) }
-        searchField.setOnDragListener { _, event -> onOffGridDrag(event) }
-        hotseatGrid.numColumns = grid.cols
-        hotseatGrid.layoutParams = hotseatGrid.layoutParams.apply { height = cell }
-        hotseatGrid.adapter = HotseatAdapter()
-        hotseatGrid.setOnItemClickListener { _, _, position, _ -> dock[position]?.let(::launch) }
-        hotseatGrid.setOnItemLongClickListener { _, view, position, _ ->
-            dock[position]?.let { beginDrag(view, it, fromPin = true) }
-            true
-        }
-        hotseatGrid.setOnDragListener { view, event ->
-            onGridDrag(view, event, Workspace.HOTSEAT, grid.cols, 1)
-        }
-        val fling = ViewConfiguration.get(this).scaledMinimumFlingVelocity
-        val pager = GestureDetector(
-            this,
-            object : GestureDetector.SimpleOnGestureListener() {
-                override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-                    if (kotlin.math.abs(vx) <= kotlin.math.abs(vy) || kotlin.math.abs(vx) < fling) return false
-                    turn(if (vx < 0) 1 else -1)
-                    return true
-                }
-            },
-        )
-        workspaceGrid.setOnTouchListener { _, event ->
-            pager.onTouchEvent(event)
-            false
-        }
+        findViewById<Button>(R.id.setDefaultHome).setOnClickListener { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+        statusTitle.setOnLongClickListener { exportDiagnostics.launch("cenix-diagnostics.txt"); true }
+        searchField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = applyFilter()
+        })
         appList.adapter = AppAdapter()
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
-        appList.setOnItemLongClickListener { _, _, position, _ ->
-            pin(visible[position])
-            true
+        val gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: android.view.MotionEvent) = true
+
+            override fun onLongPress(event: android.view.MotionEvent) {
+                val position = appList.pointToPosition(event.x.toInt(), event.y.toInt())
+                if (position == android.widget.AdapterView.INVALID_POSITION) return
+                val view = appList.getChildAt(position - appList.firstVisiblePosition) ?: return
+                getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
+                searchField.clearFocus()
+                dragLayer.visibility = View.VISIBLE
+                dragLayer.beginDrag(view, LauncherDrag(visible[position], null))
+            }
+        })
+        appList.setOnTouchListener { _, event ->
+            gestures.onTouchEvent(event)
+            false
         }
-        searchField.addTextChangedListener(
-            object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    applyFilter()
-                }
-            },
-        )
-        catalog.register(packageCallback)
-        scheduleReload("create")
     }
 
     override fun onStart() {
@@ -176,10 +157,9 @@ class HomeActivity : AppCompatActivity() {
         applyForceNativeFailure()
     }
 
-    override fun onDestroy() {
-        catalog.unregister(packageCallback)
-        search.close()
-        super.onDestroy()
+    override fun onSaveInstanceState(outState: Bundle) {
+        selectedPageId?.let { outState.putLong(STATE_PAGE_ID, it.toLong()) }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -188,15 +168,25 @@ class HomeActivity : AppCompatActivity() {
         applyForceNativeFailure()
     }
 
+    override fun onDestroy() {
+        dragLayer.cancel("lifecycle")
+        catalog.unregister(packageCallback)
+        search.close()
+        super.onDestroy()
+    }
+
     private fun scheduleReload(reason: String) {
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
-            workspace = app.database?.let { Workspace(it) { !app.emergency } }
+            val database = app.database ?: return@io
+            val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
                 val loaded = catalog.load()
-                workspace?.dropMissing(loaded.map { Triple(it.packageName, it.className, it.profileId) }.toSet())
-                val items = workspace?.items().orEmpty()
+                dragLayer.post { dragLayer.cancel(if (reason == "remove" || reason == "unavailable") "package" else "reload") }
+                workspace.dropMissing(loaded)
+                val desired = resources.displayMetrics.let { PhoneGrid.pick(it.widthPixels / it.density, it.heightPixels / it.density) }
+                val state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
                 val profiles = catalog.visibleProfiles()
                 val matches = try {
                     app.activeFilter().filter(loaded, query, profiles)
@@ -205,196 +195,173 @@ class HomeActivity : AppCompatActivity() {
                     EmergencyAppFilter.filter(loaded, query, profiles)
                 }
                 app.markHealthy()
-                CenixLog.event(
-                    EventId.CATALOG_REFRESH,
-                    Severity.INFO,
-                    mapOf("count" to loaded.size.toString(), "reason" to reason),
-                )
-                if (reason != "create" && reason != "start") {
-                    CenixLog.event(EventId.PACKAGE_CALLBACK, Severity.INFO, mapOf("category" to reason))
-                }
+                CenixLog.event(EventId.CATALOG_REFRESH, Severity.INFO, mapOf("count" to loaded.size.toString(), "reason" to reason))
                 runOnUiThread {
                     apps.clear()
                     apps.addAll(loaded)
                     bindList(matches)
-                    bindPinsFrom(items)
+                    render(state)
                     applyChrome()
                 }
             } catch (_: Throwable) {
                 app.requestEmergency()
-                runOnUiThread { applyChrome() }
+                runOnUiThread(::applyChrome)
             }
         }
     }
 
-    private fun bindWorkspaceFrom(items: List<com.caniko.cenix.db.WorkspaceItemEntity>) {
-        val byCell = items
-            .filter { it.screen == screen && grid.inBounds(it.cellX, it.cellY) }
-            .associateBy { it.cellY * grid.cols + it.cellX }
-        val catalogIndex = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
-        slots.clear()
-        for (i in 0 until grid.cells) {
-            val item = byCell[i]
-            slots.add(item?.let { catalogIndex[Triple(it.packageName, it.className, it.profileId)] })
+    private fun render(snapshot: WorkspaceSnapshot) {
+        rendered = snapshot
+        val byComponent = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
+        val pageLayouts = snapshot.pages.mapIndexed { pageIndex, page ->
+            CellLayout(this).apply {
+                columns = snapshot.grid.cols
+                rows = snapshot.grid.rows
+                contentDescription = "Workspace $pageIndex"
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                val items = snapshot.items.filter { (it.container as? ContainerRef.Workspace)?.pageId == page.pageId }
+                    .associateBy { it.cell.cellX to it.cell.cellY }
+                for (y in 0 until rows) for (x in 0 until columns) {
+                    val item = items[x to y]
+                    val appItem = item?.let { byComponent[Triple(it.component.`package`, it.component.`class`, it.component.profileId.toLong())] }
+                    addCell(createCell(appItem, item, "page ${pageIndex + 1}", x, y), x, y)
+                }
+            }
         }
-        (workspaceGrid.adapter as WorkspaceAdapter).notifyDataSetChanged()
-        workspaceGrid.contentDescription = "${getString(R.string.workspace)} $screen"
+        val selected = snapshot.pages.indexOfFirst { it.pageId == selectedPageId }.takeIf { it >= 0 } ?: 0
+        pager.replacePages(pageLayouts, selected)
+        pager.setCurrentPage(selected, false)
+        selectedPageId = snapshot.pages.getOrNull(selected)?.pageId
+        pageIndicator.pages = snapshot.pages.size
+        pageIndicator.current = selected
+
+        hotseat.removeAllViews()
+        hotseat.columns = snapshot.grid.hotseatCols
+        hotseat.rows = 1
+        val dock = snapshot.items.filter { it.container is ContainerRef.Hotseat }.associateBy { it.cell.cellX }
+        for (x in 0 until hotseat.columns) {
+            val item = dock[x]
+            val appItem = item?.let { byComponent[Triple(it.component.`package`, it.component.`class`, it.component.profileId.toLong())] }
+            hotseat.addCell(createCell(appItem, item, "hotseat", x, 0), x, 0)
+        }
     }
 
-    private fun bindHotseatFrom(items: List<com.caniko.cenix.db.WorkspaceItemEntity>) {
-        val byCell = items
-            .filter { it.screen == Workspace.HOTSEAT && it.cellX in 0 until grid.cols }
-            .associateBy { it.cellX }
-        val catalogIndex = apps.associateBy { Triple(it.packageName, it.className, it.profileId) }
-        dock.clear()
-        for (x in 0 until grid.cols) {
-            dock.add(byCell[x]?.let { catalogIndex[Triple(it.packageName, it.className, it.profileId)] })
+    private fun createCell(appItem: LaunchableApp?, item: WorkspaceItem?, location: String, x: Int, y: Int): View {
+        val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
+        view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon)
+        view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label.orEmpty()
+        view.contentDescription = if (appItem == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
+        else "${appItem.label}, $location, row ${y + 1}, column ${x + 1}"
+        view.isFocusable = appItem != null
+        if (appItem != null && item != null) {
+            val payload = LauncherDrag(appItem, item.itemId)
+            view.setOnClickListener { launch(appItem) }
+            view.setOnLongClickListener { dragLayer.beginDrag(view, payload) }
+            addAccessibilityMoves(view, item, x, y)
         }
-        (hotseatGrid.adapter as HotseatAdapter).notifyDataSetChanged()
+        return view
     }
 
-    private fun bindPinsFrom(items: List<com.caniko.cenix.db.WorkspaceItemEntity>) {
-        bindWorkspaceFrom(items)
-        bindHotseatFrom(items)
+    private fun addAccessibilityMoves(view: View, item: WorkspaceItem, x: Int, y: Int) {
+        view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_left, "Move left"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_right, "Move right"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_up, "Move up"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_down, "Move down"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_previous_page, "Move to previous page"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_next_page, "Move to next page"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(if (item.container is ContainerRef.Hotseat) R.id.action_undock else R.id.action_dock, if (item.container is ContainerRef.Hotseat) "Undock" else "Dock"))
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_DISMISS, "Remove"))
+            }
+
+            override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+                val destination = when (action) {
+                    R.id.action_move_left -> x - 1 to y
+                    R.id.action_move_right -> x + 1 to y
+                    R.id.action_move_up -> x to y - 1
+                    R.id.action_move_down -> x to y + 1
+                    R.id.action_move_previous_page -> { movePage(item, -1); return true }
+                    R.id.action_move_next_page -> { movePage(item, 1); return true }
+                    R.id.action_dock -> { mutate { it.dock(item.itemId) }; return true }
+                    R.id.action_undock -> { rendered.pages.getOrNull(pager.currentPage)?.let { page -> mutate { it.undock(item.itemId, page.pageId) } }; return true }
+                    AccessibilityNodeInfo.ACTION_DISMISS -> { mutate { it.remove(item.itemId) }; return true }
+                    else -> return super.performAccessibilityAction(host, action, args)
+                }
+                val container = item.container
+                mutate { it.move(item.itemId, container, destination.first, destination.second) }
+                return true
+            }
+        }
+        view.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            val destination = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> x - 1 to y
+                KeyEvent.KEYCODE_DPAD_RIGHT -> x + 1 to y
+                KeyEvent.KEYCODE_DPAD_UP -> x to y - 1
+                KeyEvent.KEYCODE_DPAD_DOWN -> x to y + 1
+                KeyEvent.KEYCODE_ESCAPE -> { dragLayer.cancel("keyboard"); return@setOnKeyListener true }
+                else -> return@setOnKeyListener false
+            }
+            mutate { it.move(item.itemId, item.container, destination.first, destination.second) }
+            true
+        }
+    }
+
+    private fun movePage(item: WorkspaceItem, delta: Int) {
+        val currentId = (item.container as? ContainerRef.Workspace)?.pageId ?: return
+        val current = rendered.pages.indexOfFirst { it.pageId == currentId }
+        val page = rendered.pages.getOrNull(current + delta) ?: return
+        mutate { it.move(item.itemId, ContainerRef.Workspace(page.pageId), item.cell.cellX, item.cell.cellY) }
+    }
+
+    private fun onDrop(payload: LauncherDrag, destination: DropDestination) {
+        when {
+            destination.remove && payload.itemId != null -> mutate { it.remove(payload.itemId) }
+            destination.container === hotseat && payload.itemId != null -> mutate {
+                it.move(payload.itemId, ContainerRef.Hotseat, destination.cellX, 0)
+            }
+            destination.container is CellLayout -> {
+                val pageId = rendered.pages.getOrNull(pager.currentPage)?.pageId ?: return
+                if (payload.itemId == null) mutate { it.placeFromAllApps(payload.app, pageId, destination.cellX, destination.cellY) }
+                else mutate { it.move(payload.itemId, ContainerRef.Workspace(pageId), destination.cellX, destination.cellY) }
+            }
+            else -> CenixLog.event(EventId.DRAG_CANCEL, Severity.INFO, mapOf("category" to "invalid-target"))
+        }
+    }
+
+    private fun mutate(block: (WorkspaceController) -> com.caniko.cenix.uniffi.WorkspaceTransition?) {
+        CenixExecutors.io {
+            val workspace = controller ?: return@io
+            block(workspace)?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+        }
     }
 
     private fun bindList(matches: List<LaunchableApp>) {
-        val query = searchField.text?.toString().orEmpty()
-        val showPins = query.isBlank()
-        workspaceGrid.visibility = if (showPins) View.VISIBLE else View.GONE
-        hotseatGrid.visibility = if (showPins) View.VISIBLE else View.GONE
         visible.clear()
         visible.addAll(matches)
         (appList.adapter as AppAdapter).notifyDataSetChanged()
     }
 
-    private fun turn(delta: Int) {
-        val next = screen + delta
-        if (next !in 0 until Workspace.SCREENS) return
-        screen = next
-        CenixExecutors.io {
-            if (!app.awaitReady()) return@io
-            val items = workspace?.items().orEmpty()
-            runOnUiThread { bindWorkspaceFrom(items) }
-        }
-    }
-
-    private fun beginDrag(view: View, item: LaunchableApp, fromPin: Boolean) {
-        dragFromPin = fromPin
-        dragLanded = false
-        val dockAt = dock.indexOfFirst { it?.packageName == item.packageName && it.className == item.className && it.profileId == item.profileId }
-        val slotAt = slots.indexOfFirst { it?.packageName == item.packageName && it.className == item.className && it.profileId == item.profileId }
-        if (dockAt >= 0) {
-            dragStartScreen = Workspace.HOTSEAT
-            dragStartX = dockAt
-            dragStartY = 0
-        } else {
-            dragStartScreen = screen
-            dragStartX = if (slotAt >= 0) slotAt % grid.cols else 0
-            dragStartY = if (slotAt >= 0) slotAt / grid.cols else 0
-        }
-        view.startDragAndDrop(ClipData.newPlainText(item.packageName, item.className), View.DragShadowBuilder(view), item, 0)
-    }
-
-    private fun onGridDrag(view: View, event: DragEvent, destScreen: Int, cols: Int, rows: Int): Boolean {
-        val item = event.localState as? LaunchableApp ?: return false
-        return when (event.action) {
-            DragEvent.ACTION_DRAG_STARTED -> true
-            DragEvent.ACTION_DROP -> {
-                dragLanded = true
-                val cw = (view.width / cols).coerceAtLeast(1)
-                val ch = (view.height / rows).coerceAtLeast(1)
-                val x = (event.x / cw).toInt().coerceIn(0, cols - 1)
-                val y = (event.y / ch).toInt().coerceIn(0, rows - 1)
-                mutatePins { store ->
-                    if (destScreen == dragStartScreen && x == dragStartX && y == dragStartY) {
-                        store.unpin(item)
-                    } else {
-                        store.place(item, destScreen, x, y, cols, rows)
-                    }
-                    null
-                }
-                true
-            }
-            DragEvent.ACTION_DRAG_ENDED -> endDrag(item)
-            else -> true
-        }
-    }
-
-    private fun onOffGridDrag(event: DragEvent): Boolean {
-        val item = event.localState as? LaunchableApp ?: return false
-        return when (event.action) {
-            DragEvent.ACTION_DRAG_STARTED -> true
-            DragEvent.ACTION_DROP -> {
-                dragLanded = true
-                if (dragFromPin) mutatePins { it.unpin(item); null }
-                true
-            }
-            DragEvent.ACTION_DRAG_ENDED -> endDrag(item)
-            else -> true
-        }
-    }
-
-    private fun endDrag(item: LaunchableApp): Boolean {
-        if (dragFromPin && !dragLanded) mutatePins { it.unpin(item); null }
-        dragFromPin = false
-        return true
-    }
-
-    private fun pin(appItem: LaunchableApp) {
-        mutatePins { store ->
-            val placed = store.items().firstOrNull {
-                it.packageName == appItem.packageName && it.className == appItem.className && it.profileId == appItem.profileId
-            }
-            val ok = when {
-                placed?.screen == Workspace.HOTSEAT -> true
-                placed != null -> store.dock(appItem, grid.cols)
-                else -> store.pin(appItem, grid, screen)
-            }
-            if (ok) {
-                store.items().firstOrNull {
-                    it.packageName == appItem.packageName && it.className == appItem.className && it.profileId == appItem.profileId
-                }?.let { if (it.screen != Workspace.HOTSEAT) screen = it.screen }
-            }
-            if (ok) null else if (placed != null) R.string.hotseat_full else R.string.workspace_full
-        }
-    }
-
-    private fun mutatePins(block: (Workspace) -> Int?) {
-        CenixExecutors.io {
-            if (!app.awaitReady()) return@io
-            val store = workspace ?: return@io
-            val fail = block(store)
-            val items = store.items()
-            runOnUiThread {
-                if (fail != null) Toast.makeText(this, fail, Toast.LENGTH_SHORT).show()
-                bindPinsFrom(items)
-            }
-        }
+    private fun applyFilter() {
+        val query = searchField.text?.toString().orEmpty()
+        search.submit(apps.toList(), query, catalog.visibleProfiles())
     }
 
     private fun applyChrome() {
-        val emergency = app.emergency
-        statusTitle.setText(if (emergency) R.string.status_emergency else R.string.status_ready)
-        emergencyBanner.visibility = if (emergency) View.VISIBLE else View.GONE
-    }
-
-    private fun applyFilter() {
-        val query = searchField.text?.toString().orEmpty()
-        workspaceGrid.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
-        hotseatGrid.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
-        search.submit(apps.toList(), query, catalog.visibleProfiles())
+        statusTitle.setText(if (app.emergency) R.string.status_emergency else R.string.status_ready)
+        emergencyBanner.visibility = if (app.emergency) View.VISIBLE else View.GONE
+        statusTitle.contentDescription = getString(if (app.emergency) R.string.status_emergency else R.string.status_ready)
     }
 
     private fun launch(appItem: LaunchableApp) {
         val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
-        if (user == null) {
-            Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
-            return
-        }
+        if (user == null) return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         try {
-            val launcher = getSystemService(LauncherApps::class.java)
-            launcher.startMainActivity(ComponentName(appItem.packageName, appItem.className), user, null, null)
+            getSystemService(LauncherApps::class.java).startMainActivity(
+                ComponentName(appItem.packageName, appItem.className), user, null, null,
+            )
         } catch (_: Throwable) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         }
@@ -405,7 +372,7 @@ class HomeActivity : AppCompatActivity() {
         intent.removeExtra(EXTRA_FORCE_NATIVE_FAILURE)
         CenixExecutors.io {
             if (app.awaitReady()) app.requestEmergency()
-            runOnUiThread { applyChrome() }
+            runOnUiThread(::applyChrome)
         }
     }
 
@@ -413,11 +380,7 @@ class HomeActivity : AppCompatActivity() {
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
             app.retryNative()
-            workspace = app.database?.let { Workspace(it) { !app.emergency } }
-            runOnUiThread {
-                applyChrome()
-                applyFilter()
-            }
+            runOnUiThread { applyChrome(); scheduleReload("retry") }
         }
     }
 
@@ -425,69 +388,39 @@ class HomeActivity : AppCompatActivity() {
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
             app.resetLocalState()
-            workspace = app.database?.let { Workspace(it) { !app.emergency } }
-            screen = 0
+            controller = app.database?.let { WorkspaceController(LauncherRepository(it)) { !app.emergency } }
+            selectedPageId = null
             scheduleReload("reset")
         }
     }
 
-    private fun promptDefaultHome() {
-        startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-    }
-
-    private inner class WorkspaceAdapter : BaseAdapter() {
-        override fun getCount() = grid.cells
-        override fun getItem(position: Int) = slots.getOrNull(position)
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.workspace_cell, parent, false)
-            val item = slots.getOrNull(position)
-            view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
-            view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
-            view.contentDescription = item?.let { "${it.label}|${it.packageName}|${it.profileId}" }
-                ?: getString(R.string.workspace_empty)
-            return view
-        }
-    }
-
-    private inner class HotseatAdapter : BaseAdapter() {
-        override fun getCount() = grid.cols
-        override fun getItem(position: Int) = dock.getOrNull(position)
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.workspace_cell, parent, false)
-            val item = dock.getOrNull(position)
-            view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(item?.icon)
-            view.findViewById<TextView>(R.id.cellLabel).text = item?.label.orEmpty()
-            view.contentDescription = item?.let { "${it.label}|${it.packageName}|${it.profileId}" }
-                ?: getString(R.string.workspace_empty)
-            return view
-        }
-    }
-
-    private inner class AppAdapter : ArrayAdapter<LaunchableApp>(this, 0, visible) {
+    private inner class AppAdapter : BaseAdapter() {
         override fun getCount() = visible.size
         override fun getItem(position: Int) = visible[position]
+        override fun getItemId(position: Int) = visible[position].let { 31L * it.packageName.hashCode() + it.profileId }
+        override fun hasStableIds() = true
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val view = convertView ?: LayoutInflater.from(context).inflate(R.layout.app_row, parent, false)
+            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.app_row, parent, false)
             val item = visible[position]
             view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.icon)
             view.findViewById<TextView>(R.id.appLabel).text = item.label
-            view.findViewById<TextView>(R.id.appProfile).text = profileLabel(item.profileId)
-            view.contentDescription = "${item.label}|${item.packageName}|${item.profileId}"
+            val profile = profileLabel(item.profileId)
+            view.findViewById<TextView>(R.id.appProfile).text = profile
+            view.contentDescription = "${item.label}, $profile"
             return view
         }
     }
 
     private fun profileLabel(profileId: Long): String {
-        val personal = catalog.serial(android.os.Process.myUserHandle())
-        return when (profileId) {
-            personal -> getString(R.string.profile_personal)
-            else -> getString(R.string.profile_other)
-        }
+        val personal = android.os.Process.myUserHandle().let { getSystemService(android.os.UserManager::class.java).getSerialNumberForUser(it) }
+        return getString(if (profileId == personal) R.string.profile_personal else R.string.profile_other)
     }
+
+    private fun WorkspaceTransition.asSnapshot() = WorkspaceSnapshot(generation, grid, pages, items)
 
     companion object {
         const val EXTRA_FORCE_NATIVE_FAILURE = "com.caniko.cenix.FORCE_NATIVE_FAILURE"
+        private const val STATE_PAGE_ID = "workspace.pageId"
+        private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList())
     }
 }
