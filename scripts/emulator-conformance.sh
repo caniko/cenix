@@ -129,6 +129,7 @@ fi
 "$adb" -s "$serial" shell settings put system user_rotation 0
 "$adb" -s "$serial" shell settings put system font_scale "${CENIX_FONT_SCALE:-1.0}"
 "$adb" -s "$serial" shell settings put system system_locales "${CENIX_LOCALE:-en-US}"
+"$adb" -s "$serial" shell setprop debug.force_rtl "${CENIX_FORCE_RTL:-false}"
 "$adb" -s "$serial" shell settings put global window_animation_scale 0
 "$adb" -s "$serial" shell settings put global transition_animation_scale 0
 "$adb" -s "$serial" shell settings put global animator_duration_scale 0
@@ -365,6 +366,8 @@ apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
   echo "abi=x86_64"
   echo "density=mdpi"
   echo "size=320x640"
+  echo "font_scale=${CENIX_FONT_SCALE:-1.0}"
+  echo "force_rtl=${CENIX_FORCE_RTL:-false}"
 } >"$art/metadata.txt"
 sha256sum "$apk" >"$art/apk.sha256"
 printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
