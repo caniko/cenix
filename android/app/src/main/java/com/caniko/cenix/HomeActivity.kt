@@ -148,6 +148,16 @@ class HomeActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) = applyFilter()
         })
+        searchField.setOnKeyListener { _, keyCode, event ->
+            if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN || event.action != KeyEvent.ACTION_DOWN || visible.isEmpty()) {
+                return@setOnKeyListener false
+            }
+            getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
+            searchField.clearFocus()
+            appList.requestFocus()
+            appList.setSelection(0)
+            true
+        }
         appList.adapter = AppAdapter()
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
         val allAppsLongPress = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())

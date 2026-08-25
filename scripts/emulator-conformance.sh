@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+suite="full"
+if [[ "${1:-}" == "--suite" ]]; then
+  suite="${2:-}"
+  shift 2
+fi
+[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|full]" >&2; exit 2; }
+case "$suite" in core|workspace|folders|shortcuts|widgets|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
@@ -30,6 +37,7 @@ echo "emulator suite must run through the matching Nix emulator shell"
 echo "this Android API 35 $image_kind x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
 echo "git commit: $CENIX_GIT_COMMIT"
 echo "avd: $avd"
+echo "suite: $suite"
 
 if [[ -z "$sdk" ]]; then
   echo "ANDROID_SDK_ROOT is required; use: nix develop .#emulator" >&2
@@ -428,6 +436,7 @@ apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
   echo "size=320x640"
   echo "font_scale=${CENIX_FONT_SCALE:-1.0}"
   echo "force_rtl=${CENIX_FORCE_RTL:-false}"
+  echo "suite=$suite"
 } >"$art/metadata.txt"
 sha256sum "$apk" >"$art/apk.sha256"
 printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
@@ -525,6 +534,7 @@ wait_ui 'text="Cenix Fixture"' 0
 clear_search
 pass "package callback: fixture disappeared without restart"
 
+if [[ "$suite" == "workspace" || "$suite" == "folders" || "$suite" == "full" ]]; then
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 go_home
@@ -596,7 +606,9 @@ hide_keyboard
 "$adb" -s "$serial" shell settings put system user_rotation 0
 sleep 1
 go_home
+fi
 
+if [[ "$suite" == "folders" || "$suite" == "full" ]]; then
 ui="$(dump_ui)"
 read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
 set_search "Two"
@@ -720,7 +732,24 @@ wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
 wait_ui 'content-desc="Cenix Fixture, page 1' 1
 wait_ui 'content-desc="Utilities, folder,' 0
 pass "folders: package removal transactionally dissolves a two-member folder"
+fi
 
+if [[ "$suite" == "shortcuts" ]]; then
+  "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+  "$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+  "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+  go_home
+  for label in "Cenix Fixture" "Cenix Fixture Two"; do
+    ui="$(dump_ui)"
+    read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+    set_search "${label##* }"
+    wait_ui "text=\"$label\"" 1
+    drag_pattern_to_bounds "text=\"$label\".*resource-id=\"com.caniko.cenix:id/appLabel\"" $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+    wait_ui "content-desc=\"$label, page 1" 1
+  done
+fi
+
+if [[ "$suite" == "shortcuts" || "$suite" == "full" ]]; then
 set_search "Fixture"
 wait_ui 'text="Cenix Fixture"' 1
 long_press_pattern 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
@@ -805,6 +834,7 @@ pass "context: uninstall always uses Android confirmation and cancellation prese
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 wait_ui 'content-desc="Manifest action' 0
 pass "folders/shortcuts: package uninstall reconciles folder members and pinned shortcuts"
+fi
 
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
 wait_ui 'Emergency mode' 1
@@ -867,4 +897,4 @@ sleep 1
 wait_ui 'Emergency mode' 1
 pass "retry-native does not report success while libcenix_ffi.so is absent"
 
-echo "emulator conformance passed on $serial (Android API 35 $image_kind x86_64, not GrapheneOS/mustang)"
+echo "emulator conformance suite $suite passed on $serial (Android API 35 $image_kind x86_64, not GrapheneOS/mustang)"

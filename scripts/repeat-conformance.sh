@@ -12,7 +12,7 @@ for i in $(seq 1 "$runs"); do
   echo "=== run $i/$runs ==="
   outcome="failed"
   if CENIX_RUN_ID="repeat-$i-$$" CENIX_ARTIFACTS="$art" \
-    "$root/scripts/emulator-conformance.sh" 2>&1 | tee "$art/assertions.log"; then
+    "$root/scripts/emulator-conformance.sh" --suite "${CENIX_SUITE:-full}" 2>&1 | tee "$art/assertions.log"; then
     outcome="passed"
   fi
   end="$(date +%s)"

@@ -70,10 +70,26 @@ class HomeConformanceTest {
         val bounds = app.visibleBounds
         device.executeShellCommand("input touchscreen swipe ${bounds.centerX()} ${bounds.centerY()} ${bounds.centerX()} ${bounds.centerY()} 800")
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "context_popup")), 5_000))
+        assertTrue(device.hasObject(By.desc("Application actions")))
         assertTrue(device.hasObject(By.text("Manifest action")))
+        assertTrue(device.hasObject(By.desc("Manifest action")))
         assertTrue(device.hasObject(By.text("Dynamic action")))
         device.pressBack()
         assertTrue(device.wait(Until.gone(By.res(PKG, "context_popup")), 5_000))
+    }
+
+    @Test
+    fun allAppsSupportsKeyboardTraversalAndActivation() {
+        openAllApps()
+        val field = device.findObject(By.res(PKG, "searchField"))
+        field.click()
+        field.setText("fixture")
+        assertTrue(device.wait(Until.hasObject(By.desc("Cenix Fixture, Personal")), 5_000))
+        device.pressBack()
+        device.pressDPadDown()
+        assertTrue(device.wait(Until.hasObject(By.desc("Cenix Fixture, Personal").selected(true)), 5_000))
+        device.pressEnter()
+        assertTrue(device.wait(Until.hasObject(By.pkg("com.caniko.cenix.fixture")), 5_000))
     }
 
     private fun openAllApps() {
