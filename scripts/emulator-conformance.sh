@@ -743,7 +743,7 @@ long_press_pattern 'content-desc="Cenix Fixture, page 1'
 wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
 ui="$(dump_ui)"
 read -r fx1 fy1 fx2 fy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
-drag_pattern_to_bounds 'content-desc="Manifest action"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
+drag_pattern_to_bounds 'text="Manifest action"' $(((fx1 + fx2) / 2)) $(((fy1 + fy2) / 2))
 wait_ui 'content-desc="Manifest action, page 1' 1
 drag_from_to 'content-desc="Manifest action, page 1' 'resource-id="com.caniko.cenix:id/hotseatGrid"'
 wait_ui 'content-desc="Manifest action, hotseat' 1
