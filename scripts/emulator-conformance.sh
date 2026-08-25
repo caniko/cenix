@@ -5,6 +5,7 @@ sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
 art="${CENIX_ARTIFACTS:-$(mktemp -d /tmp/cenix-conformance.XXXXXX)}"
+workspace_rtl=0
 mkdir -p "$art"
 export CENIX_GIT_COMMIT="${CENIX_GIT_COMMIT:-$(git -C "$root" rev-parse HEAD)}"
 avd="${CENIX_AVD:-cenix-ci-$run_id}"
@@ -260,8 +261,8 @@ drag_to_workspace_edge() {
   xml="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$xml" "$1")
   read -r wx1 wy1 wx2 wy2 < <(read_bounds "$xml" 'resource-id="com.caniko.cenix:id/workspaceGrid"')
-  if [[ "$edge" == "next" && "${CENIX_FORCE_RTL:-false}" != "true" ]] ||
-    [[ "$edge" == "prev" && "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
+  if [[ "$edge" == "next" && "$workspace_rtl" == "0" ]] ||
+    [[ "$edge" == "prev" && "$workspace_rtl" == "1" ]]; then
     target=$((wx2 - 4))
   else
     target=$((wx1 + 4))
@@ -393,6 +394,12 @@ go_home
 pass "KEYCODE_HOME resumes com.caniko.cenix/.HomeActivity"
 
 ui="$(dump_ui)"
+read -r rtl1x _ _ _ < <(read_bounds "$ui" 'content-desc="Empty, page 1, row 1, column 1"')
+read -r rtl4x _ _ _ < <(read_bounds "$ui" 'content-desc="Empty, page 1, row 1, column 4"')
+(( rtl1x > rtl4x )) && workspace_rtl=1
+if [[ "${CENIX_FORCE_RTL:-false}" == "true" && "$workspace_rtl" != "1" ]]; then
+  fail "forced RTL did not mirror workspace columns"
+fi
 echo "$ui" | grep -q 'workspaceGrid' || fail "workspace grid missing"
 echo "$ui" | grep -q 'hotseatGrid' || fail "hotseat grid missing"
 echo "$ui" | grep -q 'searchField' && fail "search visible on normal HOME"
