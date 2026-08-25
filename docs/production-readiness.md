@@ -19,6 +19,7 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 - Custom `WorkspacePager`, `CellLayout`, `HotseatView`, visual page indicator, and internal `DragLayer` (`API`)
 - Dynamic trailing-page lifecycle and deterministic occupied-cell reorder (`API`)
 - Room-only durable state and no main-thread queries on device (`API`)
+- P1 canonical conformance: 5/5 isolated AOSP API 35 runs from clean commit `9fb79fbc505685a1566fcbd6f6c6d6a3d3769b42` (`AOSP_EMU`)
 - Crash-loop 3/60s process-local; user/native persist emergency (`API`, host tests)
 - Diagnostics: redacted events, SAF export, 64KiB×4 ring (`API`)
 - Isolated AVD name `cenix-ci-$RUN_ID`; refuse shared `cenix-api35` unless `CENIX_ALLOW_SHARED_AVD=1`

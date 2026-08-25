@@ -10,18 +10,18 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | --- | --- | --- | --- |
 | home-register | INSTALLABLE_PUBLIC | done | API |
 | home-role | ROLE_HOME_GATED | done | API |
-| workspace | INSTALLABLE_PUBLIC | done-p1 | API |
-| hotseat | INSTALLABLE_PUBLIC | done-p1 | API |
+| workspace | INSTALLABLE_PUBLIC | done-p1 | API,AOSP_EMU |
+| hotseat | INSTALLABLE_PUBLIC | done-p1 | API,AOSP_EMU |
 | all-apps | INSTALLABLE_PUBLIC | stacked-p1; shell-p1.5 | API |
 | search | INSTALLABLE_PUBLIC | done | API |
 | folders | INSTALLABLE_PUBLIC | later | SRC |
-| drag-drop | INSTALLABLE_PUBLIC | internal-done-p1 | API |
+| drag-drop | INSTALLABLE_PUBLIC | internal-done-p1 | API,AOSP_EMU |
 | widgets | USER_AUTHORIZED | later | API |
 | widget-restore | USER_AUTHORIZED | later | SRC |
 | pinned-shortcuts | USER_AUTHORIZED | later | API |
 | pin-widget-confirm | USER_AUTHORIZED | later | API |
 | notification-dots | USER_AUTHORIZED | later | API |
-| package-events | INSTALLABLE_PUBLIC | done | API |
+| package-events | INSTALLABLE_PUBLIC | done | API,AOSP_EMU |
 | session-commit | INSTALLABLE_PUBLIC | later | SRC |
 | disabled-suspended | INSTALLABLE_PUBLIC | partial | API |
 | work-profiles | INSTALLABLE_PUBLIC | partial | API |

@@ -36,7 +36,17 @@ That script:
 9. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
 10. Installs a `-PomitNative` APK and checks emergency HOME search and launch
 
-Final P1 repeated evidence is recorded only after a clean committed source build. AOSP emulator evidence is never `GOS_DEV`.
+Final P1 evidence used clean commit `9fb79fbc505685a1566fcbd6f6c6d6a3d3769b42`, AOSP API 35 default x86_64 image revision 2, and explicit emulator ports.
+
+| Run | AVD | Serial | Duration | Debug APK SHA-256 | Evidence |
+| --- | --- | --- | ---: | --- | --- |
+| 1 | `cenix-ci-p1-final-1` | `emulator-5600` | 342s | `582994b0017b4ec4ba73497fc3f9a6f8bc60a61866c1c9f5211925004e95bc25` | `AOSP_EMU` |
+| 2 | `cenix-ci-p1-final-2` | `emulator-5602` | 274s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
+| 3 | `cenix-ci-p1-final-3` | `emulator-5604` | 271s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
+| 4 | `cenix-ci-p1-final-4` | `emulator-5606` | 321s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
+| 5 | `cenix-ci-p1-final-5` | `emulator-5608` | 258s | `109288a90a292c9c4a5e3f511ed8ba3fcc77dd8f40a58bbcf3ebd21f765fea0c` | `AOSP_EMU` |
+
+Artifacts are under `/tmp/cenix-p1-final/run-{1..5}`. AOSP emulator evidence is never `GOS_DEV`.
 
 If the image, emulator binary, or boot fails, the script writes `docs/emulator-blocker.md` and exits non-zero.
 
