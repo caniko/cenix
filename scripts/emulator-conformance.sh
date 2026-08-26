@@ -897,6 +897,26 @@ wait_ui 'text="Widget update 1"' 1
 wait_ui 'text="Row 1, update 1"' 1
 pass "widgets: provider click, RemoteViews update, and collection refresh are delivered"
 
+long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
+wait_ui 'content-desc="Resize right"' 1
+ui="$(dump_ui)"
+read -r wx1 _ wx2 _ < <(read_bounds "$ui" 'content-desc="Fixture collection widget, page 1')
+read -r rx1 ry1 rx2 ry2 < <(read_bounds "$ui" 'content-desc="Resize right"')
+resize_dx=80
+(( workspace_rtl == 1 )) && resize_dx=-80
+"$adb" -s "$serial" shell input swipe $(((rx1 + rx2) / 2)) $(((ry1 + ry2) / 2)) $(((rx1 + rx2) / 2 + resize_dx)) $(((ry1 + ry2) / 2)) 600
+sleep 2
+ui="$(dump_ui)"
+read -r resized_x1 _ resized_x2 _ < <(read_bounds "$ui" 'content-desc="Fixture collection widget, page 1')
+(( resized_x2 - resized_x1 > wx2 - wx1 )) || fail "widget resize did not expand"
+long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
+wait_ui 'content-desc="Resize right"' 1
+ui="$(dump_ui)"
+read -r rx1 ry1 rx2 ry2 < <(read_bounds "$ui" 'content-desc="Resize right"')
+"$adb" -s "$serial" shell input swipe $(((rx1 + rx2) / 2)) $(((ry1 + ry2) / 2)) $(((rx1 + rx2) / 2 - resize_dx)) $(((ry1 + ry2) / 2)) 600
+sleep 2
+pass "widgets: horizontal resize follows logical grid direction"
+
 ui="$(dump_ui)"
 read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
 "$adb" -s "$serial" shell input swipe $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) $(((wx1 + wx2) / 2)) $(((wy1 + wy2) / 2)) 800
@@ -911,17 +931,11 @@ widget_count="$(grep -o 'text="Widget update 1"' <<<"$ui" | wc -l)"
 pass "widgets: duplicate provider instances remain independent launcher items"
 
 long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
-wait_ui 'content-desc="Resize right"' 1
-ui="$(dump_ui)"
-read -r rx1 ry1 rx2 ry2 < <(read_bounds "$ui" 'content-desc="Resize right"')
-drag_coordinates $(((rx1 + rx2) / 2)) $(((ry1 + ry2) / 2)) $(((rx1 + rx2) / 2 + 80)) $(((ry1 + ry2) / 2))
-sleep 2
-long_press_pattern_top 'content-desc="Fixture collection widget, page 1'
 wait_ui 'content-desc="Move"' 1
 drag_from_to 'content-desc="Move"' 'content-desc="Empty, page 1'
 sleep 2
 wait_ui 'text="Widget update 1"' 1
-pass "widgets: long-press controls resize and move through snapped reducer commands"
+pass "widgets: long-press controls move through snapped reducer commands"
 
 ui="$(dump_ui)"
 read -r wx1 wy1 wx2 wy2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')

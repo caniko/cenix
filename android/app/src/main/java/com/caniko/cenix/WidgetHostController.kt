@@ -162,7 +162,7 @@ class WidgetHostController(
         val vertical = info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0
         if ((edge == WidgetResizeEdge.LEFT || edge == WidgetResizeEdge.RIGHT) && !horizontal) return
         if ((edge == WidgetResizeEdge.TOP || edge == WidgetResizeEdge.BOTTOM) && !vertical) return
-        val dx = (deltaX / cellWidth).roundToInt()
+        val dx = ((if (layout.layoutDirection == View.LAYOUT_DIRECTION_RTL) -deltaX else deltaX) / cellWidth).roundToInt()
         val dy = (deltaY / cellHeight).roundToInt()
         val next = when (edge) {
             WidgetResizeEdge.LEFT -> CellRect(item.cell.cellX + dx, item.cell.cellY, item.cell.spanX - dx, item.cell.spanY)

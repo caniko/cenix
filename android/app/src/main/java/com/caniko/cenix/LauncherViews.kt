@@ -375,13 +375,18 @@ class WidgetFrame(context: Context) : FrameLayout(context) {
         controls.addView(Button(context).apply {
             this.text = text
             contentDescription = description
-            setOnTouchListener { _, event ->
+            setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        view.parent.requestDisallowInterceptTouchEvent(true)
                         downX = event.rawX
                         downY = event.rawY
                     }
-                    MotionEvent.ACTION_UP -> onResize(edge, event.rawX - downX, event.rawY - downY)
+                    MotionEvent.ACTION_UP -> {
+                        view.parent.requestDisallowInterceptTouchEvent(false)
+                        onResize(edge, event.rawX - downX, event.rawY - downY)
+                    }
+                    MotionEvent.ACTION_CANCEL -> view.parent.requestDisallowInterceptTouchEvent(false)
                 }
                 true
             }
