@@ -42,6 +42,45 @@ pub struct WidgetProviderId {
     pub profile_id: u64,
 }
 
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum ProfileKind {
+    Personal,
+    Work,
+    Private,
+    Other,
+}
+
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum ProfileAccess {
+    Available,
+    Quiet,
+    Locked,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct ProfileDescriptor {
+    pub profile_id: u64,
+    pub kind: ProfileKind,
+    pub access: ProfileAccess,
+}
+
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum ProfileSurface {
+    AllApps,
+    Search,
+    Workspace,
+    Shortcut,
+    Widget,
+}
+
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum ProfileItemProjection {
+    Visible,
+    Placeholder,
+    Hidden,
+}
+
 #[derive(Clone, Copy, uniffi::Record)]
 pub struct GridSpec {
     pub cols: i32,
@@ -222,10 +261,16 @@ pub enum WorkspaceCommand {
     DropMissing {
         expected_generation: u64,
         live: Vec<ComponentId>,
+        authoritative_profile_ids: Vec<u64>,
     },
     ReconcileShortcuts {
         expected_generation: u64,
         live: Vec<ShortcutId>,
+        authoritative_profile_ids: Vec<u64>,
+    },
+    RemoveProfiles {
+        expected_generation: u64,
+        profile_ids: Vec<u64>,
     },
     Cancelled {
         expected_generation: u64,
@@ -359,6 +404,14 @@ pub fn filter_and_order_apps(
 }
 
 #[uniffi::export]
+pub fn project_profile_item(
+    profile: ProfileDescriptor,
+    surface: ProfileSurface,
+) -> ProfileItemProjection {
+    core::project_profile_item(profile.into(), surface.into()).into()
+}
+
+#[uniffi::export]
 pub fn apply_workspace_command(
     snapshot: WorkspaceSnapshot,
     command: WorkspaceCommand,
@@ -423,6 +476,48 @@ impl From<core::WidgetProviderId> for WidgetProviderId {
             package: value.package,
             class: value.class,
             profile_id: value.profile_id,
+        }
+    }
+}
+
+impl From<ProfileDescriptor> for core::ProfileDescriptor {
+    fn from(value: ProfileDescriptor) -> Self {
+        Self {
+            profile_id: value.profile_id,
+            kind: match value.kind {
+                ProfileKind::Personal => core::ProfileKind::Personal,
+                ProfileKind::Work => core::ProfileKind::Work,
+                ProfileKind::Private => core::ProfileKind::Private,
+                ProfileKind::Other => core::ProfileKind::Other,
+            },
+            access: match value.access {
+                ProfileAccess::Available => core::ProfileAccess::Available,
+                ProfileAccess::Quiet => core::ProfileAccess::Quiet,
+                ProfileAccess::Locked => core::ProfileAccess::Locked,
+                ProfileAccess::Unavailable => core::ProfileAccess::Unavailable,
+            },
+        }
+    }
+}
+
+impl From<ProfileSurface> for core::ProfileSurface {
+    fn from(value: ProfileSurface) -> Self {
+        match value {
+            ProfileSurface::AllApps => Self::AllApps,
+            ProfileSurface::Search => Self::Search,
+            ProfileSurface::Workspace => Self::Workspace,
+            ProfileSurface::Shortcut => Self::Shortcut,
+            ProfileSurface::Widget => Self::Widget,
+        }
+    }
+}
+
+impl From<core::ProfileItemProjection> for ProfileItemProjection {
+    fn from(value: core::ProfileItemProjection) -> Self {
+        match value {
+            core::ProfileItemProjection::Visible => Self::Visible,
+            core::ProfileItemProjection::Placeholder => Self::Placeholder,
+            core::ProfileItemProjection::Hidden => Self::Hidden,
         }
     }
 }
@@ -812,16 +907,27 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
             WorkspaceCommand::DropMissing {
                 expected_generation,
                 live,
+                authoritative_profile_ids,
             } => Self::DropMissing {
                 expected_generation,
                 live: live.into_iter().map(Into::into).collect(),
+                authoritative_profile_ids,
             },
             WorkspaceCommand::ReconcileShortcuts {
                 expected_generation,
                 live,
+                authoritative_profile_ids,
             } => Self::ReconcileShortcuts {
                 expected_generation,
                 live: live.into_iter().map(Into::into).collect(),
+                authoritative_profile_ids,
+            },
+            WorkspaceCommand::RemoveProfiles {
+                expected_generation,
+                profile_ids,
+            } => Self::RemoveProfiles {
+                expected_generation,
+                profile_ids,
             },
             WorkspaceCommand::Cancelled {
                 expected_generation,

@@ -10,7 +10,6 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.UserHandle
-import android.os.UserManager
 import android.util.SizeF
 import android.view.Gravity
 import android.view.View
@@ -41,9 +40,10 @@ class WidgetHostController(
     private val snapshot: () -> WorkspaceSnapshot,
     private val currentLayout: () -> CellLayout?,
     private val onCommitted: (WorkspaceSnapshot) -> Unit,
+    private val profileAvailable: (Long) -> Boolean,
+    private val profileUser: (Long) -> UserHandle?,
 ) {
     private val manager = activity.getSystemService(AppWidgetManager::class.java)
-    private val users = activity.getSystemService(UserManager::class.java)
     private val host = object : AppWidgetHost(activity, HOST_ID) {
         override fun onCreateView(context: android.content.Context, appWidgetId: Int, appWidget: AppWidgetProviderInfo) =
             AppWidgetHostView(context)
@@ -115,6 +115,10 @@ class WidgetHostController(
     }
 
     fun view(itemId: ULong, binding: WidgetItemEntity?, pageId: ULong, cell: CellRect, onRemove: () -> Unit): View {
+        if (binding != null && !profileAvailable(binding.profileId)) {
+            views.remove(itemId.toLong())?.let { (it.parent as? ViewGroup)?.removeView(it) }
+            return placeholder(itemId, binding, pageId, cell, onRemove)
+        }
         val info = binding?.appWidgetId?.let(manager::getAppWidgetInfo)
         if (binding == null || info == null || (activity.application as CenixApplication).emergency) {
             return placeholder(itemId, binding, pageId, cell, onRemove)
@@ -183,6 +187,7 @@ class WidgetHostController(
     }
 
     fun rebind(itemId: ULong, binding: WidgetItemEntity, pageId: ULong, cell: CellRect) {
+        if (!profileAvailable(binding.profileId)) return
         val user = user(binding.profileId) ?: return
         val provider = manager.getInstalledProvidersForProfile(user)
             .firstOrNull { it.provider == ComponentName(binding.packageName, binding.className) } ?: return
@@ -200,11 +205,23 @@ class WidgetHostController(
         views.clear()
     }
 
+    fun invalidateProfiles(profileIds: Set<Long>, bindings: Map<Long, WidgetItemEntity>) {
+        bindings.filterValues { it.profileId in profileIds }.keys.forEach { itemId ->
+            views.remove(itemId)?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        }
+        if (profileIds.isNotEmpty()) CenixExecutors.io {
+            database()?.dao()?.pendingWidgetOperations()
+                ?.filter { it.profileId in profileIds }
+                ?.forEach { rollback(it, false) }
+        }
+    }
+
     private fun beginAdd(data: Intent) {
         val packageName = data.getStringExtra(WidgetPickerActivity.EXTRA_PACKAGE) ?: return
         val className = data.getStringExtra(WidgetPickerActivity.EXTRA_CLASS) ?: return
         val profileId = data.getLongExtra(WidgetPickerActivity.EXTRA_PROFILE, -1)
         val pageId = data.getLongExtra(WidgetPickerActivity.EXTRA_PAGE, -1)
+        if (!profileAvailable(profileId)) return
         val user = user(profileId) ?: return
         val provider = manager.getInstalledProvidersForProfile(user)
             .firstOrNull { it.provider == ComponentName(packageName, className) } ?: return
@@ -362,11 +379,12 @@ class WidgetHostController(
 
     private fun validBinding(operation: PendingWidgetOperationEntity): Boolean {
         val info = operation.appWidgetId?.let(manager::getAppWidgetInfo) ?: return false
-        return info.provider == ComponentName(operation.packageName, operation.className) && info.profile == user(operation.profileId)
+        return profileAvailable(operation.profileId) &&
+            info.provider == ComponentName(operation.packageName, operation.className) &&
+            info.profile == user(operation.profileId)
     }
 
-    private fun user(profileId: Long): UserHandle? =
-        users.userProfiles.firstOrNull { users.getSerialNumberForUser(it) == profileId }
+    private fun user(profileId: Long): UserHandle? = profileUser(profileId)
 
     private fun defaultSpan(info: AppWidgetProviderInfo, state: WorkspaceSnapshot): Pair<Int, Int> {
         val layout = currentLayout()
@@ -428,7 +446,7 @@ class WidgetHostController(
         setBackgroundColor(Color.argb(28, 127, 127, 127))
         contentDescription = activity.getString(R.string.widget_unavailable)
         addView(TextView(activity).apply { text = activity.getString(R.string.widget_unavailable) })
-        if (binding != null && user(binding.profileId) != null) addView(Button(activity).apply {
+        if (binding != null && profileAvailable(binding.profileId) && user(binding.profileId) != null) addView(Button(activity).apply {
             text = activity.getString(R.string.rebind_widget)
             setOnClickListener { rebind(itemId, binding, pageId, cell) }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))

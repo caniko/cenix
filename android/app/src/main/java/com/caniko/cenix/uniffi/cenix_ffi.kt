@@ -719,6 +719,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -741,6 +743,8 @@ fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
 fun uniffi_cenix_ffi_checksum_func_init_diagnostics(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_native_panicked(
+): Short
+fun uniffi_cenix_ffi_checksum_func_project_profile_item(
 ): Short
 fun ffi_cenix_ffi_uniffi_contract_version(
 ): Int
@@ -795,6 +799,8 @@ fun uniffi_cenix_ffi_fn_func_init_diagnostics(`config`: RustBuffer.ByValue,uniff
 ): Unit
 fun uniffi_cenix_ffi_fn_func_native_panicked(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
+fun uniffi_cenix_ffi_fn_func_project_profile_item(`profile`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
 fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -931,6 +937,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cenix_ffi_checksum_func_native_panicked() != 51392.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_project_profile_item() != 373.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1455,6 +1464,42 @@ public object FfiConverterTypeGridSpec: FfiConverterRustBuffer<GridSpec> {
 
 
 
+data class ProfileDescriptor (
+    var `profileId`: kotlin.ULong,
+    var `kind`: ProfileKind,
+    var `access`: ProfileAccess
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileDescriptor: FfiConverterRustBuffer<ProfileDescriptor> {
+    override fun read(buf: ByteBuffer): ProfileDescriptor {
+        return ProfileDescriptor(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeProfileKind.read(buf),
+            FfiConverterTypeProfileAccess.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileDescriptor) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterTypeProfileKind.allocationSize(value.`kind`) +
+            FfiConverterTypeProfileAccess.allocationSize(value.`access`)
+    )
+
+    override fun write(value: ProfileDescriptor, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterTypeProfileKind.write(value.`kind`, buf)
+            FfiConverterTypeProfileAccess.write(value.`access`, buf)
+    }
+}
+
+
+
 data class ShortcutId (
     var `package`: kotlin.String,
     var `shortcutId`: kotlin.String,
@@ -1947,6 +1992,134 @@ public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
 
 
 
+
+enum class ProfileAccess {
+
+    AVAILABLE,
+    QUIET,
+    LOCKED,
+    UNAVAILABLE;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileAccess: FfiConverterRustBuffer<ProfileAccess> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileAccess.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileAccess) = 4UL
+
+    override fun write(value: ProfileAccess, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileItemProjection {
+
+    VISIBLE,
+    PLACEHOLDER,
+    HIDDEN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileItemProjection: FfiConverterRustBuffer<ProfileItemProjection> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileItemProjection.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileItemProjection) = 4UL
+
+    override fun write(value: ProfileItemProjection, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileKind {
+
+    PERSONAL,
+    WORK,
+    PRIVATE,
+    OTHER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileKind: FfiConverterRustBuffer<ProfileKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileKind) = 4UL
+
+    override fun write(value: ProfileKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileSurface {
+
+    ALL_APPS,
+    SEARCH,
+    WORKSPACE,
+    SHORTCUT,
+    WIDGET;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileSurface: FfiConverterRustBuffer<ProfileSurface> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileSurface.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileSurface) = 4UL
+
+    override fun write(value: ProfileSurface, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 sealed class WorkspaceCommand {
 
     data class PlaceFromAllApps(
@@ -2098,13 +2271,21 @@ sealed class WorkspaceCommand {
 
     data class DropMissing(
         val `expectedGeneration`: kotlin.ULong,
-        val `live`: List<ComponentId>) : WorkspaceCommand() {
+        val `live`: List<ComponentId>,
+        val `authoritativeProfileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
         companion object
     }
 
     data class ReconcileShortcuts(
         val `expectedGeneration`: kotlin.ULong,
-        val `live`: List<ShortcutId>) : WorkspaceCommand() {
+        val `live`: List<ShortcutId>,
+        val `authoritativeProfileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveProfiles(
+        val `expectedGeneration`: kotlin.ULong,
+        val `profileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
         companion object
     }
 
@@ -2236,12 +2417,18 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
             20 -> WorkspaceCommand.DropMissing(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceTypeComponentId.read(buf),
+                FfiConverterSequenceULong.read(buf),
                 )
             21 -> WorkspaceCommand.ReconcileShortcuts(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceTypeShortcutId.read(buf),
+                FfiConverterSequenceULong.read(buf),
                 )
-            22 -> WorkspaceCommand.Cancelled(
+            22 -> WorkspaceCommand.RemoveProfiles(
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceULong.read(buf),
+                )
+            23 -> WorkspaceCommand.Cancelled(
                 FfiConverterULong.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
@@ -2440,6 +2627,7 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 4UL
                 + FfiConverterULong.allocationSize(value.`expectedGeneration`)
                 + FfiConverterSequenceTypeComponentId.allocationSize(value.`live`)
+                + FfiConverterSequenceULong.allocationSize(value.`authoritativeProfileIds`)
             )
         }
         is WorkspaceCommand.ReconcileShortcuts -> {
@@ -2448,6 +2636,15 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 4UL
                 + FfiConverterULong.allocationSize(value.`expectedGeneration`)
                 + FfiConverterSequenceTypeShortcutId.allocationSize(value.`live`)
+                + FfiConverterSequenceULong.allocationSize(value.`authoritativeProfileIds`)
+            )
+        }
+        is WorkspaceCommand.RemoveProfiles -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterSequenceULong.allocationSize(value.`profileIds`)
             )
         }
         is WorkspaceCommand.Cancelled -> {
@@ -2612,16 +2809,24 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 buf.putInt(20)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterSequenceTypeComponentId.write(value.`live`, buf)
+                FfiConverterSequenceULong.write(value.`authoritativeProfileIds`, buf)
                 Unit
             }
             is WorkspaceCommand.ReconcileShortcuts -> {
                 buf.putInt(21)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterSequenceTypeShortcutId.write(value.`live`, buf)
+                FfiConverterSequenceULong.write(value.`authoritativeProfileIds`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveProfiles -> {
+                buf.putInt(22)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterSequenceULong.write(value.`profileIds`, buf)
                 Unit
             }
             is WorkspaceCommand.Cancelled -> {
-                buf.putInt(22)
+                buf.putInt(23)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 Unit
             }
@@ -3132,6 +3337,15 @@ public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_native_panicked(
         _status)
+}
+    )
+    }
+
+ fun `projectProfileItem`(`profile`: ProfileDescriptor, `surface`: ProfileSurface): ProfileItemProjection {
+            return FfiConverterTypeProfileItemProjection.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_project_profile_item(
+        FfiConverterTypeProfileDescriptor.lower(`profile`),FfiConverterTypeProfileSurface.lower(`surface`),_status)
 }
     )
     }

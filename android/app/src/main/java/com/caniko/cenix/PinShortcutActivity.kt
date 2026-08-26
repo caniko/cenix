@@ -2,7 +2,6 @@ package com.caniko.cenix
 
 import android.content.pm.LauncherApps
 import android.os.Bundle
-import android.os.UserManager
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -12,16 +11,23 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.ShortcutId
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileKind
 
 class PinShortcutActivity : AppCompatActivity() {
     private var request: LauncherApps.PinItemRequest? = null
+    private lateinit var profiles: ProfileController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        profiles = ProfileController(this).also { it.refresh() }
         request = intent.getParcelableExtra(LauncherApps.EXTRA_PIN_ITEM_REQUEST, LauncherApps.PinItemRequest::class.java)
             ?.takeIf { it.requestType == LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT && it.isValid }
         val shortcut = request?.shortcutInfo
-        if (shortcut == null) {
+        val profile = shortcut?.let { profiles.profile(it.userHandle) }
+        if (shortcut == null || profile?.descriptor?.access != ProfileAccess.AVAILABLE ||
+            profile.descriptor.kind == ProfileKind.PRIVATE
+        ) {
             finish()
             return
         }
@@ -60,8 +66,12 @@ class PinShortcutActivity : AppCompatActivity() {
         CenixExecutors.io {
             if (!application.awaitReady() || application.emergency) return@io rejected()
             val database = application.database ?: return@io rejected()
-            val serial = getSystemService(UserManager::class.java).getSerialNumberForUser(info.userHandle)
-            if (serial < 0) return@io rejected()
+            profiles.refresh()
+            val profile = profiles.profile(info.userHandle)
+            if (profile?.descriptor?.access != ProfileAccess.AVAILABLE || profile.descriptor.kind == ProfileKind.PRIVATE) {
+                return@io rejected()
+            }
+            val serial = profile.descriptor.profileId.toLong()
             val controller = WorkspaceController(LauncherRepository(database)) { !application.emergency }
             val state = controller.snapshot()
             val destination = state.pages.asSequence().flatMap { page ->

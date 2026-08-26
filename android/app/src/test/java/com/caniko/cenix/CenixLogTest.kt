@@ -33,4 +33,27 @@ class CenixLogTest {
         assertEquals("Fixture", CenixLog.sanitize("label", "Fixture"))
         CenixLog.redact = true
     }
+
+    @Test
+    fun releaseProfileEventsKeepCategoriesAndRedactIdentities() {
+        CenixLog.redact = true
+        val line = CenixLog.format(
+            EventId.PRIVATE_LOCKED,
+            Severity.INFO,
+            mapOf(
+                "kind" to "PRIVATE",
+                "state" to "LOCKED",
+                "profileSerial" to "42",
+                "userId" to "11",
+                "shortcutId" to "private-secret",
+                "widgetProvider" to "private.widget/.Provider",
+            ),
+        )
+        assertTrue(line.contains("kind=PRIVATE"))
+        assertTrue(line.contains("state=LOCKED"))
+        assertFalse(line.contains("42"))
+        assertFalse(line.contains("userId=11"))
+        assertFalse(line.contains("private-secret"))
+        assertFalse(line.contains("private.widget"))
+    }
 }

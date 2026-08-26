@@ -7,6 +7,15 @@ enum class EventId {
     ROOM_OPEN,
     CATALOG_REFRESH,
     PACKAGE_CALLBACK,
+    PROFILE_DISCOVERY,
+    PROFILE_AVAILABLE,
+    PROFILE_UNAVAILABLE,
+    PROFILE_QUIET,
+    PROFILE_ACTIVE,
+    PRIVATE_LOCKED,
+    PRIVATE_UNLOCK_REQUEST,
+    PROFILE_UI_INVALIDATED,
+    PROFILE_OPERATION_RESULT,
     WORKSPACE_TX,
     WORKSPACE_SNAPSHOT,
     WORKSPACE_COMMAND,
@@ -37,7 +46,10 @@ object CenixLog {
     @Volatile
     var redact: Boolean = true
 
-    private val sensitive = listOf("package", "class", "label", "query", "profile", "component", "title")
+    private val sensitive = listOf(
+        "package", "class", "label", "query", "profile", "component", "title",
+        "serial", "user", "shortcut", "widget", "provider",
+    )
 
     fun event(id: EventId, severity: Severity, fields: Map<String, String> = emptyMap()) {
         val line = format(id, severity, fields)

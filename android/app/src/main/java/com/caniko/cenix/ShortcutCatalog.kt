@@ -21,13 +21,18 @@ data class LauncherShortcut(
     val rank: Int,
 )
 
-class ShortcutCatalog(context: Context, private val apps: AppCatalog) {
+class ShortcutCatalog(
+    context: Context,
+    private val apps: AppCatalog,
+    private val profiles: ProfileController,
+) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val packageManager = context.packageManager
     private val density = context.resources.displayMetrics.densityDpi
     private val pinned = mutableMapOf<Pair<String, ULong>, List<String>>()
 
     fun published(app: LaunchableApp): List<LauncherShortcut> {
+        if (!profiles.isAvailable(app.profileId)) return emptyList()
         val user = app.user ?: apps.userForSerial(app.profileId) ?: return emptyList()
         val query = LauncherApps.ShortcutQuery()
             .setPackage(app.packageName)
@@ -41,6 +46,7 @@ class ShortcutCatalog(context: Context, private val apps: AppCatalog) {
     fun resolve(ids: Collection<ShortcutId>): Map<ShortcutId, LauncherShortcut> = ids
         .groupBy { it.`package` to it.profileId }
         .flatMap { (key, requested) ->
+            if (!profiles.isAvailable(key.second.toLong())) return@flatMap emptyList()
             val user = apps.userForSerial(key.second.toLong()) ?: return@flatMap emptyList()
             val query = LauncherApps.ShortcutQuery()
                 .setPackage(key.first)
@@ -50,7 +56,7 @@ class ShortcutCatalog(context: Context, private val apps: AppCatalog) {
         }.associateBy { it.id }
 
     fun launch(shortcut: LauncherShortcut, source: Rect? = null): Boolean {
-        if (!shortcut.enabled) return false
+        if (!shortcut.enabled || !profiles.isAvailable(shortcut.id.profileId.toLong())) return false
         return try {
             launcherApps.startShortcut(
                 shortcut.id.`package`,
@@ -71,6 +77,7 @@ class ShortcutCatalog(context: Context, private val apps: AppCatalog) {
         (pinned.keys + desired.keys).forEach { key ->
             val shortcutIds = desired[key].orEmpty()
             if (pinned[key] == shortcutIds) return@forEach
+            if (!profiles.isAvailable(key.second.toLong())) return@forEach
             apps.userForSerial(key.second.toLong())?.let { user ->
                 try {
                     launcherApps.pinShortcuts(key.first, shortcutIds, user)

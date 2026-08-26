@@ -5,6 +5,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.caniko.cenix.uniffi.ProfileKind
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -15,6 +16,7 @@ class EmergencyFilterTest {
         packageName = pkg,
         className = cls,
         profileId = profile,
+        profileKind = if (profile == 0L) ProfileKind.PERSONAL else ProfileKind.OTHER,
         label = label,
         normalizedLabel = EmergencyFilter.normalize(label),
         user = user,

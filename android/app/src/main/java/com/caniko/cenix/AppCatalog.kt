@@ -3,26 +3,28 @@ package com.caniko.cenix
 import android.content.Context
 import android.content.pm.LauncherApps
 import android.os.UserHandle
-import android.os.UserManager
+import com.caniko.cenix.uniffi.ProfileAccess
 
-class AppCatalog(context: Context) {
+class AppCatalog(context: Context, private val profiles: ProfileController) {
     private val selfPackage = context.packageName
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
-    private val userManager = context.getSystemService(UserManager::class.java)
 
-    fun profiles(): List<UserHandle> = launcherApps.profiles
+    fun visibleProfiles(): Set<Long> = profiles.profiles()
+        .filter { it.descriptor.access == ProfileAccess.AVAILABLE }
+        .map { it.descriptor.profileId.toLong() }
+        .toSet()
 
-    fun serial(user: UserHandle): Long = userManager.getSerialNumberForUser(user)
+    fun userForSerial(serial: Long): UserHandle? = profiles.userForSerial(serial)
 
-    fun userForSerial(serial: Long): UserHandle? = userManager.getUserForSerialNumber(serial)
-
-    fun visibleProfiles(): Set<Long> = profiles().map(::serial).toSet()
-
-    fun load(): List<LaunchableApp> =
-        profiles().flatMap { user ->
-            launcherApps.getActivityList(null, user)
-                .filter { it.componentName.packageName != selfPackage }
-                .map { LaunchableApp.from(it, serial(user)) }
+    fun load(snapshot: List<AndroidProfile> = profiles.profiles()): List<LaunchableApp> =
+        snapshot.filter { it.descriptor.access == ProfileAccess.AVAILABLE }.flatMap { profile ->
+            try {
+                launcherApps.getActivityList(null, profile.user)
+                    .filter { it.componentName.packageName != selfPackage }
+                    .map { LaunchableApp.from(it, profile.descriptor) }
+            } catch (_: RuntimeException) {
+                emptyList()
+            }
         }
 
     fun register(callback: LauncherApps.Callback) {

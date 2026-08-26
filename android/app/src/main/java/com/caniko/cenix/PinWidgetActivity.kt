@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.os.Bundle
-import android.os.UserManager
 import android.util.SizeF
 import android.view.Gravity
 import android.view.ViewGroup
@@ -21,6 +20,8 @@ import com.caniko.cenix.db.WidgetOperationPhase
 import com.caniko.cenix.uniffi.CellRect
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.WidgetProviderId
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileKind
 import kotlin.math.ceil
 
 @Suppress("DEPRECATION")
@@ -28,13 +29,18 @@ class PinWidgetActivity : AppCompatActivity() {
     private val host by lazy { AppWidgetHost(this, WidgetHostController.HOST_ID) }
     private val manager by lazy { getSystemService(AppWidgetManager::class.java) }
     private var request: LauncherApps.PinItemRequest? = null
+    private lateinit var profiles: ProfileController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        profiles = ProfileController(this).also { it.refresh() }
         request = intent.getParcelableExtra(LauncherApps.EXTRA_PIN_ITEM_REQUEST, LauncherApps.PinItemRequest::class.java)
             ?.takeIf { it.requestType == LauncherApps.PinItemRequest.REQUEST_TYPE_APPWIDGET && it.isValid }
         val info = request?.getAppWidgetProviderInfo(this)
-        if (info == null) return finish()
+        val profile = info?.let { profiles.profile(it.profile) }
+        if (info == null || profile?.descriptor?.access != ProfileAccess.AVAILABLE ||
+            profile.descriptor.kind == ProfileKind.PRIVATE
+        ) return finish()
         setContentView(LinearLayout(this).apply {
             id = R.id.pin_confirmation
             orientation = LinearLayout.VERTICAL
@@ -83,8 +89,12 @@ class PinWidgetActivity : AppCompatActivity() {
             val database = app.database ?: return@io rejected()
             val controller = WorkspaceController(LauncherRepository(database)) { !app.emergency }
             val state = controller.snapshot()
-            val serial = getSystemService(UserManager::class.java).getSerialNumberForUser(info.profile)
-            if (serial < 0) return@io rejected()
+            profiles.refresh()
+            val profile = profiles.profile(info.profile)
+            if (profile?.descriptor?.access != ProfileAccess.AVAILABLE || profile.descriptor.kind == ProfileKind.PRIVATE) {
+                return@io rejected()
+            }
+            val serial = profile.descriptor.profileId.toLong()
             val cellWidth = (resources.displayMetrics.widthPixels / state.grid.cols).coerceAtLeast(1)
             val cellHeight = (resources.displayMetrics.heightPixels / state.grid.rows).coerceAtLeast(1)
             val spanX = (if (info.targetCellWidth > 0) info.targetCellWidth else ceil(info.minWidth.toDouble() / cellWidth).toInt())

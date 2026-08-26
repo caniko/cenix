@@ -201,10 +201,16 @@ pub enum WorkspaceCommand {
     DropMissing {
         expected_generation: u64,
         live: Vec<ComponentId>,
+        authoritative_profile_ids: Vec<u64>,
     },
     ReconcileShortcuts {
         expected_generation: u64,
         live: Vec<ShortcutId>,
+        authoritative_profile_ids: Vec<u64>,
+    },
+    RemoveProfiles {
+        expected_generation: u64,
+        profile_ids: Vec<u64>,
     },
     Cancelled {
         expected_generation: u64,
@@ -323,6 +329,10 @@ impl WorkspaceCommand {
                 ..
             }
             | Self::ReconcileShortcuts {
+                expected_generation,
+                ..
+            }
+            | Self::RemoveProfiles {
                 expected_generation,
                 ..
             }
@@ -474,19 +484,33 @@ pub fn apply_workspace_command(
             snapshot.grid = grid;
             validate_snapshot(&snapshot)?;
         }
-        WorkspaceCommand::DropMissing { live, .. } => {
+        WorkspaceCommand::DropMissing {
+            live,
+            authoritative_profile_ids,
+            ..
+        } => {
             for component in &live {
                 validate_component(component)?;
             }
+            let authoritative = validate_profile_ids(authoritative_profile_ids)?;
             let live: HashSet<_> = live.into_iter().collect();
-            drop_missing(&mut snapshot, &live)?;
+            drop_missing(&mut snapshot, &live, &authoritative)?;
         }
-        WorkspaceCommand::ReconcileShortcuts { live, .. } => {
+        WorkspaceCommand::ReconcileShortcuts {
+            live,
+            authoritative_profile_ids,
+            ..
+        } => {
             for shortcut in &live {
                 validate_shortcut(shortcut)?;
             }
+            let authoritative = validate_profile_ids(authoritative_profile_ids)?;
             let live: HashSet<_> = live.into_iter().collect();
-            reconcile_shortcuts(&mut snapshot, &live)?;
+            reconcile_shortcuts(&mut snapshot, &live, &authoritative)?;
+        }
+        WorkspaceCommand::RemoveProfiles { profile_ids, .. } => {
+            let removed = validate_profile_ids(profile_ids)?;
+            remove_profiles(&mut snapshot, &removed)?;
         }
         WorkspaceCommand::Cancelled { .. } => {}
     }
@@ -1084,14 +1108,19 @@ fn dissolve_if_needed(
 fn drop_missing(
     snapshot: &mut WorkspaceSnapshot,
     live: &HashSet<ComponentId>,
+    authoritative: &HashSet<u64>,
 ) -> Result<(), WorkspaceError> {
     snapshot.items.retain(|item| match &item.payload {
-        ItemPayload::Application(component) => live.contains(component),
+        ItemPayload::Application(component) => {
+            !authoritative.contains(&component.profile_id) || live.contains(component)
+        }
         ItemPayload::Folder | ItemPayload::Shortcut(_) | ItemPayload::Widget(_) => true,
     });
     for folder in &mut snapshot.folders {
         folder.members.retain(|member| match &member.payload {
-            ItemPayload::Application(component) => live.contains(component),
+            ItemPayload::Application(component) => {
+                !authoritative.contains(&component.profile_id) || live.contains(component)
+            }
             ItemPayload::Shortcut(_) => true,
             ItemPayload::Folder | ItemPayload::Widget(_) => false,
         });
@@ -1112,14 +1141,19 @@ fn drop_missing(
 fn reconcile_shortcuts(
     snapshot: &mut WorkspaceSnapshot,
     live: &HashSet<ShortcutId>,
+    authoritative: &HashSet<u64>,
 ) -> Result<(), WorkspaceError> {
     snapshot.items.retain(|item| match &item.payload {
-        ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
+        ItemPayload::Shortcut(shortcut) => {
+            !authoritative.contains(&shortcut.profile_id) || live.contains(shortcut)
+        }
         ItemPayload::Application(_) | ItemPayload::Folder | ItemPayload::Widget(_) => true,
     });
     for folder in &mut snapshot.folders {
         folder.members.retain(|member| match &member.payload {
-            ItemPayload::Shortcut(shortcut) => live.contains(shortcut),
+            ItemPayload::Shortcut(shortcut) => {
+                !authoritative.contains(&shortcut.profile_id) || live.contains(shortcut)
+            }
             ItemPayload::Application(_) => true,
             ItemPayload::Folder | ItemPayload::Widget(_) => false,
         });
@@ -1135,6 +1169,58 @@ fn reconcile_shortcuts(
         dissolve_if_needed(snapshot, folder_id)?;
     }
     Ok(())
+}
+
+fn remove_profiles(
+    snapshot: &mut WorkspaceSnapshot,
+    removed: &HashSet<u64>,
+) -> Result<(), WorkspaceError> {
+    snapshot.items.retain(|item| {
+        item.payload
+            .profile_id()
+            .is_none_or(|profile_id| !removed.contains(&profile_id))
+    });
+    for folder in &mut snapshot.folders {
+        folder.members.retain(|member| {
+            member
+                .payload
+                .profile_id()
+                .is_none_or(|profile_id| !removed.contains(&profile_id))
+        });
+        normalize_members(&mut folder.members);
+    }
+    let dissolve: Vec<_> = snapshot
+        .folders
+        .iter()
+        .filter(|folder| folder.members.len() <= 1)
+        .map(|folder| folder.folder_id)
+        .collect();
+    for folder_id in dissolve {
+        dissolve_if_needed(snapshot, folder_id)?;
+    }
+    Ok(())
+}
+
+impl ItemPayload {
+    fn profile_id(&self) -> Option<u64> {
+        match self {
+            Self::Application(component) => Some(component.profile_id),
+            Self::Shortcut(shortcut) => Some(shortcut.profile_id),
+            Self::Widget(provider) => Some(provider.profile_id),
+            Self::Folder => None,
+        }
+    }
+}
+
+fn validate_profile_ids(profile_ids: Vec<u64>) -> Result<HashSet<u64>, WorkspaceError> {
+    if profile_ids.len() > crate::MAX_VISIBLE_PROFILES
+        || profile_ids
+            .iter()
+            .any(|profile_id| *profile_id > i64::MAX as u64)
+    {
+        return Err(WorkspaceError::InvalidProfile);
+    }
+    Ok(profile_ids.into_iter().collect())
 }
 
 fn remove_empty_page(snapshot: &mut WorkspaceSnapshot, page_id: u64) -> Result<(), WorkspaceError> {
@@ -1681,6 +1767,7 @@ mod tests {
             WorkspaceCommand::DropMissing {
                 expected_generation: 9,
                 live: vec![],
+                authoritative_profile_ids: vec![0],
             },
         )
         .unwrap();
@@ -1751,6 +1838,7 @@ mod tests {
             WorkspaceCommand::DropMissing {
                 expected_generation: 4,
                 live: vec![],
+                authoritative_profile_ids: vec![0],
             },
         )
         .unwrap();
@@ -2056,6 +2144,7 @@ mod tests {
             WorkspaceCommand::DropMissing {
                 expected_generation: 3,
                 live: vec![component("keep")],
+                authoritative_profile_ids: vec![0],
             },
         )
         .unwrap()
@@ -2064,6 +2153,60 @@ mod tests {
         assert!(state.folders.is_empty());
         assert_eq!(state.items[0].item_id, 1);
         assert_eq!(state.items[0].cell, CellRect::single(1, 0));
+    }
+
+    #[test]
+    fn inaccessible_profile_is_not_package_removal() {
+        let mut state = snapshot();
+        state.generation = 0;
+        for (item_id, profile_id, x) in [(1, 0, 0), (2, 1, 1)] {
+            state = apply_workspace_command(
+                state,
+                WorkspaceCommand::PlaceFromAllApps {
+                    expected_generation: item_id - 1,
+                    item_id,
+                    component: ComponentId {
+                        package: "com.example.same".into(),
+                        class: "Main".into(),
+                        profile_id,
+                    },
+                    page_id: 10,
+                    cell: CellRect::single(x, 0),
+                },
+            )
+            .unwrap()
+            .into();
+        }
+        let unchanged = apply_workspace_command(
+            state.clone(),
+            WorkspaceCommand::DropMissing {
+                expected_generation: 2,
+                live: vec![ComponentId {
+                    package: "com.example.same".into(),
+                    class: "Main".into(),
+                    profile_id: 0,
+                }],
+                authoritative_profile_ids: vec![0],
+            },
+        )
+        .unwrap();
+        assert_eq!(unchanged.generation, 2);
+        assert_eq!(unchanged.items.len(), 2);
+
+        let removed = apply_workspace_command(
+            unchanged.into(),
+            WorkspaceCommand::RemoveProfiles {
+                expected_generation: 2,
+                profile_ids: vec![1],
+            },
+        )
+        .unwrap();
+        assert_eq!(removed.generation, 3);
+        assert_eq!(removed.items.len(), 1);
+        assert!(matches!(
+            &removed.items[0].payload,
+            ItemPayload::Application(component) if component.profile_id == 0
+        ));
     }
 
     #[test]
@@ -2165,6 +2308,7 @@ mod tests {
             WorkspaceCommand::ReconcileShortcuts {
                 expected_generation: 4,
                 live: vec![shortcut("manifest")],
+                authoritative_profile_ids: vec![0],
             },
         )
         .unwrap()

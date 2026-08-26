@@ -13,6 +13,16 @@
     <string name="profile_work">Work</string>
     <string name="profile_private">Private</string>
     <string name="profile_other">Profile</string>
+    <string name="work_apps_paused">Work apps are paused</string>
+    <string name="work_apps_available">Work apps are available</string>
+    <string name="turn_work_on">Turn on work apps</string>
+    <string name="turn_work_off">Pause work apps</string>
+    <string name="private_space">Private space</string>
+    <string name="private_space_locked">Private space is locked</string>
+    <string name="private_space_available">Private space is unlocked</string>
+    <string name="unlock_private_space">Unlock</string>
+    <string name="lock_private_space">Lock</string>
+    <string name="profile_item_unavailable">Profile item unavailable</string>
     <string name="workspace">Workspace</string>
     <string name="workspace_empty">Empty</string>
     <string name="workspace_full">Workspace is full</string>

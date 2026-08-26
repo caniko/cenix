@@ -1,6 +1,7 @@
 package com.caniko.cenix
 
 import android.content.ComponentName
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.ApplicationInfo
@@ -32,6 +33,12 @@ import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.Folder
 import com.caniko.cenix.uniffi.FolderMember
 import com.caniko.cenix.uniffi.ItemPayload
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileDescriptor
+import com.caniko.cenix.uniffi.ProfileItemProjection
+import com.caniko.cenix.uniffi.ProfileKind
+import com.caniko.cenix.uniffi.ProfileSurface
+import com.caniko.cenix.uniffi.projectProfileItem
 import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
@@ -43,6 +50,8 @@ import kotlin.math.min
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
     private lateinit var catalog: AppCatalog
+    private lateinit var profiles: ProfileController
+    private lateinit var profileReceiver: BroadcastReceiver
     private lateinit var shortcutCatalog: ShortcutCatalog
     private lateinit var search: SearchController
     private lateinit var root: LauncherRoot
@@ -51,6 +60,16 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var emergencyOverlay: View
     private lateinit var searchField: EditText
     private lateinit var appList: AllAppsView
+    private lateinit var privateAppList: AllAppsView
+    private lateinit var profileTabs: View
+    private lateinit var personalTab: Button
+    private lateinit var workTab: Button
+    private lateinit var workProfileState: View
+    private lateinit var workProfileMessage: TextView
+    private lateinit var workProfileToggle: Button
+    private lateinit var privateSpaceContainer: View
+    private lateinit var privateSpaceState: TextView
+    private lateinit var privateSpaceToggle: Button
     private lateinit var dragLayer: DragLayer
     private lateinit var pager: WorkspacePager
     private lateinit var hotseat: HotseatView
@@ -63,6 +82,9 @@ class HomeActivity : AppCompatActivity() {
     private var selectedPageId: ULong? = null
     private val apps = mutableListOf<LaunchableApp>()
     private val visible = mutableListOf<LaunchableApp>()
+    private val privateVisible = mutableListOf<LaunchableApp>()
+    private var profileSnapshot = emptyList<AndroidProfile>()
+    private var activeProfileSection = ProfileKind.PERSONAL
     private val shortcuts = mutableMapOf<ShortcutId, LauncherShortcut>()
     private val widgetBindings = mutableMapOf<Long, WidgetItemEntity>()
     private var contextQueryToken = 0
@@ -96,8 +118,9 @@ class HomeActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         app = application as CenixApplication
-        catalog = AppCatalog(this)
-        shortcutCatalog = ShortcutCatalog(this, catalog)
+        profiles = ProfileController(this)
+        catalog = AppCatalog(this, profiles)
+        shortcutCatalog = ShortcutCatalog(this, catalog, profiles)
         selectedPageId = savedInstanceState?.getLong(STATE_PAGE_ID)?.toULong()
         search = SearchController(
             filterOf = { app.activeFilter() },
@@ -118,8 +141,11 @@ class HomeActivity : AppCompatActivity() {
             { rendered },
             { pager.currentLayout },
             { scheduleReload("widget") },
+            profiles::isAvailable,
+            profiles::userForSerial,
         )
         catalog.register(packageCallback)
+        profileReceiver = profiles.register(this) { scheduleReload("profile") }
         scheduleReload("create")
     }
 
@@ -130,6 +156,16 @@ class HomeActivity : AppCompatActivity() {
         emergencyOverlay = findViewById(R.id.emergencyOverlay)
         searchField = findViewById(R.id.searchField)
         appList = findViewById(R.id.appList)
+        privateAppList = findViewById(R.id.privateAppList)
+        profileTabs = findViewById(R.id.profileTabs)
+        personalTab = findViewById(R.id.personalTab)
+        workTab = findViewById(R.id.workTab)
+        workProfileState = findViewById(R.id.workProfileState)
+        workProfileMessage = findViewById(R.id.workProfileMessage)
+        workProfileToggle = findViewById(R.id.workProfileToggle)
+        privateSpaceContainer = findViewById(R.id.privateSpaceContainer)
+        privateSpaceState = findViewById(R.id.privateSpaceState)
+        privateSpaceToggle = findViewById(R.id.privateSpaceToggle)
         dragLayer = findViewById(R.id.dragLayer)
         pager = findViewById(R.id.workspaceGrid)
         hotseat = findViewById(R.id.hotseatGrid)
@@ -169,8 +205,17 @@ class HomeActivity : AppCompatActivity() {
             appList.setSelection(0)
             true
         }
-        appList.adapter = AppAdapter()
+        appList.adapter = AppAdapter(visible)
+        privateAppList.adapter = AppAdapter(privateVisible)
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
+        privateAppList.setOnItemClickListener { _, _, position, _ -> launch(privateVisible[position]) }
+        privateAppList.setOnItemLongClickListener { _, view, position, _ ->
+            if (app.emergency) false else openContext(view, privateVisible[position], null, null)
+        }
+        personalTab.setOnClickListener { selectProfileSection(ProfileKind.PERSONAL) }
+        workTab.setOnClickListener { selectProfileSection(ProfileKind.WORK) }
+        workProfileToggle.setOnClickListener { toggleProfile(ProfileKind.WORK) }
+        privateSpaceToggle.setOnClickListener { toggleProfile(ProfileKind.PRIVATE) }
         val allAppsLongPress = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
         var allAppsSource: View? = null
         var allAppsItem: LaunchableApp? = null
@@ -248,46 +293,85 @@ class HomeActivity : AppCompatActivity() {
         closeContext("lifecycle")
         dragLayer.cancel("lifecycle")
         catalog.unregister(packageCallback)
+        unregisterReceiver(profileReceiver)
         search.close()
         widgetHost.destroy()
         super.onDestroy()
     }
 
     private fun scheduleReload(reason: String) {
+        search.cancel()
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
             val database = app.database ?: return@io
             val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
-            widgetHost.recover()
             try {
-                val loaded = catalog.load()
+                val profileChange = profiles.refresh()
+                widgetHost.recover()
+                val availableProfileIds = profileChange.profiles
+                    .filter { it.descriptor.access == ProfileAccess.AVAILABLE }
+                    .map { it.descriptor.profileId.toLong() }
+                    .toSet()
+                val loaded = catalog.load(profileChange.profiles)
+                val inaccessible = profileChange.newlyInaccessibleProfileIds + profileChange.removedProfileIds
                 dragLayer.post {
-                    dragLayer.cancel(if (reason == "remove" || reason == "unavailable" || reason == "shortcuts") "package" else "reload")
-                    if (reason in setOf("remove", "unavailable", "shortcuts")) closeContext("catalog")
+                    dragLayer.cancel(if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) "profile-or-package" else "reload")
+                    if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) {
+                        closeContext("catalog")
+                        closeFolder("catalog")
+                    }
+                    widgetHost.invalidateProfiles(inaccessible, widgetBindings)
                 }
-                workspace.dropMissing(loaded)
+                workspace.removeProfiles(profileChange.removedProfileIds)
+                workspace.dropMissing(loaded, availableProfileIds)
                 val metrics = resources.displayMetrics
                 val widthDp = metrics.widthPixels / metrics.density
                 val heightDp = metrics.heightPixels / metrics.density
                 val desired = PhoneGrid.pick(min(widthDp, heightDp), max(widthDp, heightDp))
                 var state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
                 val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
-                state = workspace.reconcileShortcuts(resolvedShortcuts.keys)?.asSnapshot()?.also {
+                state = workspace.reconcileShortcuts(resolvedShortcuts.keys, availableProfileIds)?.asSnapshot()?.also {
                     CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
                 } ?: state
                 shortcutCatalog.pin(state.shortcutIds())
-                val profiles = catalog.visibleProfiles()
                 val bindings = database.dao().workspaceWidgets()
                 val matches = try {
-                    app.activeFilter().filter(loaded, query, profiles)
+                    app.activeFilter().filter(loaded, query, availableProfileIds)
                 } catch (_: Throwable) {
                     app.requestEmergency()
-                    EmergencyAppFilter.filter(loaded, query, profiles)
+                    EmergencyAppFilter.filter(loaded, query, availableProfileIds)
                 }
                 app.markHealthy()
                 CenixLog.event(EventId.CATALOG_REFRESH, Severity.INFO, mapOf("count" to loaded.size.toString(), "reason" to reason))
+                CenixLog.event(
+                    EventId.PROFILE_DISCOVERY,
+                    Severity.INFO,
+                    mapOf("count" to profileChange.profiles.size.toString()),
+                )
+                if (profileChange.newlyInaccessibleProfileIds.isNotEmpty()) {
+                    CenixLog.event(
+                        EventId.PROFILE_UNAVAILABLE,
+                        Severity.INFO,
+                        mapOf("count" to profileChange.newlyInaccessibleProfileIds.size.toString()),
+                    )
+                    if (profileChange.profiles.any {
+                            it.descriptor.profileId.toLong() in profileChange.newlyInaccessibleProfileIds &&
+                                it.descriptor.kind == ProfileKind.PRIVATE
+                        }
+                    ) {
+                        CenixLog.event(EventId.PRIVATE_LOCKED, Severity.INFO)
+                    }
+                }
+                if (profileChange.newlyAvailableProfileIds.isNotEmpty()) {
+                    CenixLog.event(
+                        EventId.PROFILE_AVAILABLE,
+                        Severity.INFO,
+                        mapOf("count" to profileChange.newlyAvailableProfileIds.size.toString()),
+                    )
+                }
                 runOnUiThread {
+                    profileSnapshot = profileChange.profiles
                     apps.clear()
                     apps.addAll(loaded)
                     shortcuts.clear()
@@ -364,6 +448,19 @@ class HomeActivity : AppCompatActivity() {
         y: Int,
         pageId: ULong?,
     ): View {
+        val profileId = when (val payload = item?.payload) {
+            is ItemPayload.Application -> payload.component.profileId.toLong()
+            is ItemPayload.Shortcut -> payload.shortcut.profileId.toLong()
+            is ItemPayload.Widget -> payload.provider.profileId.toLong()
+            is ItemPayload.Folder -> folder?.members?.firstOrNull()?.payload?.profileId()
+            null -> null
+        }
+        if (item != null && profileId != null) {
+            val projection = profileProjection(profileId, ProfileSurface.WORKSPACE)
+            if (projection != ProfileItemProjection.VISIBLE) {
+                return profilePlaceholder(item, location, x, y, projection)
+            }
+        }
         if (item != null && folder != null && item.payload is ItemPayload.Folder) {
             return FolderIconView(this).apply {
                 bind(
@@ -441,6 +538,41 @@ class HomeActivity : AppCompatActivity() {
             addAccessibilityMoves(view, item, x, y, onContext = { openShortcutContext(view, shortcutItem, item.itemId, null) })
         }
         return view
+    }
+
+    private fun profilePlaceholder(
+        item: WorkspaceItem,
+        location: String,
+        x: Int,
+        y: Int,
+        projection: ProfileItemProjection,
+    ): View = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false).apply {
+        findViewById<ImageView>(R.id.cellIcon).setImageDrawable(null)
+        importantForAccessibility = if (projection == ProfileItemProjection.HIDDEN) {
+            findViewById<TextView>(R.id.cellLabel).text = ""
+            contentDescription = null
+            tag = null
+            isFocusable = false
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        } else {
+            findViewById<TextView>(R.id.cellLabel).text = getString(R.string.profile_item_unavailable)
+            contentDescription = getString(R.string.profile_item_unavailable) +
+                ", $location, row ${y + 1}, column ${x + 1}"
+            tag = CellTarget(item.itemId)
+            isFocusable = true
+            View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+    }
+
+    private fun profileProjection(profileId: Long, surface: ProfileSurface): ProfileItemProjection {
+        val descriptor = profileSnapshot.firstOrNull { it.descriptor.profileId.toLong() == profileId }?.descriptor
+            ?: return ProfileItemProjection.HIDDEN
+        if (!app.emergency) return projectProfileItem(descriptor, surface)
+        return when {
+            descriptor.access == ProfileAccess.AVAILABLE -> ProfileItemProjection.VISIBLE
+            descriptor.kind != ProfileKind.PRIVATE && surface == ProfileSurface.WORKSPACE -> ProfileItemProjection.PLACEHOLDER
+            else -> ProfileItemProjection.HIDDEN
+        }
     }
 
     private fun attachLongPress(view: View, onPopup: () -> Boolean, onDrag: () -> Boolean) {
@@ -618,7 +750,13 @@ class HomeActivity : AppCompatActivity() {
             CenixLog.event(EventId.SHORTCUT_QUERY, Severity.INFO, mapOf("count" to entries.size.toString()))
             runOnUiThread {
                 if (contextPopup === popup && contextQueryToken == token) {
-                    popup.bind(appItem.label, entries, canUninstall(appItem), itemId != null)
+                    popup.bind(
+                        appItem.label,
+                        entries,
+                        canUninstall(appItem),
+                        itemId != null,
+                        appItem.profileKind != ProfileKind.PRIVATE,
+                    )
                 }
             }
         }
@@ -639,7 +777,13 @@ class HomeActivity : AppCompatActivity() {
         val popup = ContextPopup(this)
         contextPopup = popup
         configureContext(popup, source, parent, shortcut.label, itemId, sourceFolderId)
-        popup.bind(shortcut.label, listOf(shortcut), canUninstall(parent), true)
+        popup.bind(
+            shortcut.label,
+            listOf(shortcut),
+            canUninstall(parent),
+            true,
+            parent.profileKind != ProfileKind.PRIVATE,
+        )
         dragLayer.addView(popup, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         popup.anchor(source)
         CenixLog.event(EventId.CONTEXT_POPUP_OPEN, Severity.INFO)
@@ -670,7 +814,13 @@ class HomeActivity : AppCompatActivity() {
             dragLayer.beginDrag(row, LauncherDrag(null, null, shortcut = shortcut))
         }
         popup.onPinShortcut = { shortcut -> pinShortcut(shortcut); closeContext("shortcut-pin") }
-        popup.bind(label, emptyList(), canUninstall(appItem), itemId != null)
+        popup.bind(
+            label,
+            emptyList(),
+            canUninstall(appItem),
+            itemId != null,
+            appItem.profileKind != ProfileKind.PRIVATE,
+        )
     }
 
     private fun closeContext(reason: String) {
@@ -682,6 +832,9 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun pinShortcut(shortcut: LauncherShortcut) {
+        if (profileProjection(shortcut.id.profileId.toLong(), ProfileSurface.WORKSPACE) != ProfileItemProjection.VISIBLE) {
+            return
+        }
         CenixExecutors.io {
             val workspace = controller ?: return@io
             val state = workspace.snapshot()
@@ -722,8 +875,10 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun canUninstall(appItem: LaunchableApp): Boolean = try {
-        appItem.packageName != packageName &&
-            packageManager.getApplicationInfo(appItem.packageName, 0).flags and ApplicationInfo.FLAG_SYSTEM == 0
+        val user = appItem.user ?: catalog.userForSerial(appItem.profileId) ?: return false
+        appItem.packageName != packageName && profiles.isAvailable(appItem.profileId) &&
+            getSystemService(LauncherApps::class.java)
+                .getApplicationInfo(appItem.packageName, 0, user).flags and ApplicationInfo.FLAG_SYSTEM == 0
     } catch (_: RuntimeException) {
         false
     }
@@ -766,6 +921,11 @@ class HomeActivity : AppCompatActivity() {
     private fun ComponentId.key() = Triple(`package`, `class`, profileId.toLong())
 
     private fun onDrop(payload: LauncherDrag, destination: DropDestination) {
+        val profileId = payload.app?.profileId ?: payload.shortcut?.id?.profileId?.toLong()
+        if (profileId != null && profileProjection(profileId, ProfileSurface.WORKSPACE) != ProfileItemProjection.VISIBLE) {
+            CenixLog.event(EventId.DRAG_CANCEL, Severity.INFO, mapOf("category" to "profile-policy"))
+            return
+        }
         payload.shortcut?.let { shortcuts[it.id] = it }
         when {
             destination.remove && payload.itemId != null && payload.sourceFolderId == null -> mutate { it.remove(payload.itemId) }
@@ -821,14 +981,89 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun bindList(matches: List<LaunchableApp>) {
+        if (activeProfileSection == ProfileKind.WORK && profileSnapshot.none { it.descriptor.kind == ProfileKind.WORK }) {
+            activeProfileSection = ProfileKind.PERSONAL
+        }
         visible.clear()
-        visible.addAll(matches)
+        privateVisible.clear()
+        if (activeProfileSection == ProfileKind.WORK) {
+            visible.addAll(matches.filter { it.profileKind == ProfileKind.WORK })
+        } else {
+            visible.addAll(matches.filter { it.profileKind == ProfileKind.PERSONAL || it.profileKind == ProfileKind.OTHER })
+            privateVisible.addAll(matches.filter { it.profileKind == ProfileKind.PRIVATE })
+        }
         (appList.adapter as AppAdapter).notifyDataSetChanged()
+        (privateAppList.adapter as AppAdapter).notifyDataSetChanged()
+        bindProfileChrome()
     }
 
     private fun applyFilter() {
         val query = searchField.text?.toString().orEmpty()
         search.submit(apps.toList(), query, catalog.visibleProfiles())
+    }
+
+    private fun selectProfileSection(kind: ProfileKind) {
+        if (kind != ProfileKind.PERSONAL && kind != ProfileKind.WORK) return
+        activeProfileSection = kind
+        applyFilter()
+        appList.requestFocus()
+    }
+
+    private fun toggleProfile(kind: ProfileKind) {
+        val profile = profileSnapshot.firstOrNull { it.descriptor.kind == kind } ?: return
+        val makeAvailable = profile.descriptor.access != ProfileAccess.AVAILABLE
+        if (kind == ProfileKind.PRIVATE && !makeAvailable) {
+            search.cancel()
+            closeContext("private-lock")
+            closeFolder("private-lock")
+            dragLayer.cancel("private-lock")
+            privateVisible.clear()
+            (privateAppList.adapter as AppAdapter).notifyDataSetChanged()
+            privateAppList.visibility = View.GONE
+        }
+        CenixLog.event(
+            if (kind == ProfileKind.PRIVATE) EventId.PRIVATE_UNLOCK_REQUEST else EventId.PROFILE_UI_INVALIDATED,
+            Severity.INFO,
+            mapOf("kind" to kind.name, "result" to "requested"),
+        )
+        CenixExecutors.io {
+            val accepted = profiles.requestAvailable(profile.descriptor.profileId.toLong(), makeAvailable)
+            CenixLog.event(
+                EventId.PROFILE_OPERATION_RESULT,
+                if (accepted) Severity.INFO else Severity.WARN,
+                mapOf("kind" to kind.name, "result" to if (accepted) "accepted" else "rejected"),
+            )
+            scheduleReload("profile")
+        }
+    }
+
+    private fun bindProfileChrome() {
+        val work = profileSnapshot.firstOrNull { it.descriptor.kind == ProfileKind.WORK }
+        workTab.visibility = if (work == null) View.GONE else View.VISIBLE
+        personalTab.isSelected = activeProfileSection == ProfileKind.PERSONAL
+        workTab.isSelected = activeProfileSection == ProfileKind.WORK
+        if (work == null && activeProfileSection == ProfileKind.WORK) activeProfileSection = ProfileKind.PERSONAL
+        workProfileState.visibility = if (activeProfileSection == ProfileKind.WORK && work != null) View.VISIBLE else View.GONE
+        if (work != null) {
+            val available = work.descriptor.access == ProfileAccess.AVAILABLE
+            workProfileMessage.setText(if (available) R.string.work_apps_available else R.string.work_apps_paused)
+            workProfileToggle.setText(if (available) R.string.turn_work_off else R.string.turn_work_on)
+            workProfileToggle.contentDescription = workProfileToggle.text
+        }
+
+        val privateProfile = profileSnapshot.firstOrNull { it.descriptor.kind == ProfileKind.PRIVATE }
+        privateSpaceContainer.visibility = if (activeProfileSection == ProfileKind.PERSONAL && privateProfile != null) View.VISIBLE else View.GONE
+        if (privateProfile != null) {
+            val available = privateProfile.descriptor.access == ProfileAccess.AVAILABLE
+            privateSpaceState.setText(if (available) R.string.private_space_available else R.string.private_space_locked)
+            privateSpaceToggle.setText(if (available) R.string.lock_private_space else R.string.unlock_private_space)
+            privateSpaceToggle.contentDescription = privateSpaceToggle.text
+            privateAppList.visibility = if (available) View.VISIBLE else View.GONE
+            if (!available) {
+                privateVisible.clear()
+                (privateAppList.adapter as AppAdapter).notifyDataSetChanged()
+            }
+        }
     }
 
     private fun applySurface() {
@@ -958,6 +1193,9 @@ class HomeActivity : AppCompatActivity() {
     private fun launch(appItem: LaunchableApp) {
         closeFolder("launch")
         closeContext("launch")
+        if (!profiles.isAvailable(appItem.profileId)) {
+            return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
+        }
         val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
         if (user == null) return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         try {
@@ -1012,27 +1250,31 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private inner class AppAdapter : BaseAdapter() {
-        override fun getCount() = visible.size
-        override fun getItem(position: Int) = visible[position]
-        override fun getItemId(position: Int) = visible[position].let { 31L * it.packageName.hashCode() + it.profileId }
+    private inner class AppAdapter(private val items: List<LaunchableApp>) : BaseAdapter() {
+        override fun getCount() = items.size
+        override fun getItem(position: Int) = items[position]
+        override fun getItemId(position: Int) = items[position].let { 31L * it.packageName.hashCode() + it.profileId }
         override fun hasStableIds() = true
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.app_row, parent, false)
-            val item = visible[position]
+            val item = items[position]
             view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.icon)
             view.findViewById<TextView>(R.id.appLabel).text = item.label
-            val profile = profileLabel(item.profileId)
+            val profile = profileLabel(item.profileKind)
             view.findViewById<TextView>(R.id.appProfile).text = profile
             view.contentDescription = "${item.label}, $profile"
             return view
         }
     }
 
-    private fun profileLabel(profileId: Long): String {
-        val personal = android.os.Process.myUserHandle().let { getSystemService(android.os.UserManager::class.java).getSerialNumberForUser(it) }
-        return getString(if (profileId == personal) R.string.profile_personal else R.string.profile_other)
-    }
+    private fun profileLabel(kind: ProfileKind): String = getString(
+        when (kind) {
+            ProfileKind.PERSONAL -> R.string.profile_personal
+            ProfileKind.WORK -> R.string.profile_work
+            ProfileKind.PRIVATE -> R.string.profile_private
+            ProfileKind.OTHER -> R.string.profile_other
+        },
+    )
 
     private fun WorkspaceTransition.asSnapshot() = WorkspaceSnapshot(generation, grid, pages, items, folders)
 
@@ -1048,3 +1290,10 @@ internal fun WorkspaceSnapshot.shortcutIds(): List<ShortcutId> =
     (items.mapNotNull { (it.payload as? ItemPayload.Shortcut)?.shortcut } +
         folders.flatMap { folder -> folder.members.mapNotNull { (it.payload as? ItemPayload.Shortcut)?.shortcut } })
         .distinct()
+
+private fun ItemPayload.profileId(): Long? = when (this) {
+    is ItemPayload.Application -> component.profileId.toLong()
+    is ItemPayload.Shortcut -> shortcut.profileId.toLong()
+    is ItemPayload.Widget -> provider.profileId.toLong()
+    is ItemPayload.Folder -> null
+}

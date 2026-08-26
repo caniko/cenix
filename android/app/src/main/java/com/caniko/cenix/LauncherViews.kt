@@ -638,7 +638,13 @@ class ContextPopup(context: Context) : FrameLayout(context) {
         remove.setOnClickListener { onRemove?.invoke() }
     }
 
-    fun bind(label: String, entries: List<LauncherShortcut>, canUninstall: Boolean, canRemove: Boolean) {
+    fun bind(
+        label: String,
+        entries: List<LauncherShortcut>,
+        canUninstall: Boolean,
+        canRemove: Boolean,
+        canAddToWorkspace: Boolean,
+    ) {
         title.text = ShortcutCatalog.safeLabel(label)
         shortcuts.removeAllViews()
         entries.forEach { shortcut ->
@@ -662,18 +668,20 @@ class ContextPopup(context: Context) : FrameLayout(context) {
                     id = R.id.shortcut_pin
                     text = context.getString(R.string.pin_shortcut)
                     isEnabled = shortcut.enabled
+                    visibility = if (canAddToWorkspace) VISIBLE else GONE
                     setOnClickListener { onPinShortcut?.invoke(shortcut) }
                 }, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)))
                 setOnClickListener { if (shortcut.enabled) onLaunchShortcut?.invoke(shortcut) }
                 setOnLongClickListener {
-                    if (shortcut.enabled) onDragShortcut?.invoke(this, shortcut)
-                    shortcut.enabled
+                    if (shortcut.enabled && canAddToWorkspace) onDragShortcut?.invoke(this, shortcut)
+                    shortcut.enabled && canAddToWorkspace
                 }
             }
             shortcuts.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
         uninstall.visibility = if (canUninstall) VISIBLE else GONE
         remove.visibility = if (canRemove) VISIBLE else GONE
+        drag.visibility = if (canAddToWorkspace) VISIBLE else GONE
     }
 
     fun anchor(source: View) {

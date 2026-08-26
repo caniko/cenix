@@ -186,15 +186,31 @@ class WorkspaceController(
         return execute("set-grid", WorkspaceCommand.SetGrid(state.generation, grid))
     }
 
-    fun dropMissing(live: Collection<LaunchableApp>): WorkspaceTransition? {
+    fun dropMissing(live: Collection<LaunchableApp>, authoritativeProfiles: Collection<Long>): WorkspaceTransition? {
         val state = snapshot()
         val ids = live.map { ComponentId(it.packageName, it.className, it.profileId.toULong()) }
-        return execute("drop-missing", WorkspaceCommand.DropMissing(state.generation, ids))
+        return execute(
+            "drop-missing",
+            WorkspaceCommand.DropMissing(state.generation, ids, authoritativeProfiles.map(Long::toULong)),
+        )
     }
 
-    fun reconcileShortcuts(live: Collection<ShortcutId>): WorkspaceTransition? {
+    fun reconcileShortcuts(live: Collection<ShortcutId>, authoritativeProfiles: Collection<Long>): WorkspaceTransition? {
         val state = snapshot()
-        return execute("shortcut-reconcile", WorkspaceCommand.ReconcileShortcuts(state.generation, live.toList()))
+        return execute(
+            "shortcut-reconcile",
+            WorkspaceCommand.ReconcileShortcuts(
+                state.generation,
+                live.toList(),
+                authoritativeProfiles.map(Long::toULong),
+            ),
+        )
+    }
+
+    fun removeProfiles(profileIds: Collection<Long>): WorkspaceTransition? {
+        if (profileIds.isEmpty()) return null
+        val state = snapshot()
+        return execute("profile-remove", WorkspaceCommand.RemoveProfiles(state.generation, profileIds.map(Long::toULong)))
     }
 
     fun execute(category: String, command: WorkspaceCommand): WorkspaceTransition? {

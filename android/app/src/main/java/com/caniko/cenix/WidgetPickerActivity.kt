@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
 import android.os.Bundle
-import android.os.UserManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -15,19 +14,31 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileKind
 
 class WidgetPickerActivity : AppCompatActivity() {
     private data class Entry(val info: AppWidgetProviderInfo, val profileId: Long, val label: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val users = getSystemService(UserManager::class.java)
+        val profiles = ProfileController(this).also { it.refresh() }
         val manager = getSystemService(AppWidgetManager::class.java)
-        val entries = users.userProfiles.flatMap { user ->
-            val profileId = users.getSerialNumberForUser(user)
-            manager.getInstalledProvidersForProfile(user).mapNotNull { info ->
+        val entries = profiles.profiles().filter {
+            it.descriptor.access == ProfileAccess.AVAILABLE && it.descriptor.kind != ProfileKind.PRIVATE
+        }.flatMap { profile ->
+            val profileId = profile.descriptor.profileId.toLong()
+            manager.getInstalledProvidersForProfile(profile.user).mapNotNull { info ->
                 val home = info.widgetCategory == 0 || info.widgetCategory and AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN != 0
-                if (!home || profileId < 0) null else Entry(info, profileId, info.loadLabel(packageManager).toString())
+                if (!home) null else Entry(
+                    info,
+                    profileId,
+                    info.loadLabel(packageManager).toString() + if (profile.descriptor.kind == ProfileKind.PERSONAL) {
+                        ""
+                    } else {
+                        " - ${profileLabel(profile.descriptor.kind)}"
+                    },
+                )
             }
         }.sortedWith(compareBy<Entry> { it.label.lowercase() }.thenBy { it.info.provider.flattenToString() }.thenBy { it.profileId })
         if (entries.isEmpty()) {
@@ -81,6 +92,15 @@ class WidgetPickerActivity : AppCompatActivity() {
             addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         })
     }
+
+    private fun profileLabel(kind: ProfileKind) = getString(
+        when (kind) {
+            ProfileKind.PERSONAL -> R.string.profile_personal
+            ProfileKind.WORK -> R.string.profile_work
+            ProfileKind.PRIVATE -> R.string.profile_private
+            ProfileKind.OTHER -> R.string.profile_other
+        },
+    )
 
     companion object {
         const val EXTRA_PACKAGE = "widget.package"

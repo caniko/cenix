@@ -33,8 +33,13 @@ class SearchController(
         }, delayMs, TimeUnit.MILLISECONDS)
     }
 
-    fun close() {
+    fun cancel() {
+        seq.incrementAndGet()
         pending?.cancel(false)
+    }
+
+    fun close() {
+        cancel()
         debounce.shutdownNow()
     }
 }
