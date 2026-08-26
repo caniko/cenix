@@ -93,6 +93,7 @@ class HomeConformanceTest {
     }
 
     private fun openAllApps() {
+        device.waitForIdle()
         swipeRoot(up = true)
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
     }
