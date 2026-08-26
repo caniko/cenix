@@ -203,10 +203,20 @@ dump_ui() {
 }
 
 dump_any_ui() {
-  local xml
-  "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-any-ui.xml >/dev/null
-  xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-any-ui.xml)"
-  printf '%s\n' "$xml"
+  local i xml
+  for i in $(seq 1 15); do
+    "$adb" -s "$serial" shell rm -f /sdcard/cenix-any-ui.xml
+    "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-any-ui.xml >/dev/null 2>&1 || true
+    if "$adb" -s "$serial" shell test -s /sdcard/cenix-any-ui.xml; then
+      xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-any-ui.xml)"
+      if grep -q '<node ' <<<"$xml"; then
+        printf '%s\n' "$xml"
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  fail "uiautomator dump failed"
 }
 
 wait_ui() {
