@@ -1083,8 +1083,12 @@ pass "widgets: explicit incoming pin acceptance binds and commits"
 
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 wait_ui 'text="Widget unavailable"' 1
-tap_pattern 'content-desc="Remove"'
-sleep 1
+for _ in $(seq 1 8); do
+  ui="$(dump_ui)"
+  grep -q 'text="Widget unavailable"' <<<"$ui" || break
+  tap_pattern 'content-desc="Remove"'
+  sleep 1
+done
 pass "widgets: provider removal renders a removable placeholder"
 fi
 
