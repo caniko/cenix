@@ -71,9 +71,9 @@ class HomeConformanceTest {
         device.executeShellCommand("input touchscreen swipe ${bounds.centerX()} ${bounds.centerY()} ${bounds.centerX()} ${bounds.centerY()} 800")
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "context_popup")), 5_000))
         assertTrue(device.hasObject(By.desc("Application actions")))
-        assertTrue(device.hasObject(By.text("Manifest action")))
+        assertTrue(device.wait(Until.hasObject(By.text("Manifest action")), 5_000))
         assertTrue(device.hasObject(By.desc("Manifest action")))
-        assertTrue(device.hasObject(By.text("Dynamic action")))
+        assertTrue(device.wait(Until.hasObject(By.text("Dynamic action")), 5_000))
         device.pressBack()
         assertTrue(device.wait(Until.gone(By.res(PKG, "context_popup")), 5_000))
     }
