@@ -1086,7 +1086,13 @@ wait_ui 'text="Widget unavailable"' 1
 for _ in $(seq 1 8); do
   ui="$(dump_ui)"
   grep -q 'text="Widget unavailable"' <<<"$ui" || break
-  tap_pattern 'content-desc="Remove"'
+  if grep -q 'content-desc="Remove"' <<<"$ui"; then
+    tap_pattern 'content-desc="Remove"'
+  else
+    long_press_pattern_top 'content-desc="Widget unavailable, page 1'
+    wait_ui 'content-desc="Remove"' 1
+    tap_pattern 'content-desc="Remove"'
+  fi
   sleep 1
 done
 pass "widgets: provider removal renders a removable placeholder"
