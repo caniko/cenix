@@ -1090,8 +1090,8 @@ for _ in $(seq 1 8); do
     tap_pattern 'content-desc="Remove"'
   else
     long_press_pattern_top 'content-desc="Widget unavailable, page 1'
-    wait_ui 'content-desc="Remove"' 1
-    tap_pattern 'content-desc="Remove"'
+    wait_ui 'content-desc="Remove widget"' 1
+    tap_pattern 'content-desc="Remove widget"'
   fi
   sleep 1
 done
