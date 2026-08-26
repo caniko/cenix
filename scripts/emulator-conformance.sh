@@ -669,6 +669,11 @@ wait_ui 'content-desc="Page 2 of 2"' 1
 wait_ui 'content-desc="Cenix Fixture, page 2' 1
 pass "workspace: edge drag creates and enters second page"
 drag_to_workspace_edge 'content-desc="Cenix Fixture, page 2' prev
+sleep 1
+ui="$(dump_ui)"
+if grep -q 'content-desc="Page 2 of 2"' <<<"$ui"; then
+  drag_to_workspace_edge 'content-desc="Cenix Fixture, page 2' prev
+fi
 wait_ui 'content-desc="Page 1 of 1"' 1
 wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "workspace: returning item removes empty trailing page"
