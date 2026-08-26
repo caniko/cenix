@@ -319,8 +319,8 @@ class HomeActivity : AppCompatActivity() {
                     dragLayer.cancel(if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) "profile-or-package" else "reload")
                     if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) {
                         closeContext("catalog")
-                        closeFolder("catalog")
                     }
+                    if (inaccessible.isNotEmpty()) closeFolder("profile")
                     widgetHost.invalidateProfiles(inaccessible, widgetBindings)
                 }
                 workspace.removeProfiles(profileChange.removedProfileIds)
