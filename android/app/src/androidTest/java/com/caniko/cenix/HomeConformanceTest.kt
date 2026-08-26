@@ -93,9 +93,14 @@ class HomeConformanceTest {
     }
 
     private fun openAllApps() {
-        device.waitForIdle()
-        swipeRoot(up = true)
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
+        repeat(2) {
+            device.pressHome()
+            assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
+            device.waitForIdle()
+            swipeRoot(up = true)
+            if (device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000)) return
+        }
+        assertTrue(false)
     }
 
     private fun swipeRoot(up: Boolean) {

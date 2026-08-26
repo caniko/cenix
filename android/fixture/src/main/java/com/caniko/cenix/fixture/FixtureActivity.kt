@@ -6,6 +6,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.content.pm.ShortcutManager
 import android.appwidget.AppWidgetManager
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import androidx.appcompat.app.AppCompatActivity
 
@@ -14,6 +15,10 @@ class FixtureActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val manager = getSystemService(ShortcutManager::class.java)
         val fixture = application as FixtureApplication
+        val admin = ComponentName(this, FixtureAdminReceiver::class.java)
+        getSystemService(DevicePolicyManager::class.java).let { policy ->
+            if (policy.isProfileOwnerApp(packageName)) policy.addCrossProfileWidgetProvider(admin, packageName)
+        }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@FixtureActivity).apply {

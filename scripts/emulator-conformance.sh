@@ -6,13 +6,16 @@ if [[ "${1:-}" == "--suite" ]]; then
   suite="${2:-}"
   shift 2
 fi
-[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|full]" >&2; exit 2; }
-case "$suite" in core|workspace|folders|shortcuts|widgets|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
+[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|full]" >&2; exit 2; }
+case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
 art="${CENIX_ARTIFACTS:-$(mktemp -d /tmp/cenix-conformance.XXXXXX)}"
 workspace_rtl=0
+work_profile_id=""
+private_profile_id=""
+private_profile_status="not-attempted"
 mkdir -p "$art"
 export CENIX_GIT_COMMIT="${CENIX_GIT_COMMIT:-$(git -C "$root" rev-parse HEAD)}"
 avd="${CENIX_AVD:-cenix-ci-$run_id}"
@@ -108,8 +111,6 @@ fi
 if [[ -z "$serial" ]]; then
   "$emulator_bin" -avd "$avd" -port "$emu_port" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect "${rtl_boot[@]}" >"$art/emulator.log" 2>&1 &
   started=$!
-  cleanup() { kill "$started" 2>/dev/null || true; }
-  trap cleanup EXIT
   for _ in $(seq 1 90); do
     serial="$(avd_serial || true)"
     if [[ -n "$serial" ]]; then
@@ -123,6 +124,12 @@ if [[ -z "$serial" ]]; then
   fi
 fi
 export ANDROID_SERIAL="$serial"
+cleanup() {
+  [[ -n "$private_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$private_profile_id" >/dev/null 2>&1 || true
+  [[ -n "$work_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$work_profile_id" >/dev/null 2>&1 || true
+  [[ "$started" != "0" ]] && kill "$started" 2>/dev/null || true
+}
+trap cleanup EXIT
 echo "emulator serial: $serial (AVD $avd)"
 
 for _ in $(seq 1 60); do
@@ -160,6 +167,8 @@ fail() {
   "$adb" -s "$serial" exec-out screencap -p >"$art/screen.png" 2>/dev/null || true
   "$adb" -s "$serial" shell dumpsys activity >"$art/activity.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell dumpsys package com.caniko.cenix >"$art/package.txt" 2>/dev/null || true
+  "$adb" -s "$serial" shell pm list users >"$art/users.txt" 2>/dev/null || true
+  "$adb" -s "$serial" shell dumpsys user >"$art/user-state.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME >"$art/role.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell dumpsys package com.caniko.cenix >"$art/package.txt" 2>/dev/null || true
   printf '%s\n' "$CENIX_GIT_COMMIT" >"$art/git-commit.txt"
@@ -461,6 +470,35 @@ role_holders() {
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r'
 }
 
+setup_profiles() {
+  local output
+  if ! output="$("$adb" -s "$serial" shell pm create-user --profileOf 0 --managed CenixConformanceWork 2>&1 | tr -d '\r')"; then
+    printf '%s\n' "$output" >"$art/work-profile-create.txt"
+    fail "managed profile creation failed"
+  fi
+  printf '%s\n' "$output" >"$art/work-profile-create.txt"
+  work_profile_id="$(sed -n 's/.*user id \([0-9][0-9]*\).*/\1/p' <<<"$output")"
+  [[ -n "$work_profile_id" ]] || fail "managed profile creation returned no user id: $output"
+  "$adb" -s "$serial" shell am start-user -w "$work_profile_id" >/dev/null || fail "managed profile did not start"
+
+  if output="$("$adb" -s "$serial" shell pm create-user --profileOf 0 --user-type android.os.usertype.profile.PRIVATE CenixConformancePrivate 2>&1 | tr -d '\r')"; then
+    printf '%s\n' "$output" >"$art/private-profile-create.txt"
+    private_profile_id="$(sed -n 's/.*user id \([0-9][0-9]*\).*/\1/p' <<<"$output")"
+    if [[ -n "$private_profile_id" ]] && "$adb" -s "$serial" shell am start-user -w "$private_profile_id" >/dev/null 2>&1; then
+      private_profile_status="created"
+    else
+      private_profile_status="create-returned-no-usable-profile"
+      [[ -n "$private_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$private_profile_id" >/dev/null 2>&1 || true
+      private_profile_id=""
+    fi
+  else
+    printf '%s\n' "$output" >"$art/private-profile-create.txt"
+    private_profile_status="unsupported-by-image"
+  fi
+  "$adb" -s "$serial" shell pm list users >"$art/users.txt"
+  "$adb" -s "$serial" shell dumpsys user >"$art/user-state.txt"
+}
+
 apply_app_rtl() {
   if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
     "$adb" -s "$serial" shell cmd locale set-app-locales com.caniko.cenix --user 0 --locales ar >/dev/null
@@ -538,6 +576,22 @@ holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "instrumentation dropped HOME role: $holders"
 go_home
 hide_keyboard
+
+if [[ "$suite" == "profiles" || "$suite" == "full" ]]; then
+  setup_profiles
+  holders="$(role_holders)"
+  echo "$holders" | grep -q 'com.caniko.cenix' || fail "profile creation dropped HOME role: $holders"
+  hidden_profiles_permission="$("$adb" -s "$serial" shell dumpsys package com.caniko.cenix | grep 'android.permission.ACCESS_HIDDEN_PROFILES:' | tr -d '\r' || true)"
+  printf '%s\n' "${hidden_profiles_permission:-not-reported}" >"$art/hidden-profiles-permission.txt"
+  if [[ "$private_profile_status" == "created" && "$hidden_profiles_permission" != *"granted=true"* ]]; then
+    private_profile_status="permission-not-granted"
+  fi
+  {
+    echo "work_profile_id=$work_profile_id"
+    echo "private_profile_status=$private_profile_status"
+    echo "private_profile_id=${private_profile_id:-none}"
+  } >>"$art/metadata.txt"
+fi
 
 open_all_apps
 wait_ui 'resource-id="com.caniko.cenix:id/appLabel"' 1
@@ -993,6 +1047,140 @@ wait_ui 'text="Widget unavailable"' 1
 tap_pattern 'content-desc="Remove"'
 sleep 1
 pass "widgets: provider removal renders a removable placeholder"
+fi
+
+if [[ "$suite" == "profiles" || "$suite" == "full" ]]; then
+fixture_apk="$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
+aux_apk="$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
+"$adb" -s "$serial" install -r -t "$fixture_apk" >/dev/null
+"$adb" -s "$serial" shell pm install-existing --user "$work_profile_id" com.caniko.cenix.fixture >"$art/work-install.txt" || fail "fixture install into managed profile failed"
+"$adb" -s "$serial" shell dpm set-profile-owner --user "$work_profile_id" com.caniko.cenix.fixture/.FixtureAdminReceiver >"$art/work-profile-owner.txt" || fail "test DPC profile-owner setup failed"
+"$adb" -s "$serial" shell am start --user "$work_profile_id" -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+go_home
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
+tap_pattern 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
+wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
+resumed | grep -q "u$work_profile_id " || fail "fixture launched outside managed profile: $(resumed)"
+pass "profiles: same package launches with managed-profile UserHandle"
+
+go_home
+ui="$(dump_ui)"
+read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+set_search "Fixture"
+wait_ui 'text="Cenix Fixture"' 1
+long_press_pattern_top 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"'
+wait_ui 'text="Manifest action"' 1
+pass "profiles: managed-profile dynamic and manifest shortcuts resolve"
+"$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 0
+drag_pattern_to_bounds 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
+pass "profiles: managed-profile application persists with stable profile identity"
+
+ui="$(dump_ui)"
+read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+"$adb" -s "$serial" shell input swipe $(((px1 + px2) / 2)) $(((py1 + py2) / 2)) $(((px1 + px2) / 2)) $(((py1 + py2) / 2)) 800
+filter_widgets
+wait_ui 'text="Fixture collection widget - Work"' 1
+tap_pattern 'text="Fixture collection widget - Work"'
+accept_widget_bind
+wait_ui 'text="Widget update 0"' 1
+pass "profiles: managed-profile widget provider binds and renders"
+
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+tap_pattern 'resource-id="com.caniko.cenix:id/workProfileToggle"'
+wait_ui 'text="Work apps are paused"' 1
+go_home
+wait_ui 'text="Profile item unavailable"' 1
+ui="$(dump_ui)"
+echo "$ui" | grep -q 'text="Cenix Fixture"' && fail "managed-profile identity remained visible while quiet"
+pass "profiles: quiet mode hides resources and preserves generic workspace placeholders"
+
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+tap_pattern 'resource-id="com.caniko.cenix:id/workProfileToggle"'
+wait_ui 'text="Work apps are available"' 1
+wait_ui 'text="Cenix Fixture"' 1
+go_home
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
+wait_ui 'text="Widget update 0"' 1
+pass "profiles: unquiet restores managed-profile applications and widgets"
+
+"$adb" -s "$serial" install -r -t "$aux_apk" >/dev/null
+"$adb" -s "$serial" shell pm install-existing --user "$work_profile_id" com.caniko.cenix.fixture.secondary >/dev/null
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+set_search "Auxiliary"
+wait_ui 'text="Cenix Auxiliary"' 1
+"$adb" -s "$serial" shell pm uninstall --user "$work_profile_id" com.caniko.cenix.fixture.secondary >"$art/work-uninstall.txt" || fail "managed-profile-only uninstall failed"
+tap_pattern 'resource-id="com.caniko.cenix:id/personalTab"'
+wait_ui 'text="Cenix Auxiliary"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/workTab"'
+wait_ui 'text="Cenix Auxiliary"' 0
+pass "profiles: package removal is isolated to the managed profile"
+
+if [[ "$private_profile_status" == "created" ]]; then
+  "$adb" -s "$serial" shell pm uninstall --user 0 com.caniko.cenix.fixture.secondary >/dev/null
+  "$adb" -s "$serial" shell am start --user "$private_profile_id" -n com.caniko.cenix.fixture.secondary/.SecondaryFixtureActivity >/dev/null
+  go_home
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/personalTab"'
+  wait_ui 'text="Private space is unlocked"' 1
+  wait_ui 'text="Cenix Auxiliary"' 1
+  tap_pattern 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"'
+  wait_resumed 'com.caniko.cenix.fixture.secondary/.SecondaryFixtureActivity'
+  resumed | grep -q "u$private_profile_id " || fail "fixture launched outside private profile: $(resumed)"
+  go_home
+  "$adb" -s "$serial" shell am start --user "$private_profile_id" -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+  tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_dynamic"'
+  sleep 1
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/pin_confirmation"' && fail "private shortcut pin reached confirmation"
+  tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_widget"'
+  sleep 1
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/pin_confirmation"' && fail "private widget pin reached confirmation"
+  go_home
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/personalTab"'
+  wait_ui 'text="Cenix Auxiliary"' 1
+  long_press_pattern_top 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"'
+  wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/context_drag"' && fail "private app exposed workspace drag"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/shortcut_pin"' && fail "private app exposed shortcut pinning"
+  "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+  "$adb" -s "$serial" logcat -c
+  tap_pattern 'resource-id="com.caniko.cenix:id/privateSpaceToggle"'
+  wait_ui 'text="Private space is locked"' 1
+  wait_ui 'text="Cenix Auxiliary"' 0
+  "$adb" -s "$serial" logcat -d -s cenix | grep -q 'Cenix Auxiliary\|com.caniko.cenix.fixture.secondary' && fail "private identity leaked through Cenix logcat"
+  "$adb" -s "$serial" shell run-as com.caniko.cenix sh -c 'grep -R "Cenix Auxiliary\|com.caniko.cenix.fixture.secondary" files/diag' >/dev/null 2>&1 && fail "private identity leaked through diagnostics"
+  pass "private: lock hides identities and workspace/pin actions without diagnostic leakage"
+  tap_pattern 'resource-id="com.caniko.cenix:id/privateSpaceToggle"'
+  wait_ui 'text="Private space is unlocked"' 1
+  wait_ui 'text="Cenix Auxiliary"' 1
+  pass "private: platform-owned unlock restores private applications"
+else
+  pass "private: capability gated ($private_profile_status; see private-profile-create.txt and hidden-profiles-permission.txt)"
+fi
+
+"$adb" -s "$serial" shell pm remove-user "$work_profile_id" >/dev/null || fail "managed profile teardown failed"
+work_profile_id=""
+go_home
+open_all_apps
+wait_ui 'resource-id="com.caniko.cenix:id/workTab"' 0
+pass "profiles: permanent profile removal clears profile chrome and durable profile items"
+if [[ -n "$private_profile_id" ]]; then
+  "$adb" -s "$serial" shell pm remove-user "$private_profile_id" >/dev/null || fail "private profile teardown failed"
+  private_profile_id=""
+fi
 fi
 
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
