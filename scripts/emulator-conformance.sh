@@ -803,14 +803,24 @@ set_search "Auxiliary"
 wait_ui 'text="Cenix Auxiliary"' 1
 drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
 sleep 1
+tap_pattern 'content-desc="Utilities, folder,'
+sleep 1
 ui="$(dump_ui)"
-if ! grep -q 'content-desc="Utilities, folder, 5 applications' <<<"$ui"; then
+if ! grep -q 'resource-id="com.caniko.cenix:id/folder_popup"' <<<"$ui"; then
+  tap_pattern 'content-desc="Utilities, folder,'
+  sleep 1
+  ui="$(dump_ui)"
+fi
+if ! grep -q 'content-desc="Cenix Auxiliary, rank 5"' <<<"$ui"; then
+  "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+  wait_ui 'resource-id="com.caniko.cenix:id/folder_popup"' 0
+  open_all_apps
   set_search "Auxiliary"
   wait_ui 'text="Cenix Auxiliary"' 1
   drag_from_to 'text="Cenix Auxiliary".*resource-id="com.caniko.cenix:id/appLabel"' 'content-desc="Utilities, folder,'
+  sleep 1
+  tap_pattern 'content-desc="Utilities, folder,'
 fi
-wait_ui 'content-desc="Utilities, folder, 5 applications' 1
-tap_pattern 'content-desc="Utilities, folder,'
 wait_ui 'content-desc="Cenix Auxiliary, rank 5"' 1
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture.secondary >/dev/null
 wait_ui 'content-desc="Cenix Auxiliary' 0
