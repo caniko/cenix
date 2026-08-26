@@ -1140,12 +1140,10 @@ if [[ "$private_profile_status" == "created" ]]; then
   "$adb" -s "$serial" shell am start --user "$private_profile_id" -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
   tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_dynamic"'
   sleep 1
-  ui="$(dump_ui)"
-  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/pin_confirmation"' && fail "private shortcut pin reached confirmation"
+  resumed | grep -q 'com.caniko.cenix/.PinShortcutActivity' && fail "private shortcut pin reached confirmation"
   tap_any_pattern 'resource-id="com.caniko.cenix.fixture:id/pin_widget"'
   sleep 1
-  ui="$(dump_ui)"
-  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/pin_confirmation"' && fail "private widget pin reached confirmation"
+  resumed | grep -q 'com.caniko.cenix/.PinWidgetActivity' && fail "private widget pin reached confirmation"
   go_home
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/personalTab"'
