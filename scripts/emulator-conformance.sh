@@ -410,6 +410,11 @@ open_all_apps() {
   ui="$(dump_ui)"
   if ! printf '%s\n' "$ui" | grep -q 'resource-id="com.caniko.cenix:id/searchField"'; then
     swipe_surface up
+    sleep 1
+    ui="$(dump_ui)"
+    if ! grep -q 'resource-id="com.caniko.cenix:id/searchField"' <<<"$ui"; then
+      swipe_surface up
+    fi
     wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 1
   fi
 }
