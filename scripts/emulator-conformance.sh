@@ -57,20 +57,27 @@ if [[ ! -x "$emulator_bin" ]]; then
   exit 1
 fi
 
-export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$art/avd}"
-export ANDROID_EMULATOR_HOME="${ANDROID_EMULATOR_HOME:-$art/emu-home}"
+if [[ -z "${CENIX_AVD:-}" ]]; then
+  export ANDROID_AVD_HOME="$art/avd"
+  export ANDROID_EMULATOR_HOME="$art/emu-home"
+else
+  export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$art/avd}"
+  export ANDROID_EMULATOR_HOME="${ANDROID_EMULATOR_HOME:-$art/emu-home}"
+fi
 mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_EMULATOR_HOME"
 image_pkg="system-images;android-35;google_apis;x86_64"
 if [[ "$image_kind" == "aosp" ]]; then
   image_pkg="system-images;android-35;default;x86_64"
 fi
+avdmanager="$(echo "$sdk"/cmdline-tools/*/bin/avdmanager | awk '{print $1}')"
+created_avd=0
 if ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
-  avdmanager="$(echo "$sdk"/cmdline-tools/*/bin/avdmanager | awk '{print $1}')"
   if [[ ! -x "$avdmanager" ]]; then
     echo "no avdmanager under $sdk/cmdline-tools; use: nix develop .#emulator" >&2
     exit 1
   fi
   echo no | "$avdmanager" create avd -f -n "$avd" -k "$image_pkg" >/dev/null
+  created_avd=1
 fi
 cfg="$ANDROID_AVD_HOME/${avd}.avd/config.ini"
 if [[ -f "$cfg" ]]; then
@@ -103,6 +110,16 @@ if [[ -n "$serial" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
   echo "AVD $avd already has serial $serial; refuse to reuse" >&2
   exit 1
 fi
+cleanup() {
+  [[ -n "$serial" && -n "$private_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$private_profile_id" >/dev/null 2>&1 || true
+  [[ -n "$serial" && -n "$work_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$work_profile_id" >/dev/null 2>&1 || true
+  if [[ "$started" != "0" ]]; then
+    kill "$started" 2>/dev/null || true
+    wait "$started" 2>/dev/null || true
+  fi
+  [[ -z "${CENIX_AVD:-}" && "$created_avd" == "1" ]] && "$avdmanager" delete avd -n "$avd" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 emu_port="${CENIX_EMU_PORT:-$((5570 + RANDOM % 20 * 2))}"
 rtl_boot=()
 if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
@@ -124,12 +141,6 @@ if [[ -z "$serial" ]]; then
   fi
 fi
 export ANDROID_SERIAL="$serial"
-cleanup() {
-  [[ -n "$private_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$private_profile_id" >/dev/null 2>&1 || true
-  [[ -n "$work_profile_id" ]] && "$adb" -s "$serial" shell pm remove-user "$work_profile_id" >/dev/null 2>&1 || true
-  [[ "$started" != "0" ]] && kill "$started" 2>/dev/null || true
-}
-trap cleanup EXIT
 echo "emulator serial: $serial (AVD $avd)"
 
 for _ in $(seq 1 60); do
