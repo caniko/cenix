@@ -16,3 +16,5 @@ Reference: GrapheneOS `platform_packages_apps_Launcher3`, branch `17`, commit `e
 | Missing provider or binding | Keep a removable placeholder without fabricating `RemoteViews` | `PendingAppWidgetHostView` |
 
 The reference is behavioral only. Cenix does not copy Launcher3 internals, database code, custom widget support, Quickstep integration, Compose picker code, or private/system APIs.
+
+Final P3 emulator and release evidence is recorded in [Production widget conformance](widget-conformance.md).

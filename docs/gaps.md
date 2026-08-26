@@ -2,7 +2,7 @@
 
 ## Still out
 
-- Widgets and swap
+- Occupied-cell swap
 - Recents / Quickstep (privileged; do not claim)
 - Private Space chrome, app lock, launcher data provider
 - Icon packs / Cuscon

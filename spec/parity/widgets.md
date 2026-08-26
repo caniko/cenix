@@ -24,3 +24,5 @@ Evidence labels are `SRC`, `API`, `AOSP_EMU`, `GOS_DEV`, and `UNKNOWN`.
 ## Scope
 
 P3 excludes custom widgets, dots, work-profile UI, Private Space, icon packs, backup import/export UI, secondary displays, tablets/foldables, Quickstep, feeds, weather, web search, AI, sync, plugins, and TalkBack certification.
+
+The production contract passed five isolated full AOSP API 35 runs plus forced RTL and font scale 1.3 at implementation commit `735286c011cf2559bc31d5a7aaf1f277d6ef5e7c`. This is emulator evidence, not GrapheneOS device evidence.

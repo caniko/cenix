@@ -1,6 +1,6 @@
 # Vertical slice conformance
 
-Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, shortcuts, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
+Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, shortcuts, production app widgets, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
 
 Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `default` x86_64 emulator is not that device.
 
@@ -37,7 +37,20 @@ That script:
 10. Discovers, launches, drags, docks, folders, updates, disables, pins, and reconciles typed shortcuts
 11. Verifies app info and Android-owned uninstall confirmation, including cancellation
 12. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
-13. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+13. Exercises widget discovery, rendering, updates, resize, duplicate instances, move, configure, pin, removal, and emergency isolation
+14. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+
+Final P3 evidence used clean implementation commit `735286c011cf2559bc31d5a7aaf1f277d6ef5e7c`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `37885e2ab618120ef75acc81772f6549b309579b88e188f328b3e2cfb0c55b90`.
+
+| Run | Duration | Evidence |
+| --- | ---: | --- |
+| 1 | 1022s | `AOSP_EMU` |
+| 2 | 920s | `AOSP_EMU` |
+| 3 | 930s | `AOSP_EMU` |
+| 4 | 945s | `AOSP_EMU` |
+| 5 | 987s | `AOSP_EMU` |
+
+The same commit passed forced RTL and font scale 1.3. Two clean unsigned release builds were byte-identical at SHA-256 `53ff39ce44a5f1dcc0ac0562130b371e0290c04cb38033bf26e87d704700f657`; the linked CycloneDX SBOM validated 326 components. See [Production widget conformance](widget-conformance.md). This is `AOSP_EMU`, never `GOS_DEV`; no physical mustang, TalkBack certification, or Macrobenchmark evidence exists. The Nix Android path still requires `--option sandbox false`.
 
 Final P2B evidence used clean commit `9ab9e1af37f9b90d6dc9d86b4f700a6e9e821856`, AOSP API 35 default x86_64 image revision 2, and debug APK SHA-256 `4255dbd0ca86a3136f512dd84010f5f61de9e26b37da6391769938f97a0bbf26`.
 
