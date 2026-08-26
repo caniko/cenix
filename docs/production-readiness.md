@@ -22,6 +22,7 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 - Typed folder creation, append, ranked reorder, rename, extraction, package reconciliation, and single-member dissolution (`API`, `AOSP_EMU`)
 - Typed manifest/dynamic shortcut placement, mixed folders, incoming pin confirmation, callback reconciliation, and transient context actions (`API`, `AOSP_EMU`)
 - Production app-widget discovery, bind/configure/pin/restore, real host rendering, updates, resize, duplicate instances, placeholders, and emergency isolation (`API`, `AOSP_EMU`)
+- Typed work/private profile discovery, work tabs and quiet-mode preservation, correct-user apps/shortcuts/DPC-allowed widgets, permanent removal, and lock-time private identity suppression (`API`, `AOSP_EMU`)
 - Orientation-stable phone grid with portrait/landscape, forced-RTL, and 1.3x font-scale conformance (`AOSP_EMU`)
 - Room-only durable state and no main-thread queries on device (`API`)
 - P1 canonical conformance: 5/5 isolated AOSP API 35 runs from clean commit `9fb79fbc505685a1566fcbd6f6c6d6a3d3769b42` (`AOSP_EMU`)
@@ -42,3 +43,4 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 - `GOS_DEV` — no mustang attached
 - Macrobenchmark / jank — static gates only (`scripts/check-performance-static.sh`)
 - TalkBack certification — semantic actions and forced RTL are covered, but no assistive-technology device pass
+- Full GrapheneOS Private Space parity — only the public third-party HOME boundary is implemented

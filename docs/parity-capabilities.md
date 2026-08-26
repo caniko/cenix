@@ -23,8 +23,8 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | Package add/update/remove | `INSTALLABLE_PUBLIC` | done | `LauncherApps.Callback`; `emu` |
 | Session commit | `INSTALLABLE_PUBLIC` | later | `SESSION_COMMITTED`; `src` |
 | Disabled / suspended apps | `INSTALLABLE_PUBLIC` | partial | callbacks exist; no dedicated UI |
-| Work profiles | `INSTALLABLE_PUBLIC` | partial | `LauncherApps.profiles`; no work chrome |
-| Private Space | `UNKNOWN_REQUIRES_SPIKE` | omitted | `src` UI; public API surface unclear for 3p HOME |
+| Work profiles | `INSTALLABLE_PUBLIC` | done | typed discovery, tabs, quiet/unquiet, apps, shortcuts, DPC-allowed widgets, reconciliation; `api`+`emu` |
+| Private Space | `ROLE_HOME_GATED` | public boundary | public API 35 permission/type/access, isolated section and lock-time leakage policy; `api`+`emu` |
 | App locking | `SIGNATURE_OR_SYSTEM` | omitted | `LOCK_APPS` in `src` |
 | Wallpaper / dynamic colors | `USER_AUTHORIZED` | later | `SET_WALLPAPER`; WallpaperColors |
 | Grid migration | `INSTALLABLE_PUBLIC` | later | out-of-grid pins kept, not remapped |

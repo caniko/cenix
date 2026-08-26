@@ -22,3 +22,4 @@
 | [0018](0018-deterministic-reorder.md) | Deterministic occupied-cell reorder |
 | [0019](0019-production-shell.md) | Separate production HOME and All Apps surfaces |
 | [0020](0020-shortcuts-context.md) | Typed shortcuts and platform-owned actions |
+| [0021](0021-profile-authority.md) | Android-owned live profile state and typed durable policy |

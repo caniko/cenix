@@ -21,7 +21,7 @@ This is a clean-room behavioral inventory. Cenix does not copy Launcher3 impleme
 | Move folder / hotseat | Folder is a normal workspace item and uses normal placement paths, including hotseat placement | `SRC`, `API` | Existing move/reorder path handles folder icons |
 | Package removal | Folder contents are model items and are reconciled when package activities disappear | `SRC`, `API` | `LauncherApps` live set drives transactional cleanup and dissolution |
 | Disable / suspension | Source has package-state handling, but exact placeholder behavior was not established from this folder path | `UNKNOWN` | Preserve current Cenix policy: absent launchable activity is removed |
-| Profile unavailable | Exact folder placeholder behavior was not established | `UNKNOWN` | Preserve current Cenix policy: unavailable launchables are removed |
+| Profile unavailable | Exact folder placeholder behavior was not established | `UNKNOWN` | Preserve durable same-profile members; hide the popup and render generic work placeholders |
 | Process recreation | Folder contents are database-backed; open state is a floating View | `SRC`, `API` | Persist model only; popup always starts closed |
 | Rotation | Source recreates/rebinds folder Views; exact open-popup retention was not proven on a device | `UNKNOWN` | Close popup on recreation; durable contents remain |
 | RTL | Folder grid, title sizing, preview, and focus paths include RTL handling | `SRC`, `API` | Logical member ranks remain stable; visual columns mirror |

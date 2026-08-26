@@ -24,8 +24,8 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | package-events | INSTALLABLE_PUBLIC | done | API,AOSP_EMU |
 | session-commit | INSTALLABLE_PUBLIC | later | SRC |
 | disabled-suspended | INSTALLABLE_PUBLIC | partial | API |
-| work-profiles | INSTALLABLE_PUBLIC | partial | API |
-| private-space | UNKNOWN_REQUIRES_SPIKE | omitted | SRC |
+| work-profiles | INSTALLABLE_PUBLIC | done-p4 | SRC,API,AOSP_EMU |
+| private-space | ROLE_HOME_GATED | public-boundary-p4 | SRC,API,AOSP_EMU |
 | app-lock | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
 | wallpaper | USER_AUTHORIZED | later | API |
 | grid-migration | INSTALLABLE_PUBLIC | room-v4-done; user-grid-later | API |

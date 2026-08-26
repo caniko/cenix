@@ -50,7 +50,7 @@ GrapheneOS deltas visible on `17`: no reserved hotseat search bar; 4×5 grid; Pr
 
 ## Profiles
 
-Source has work-profile and Private Space UI. Default user is personal. Cenix lists `LauncherApps.profiles` and does not implement Private Space chrome.
+Source has work-profile and Private Space UI. Default user is personal. Cenix implements typed work chrome and the public third-party HOME Private Space boundary documented in `private-space-capability.md`.
 
 ## Product copy rule
 

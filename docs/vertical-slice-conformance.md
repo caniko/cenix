@@ -1,6 +1,6 @@
 # Vertical slice conformance
 
-Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, shortcuts, production app widgets, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
+Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, shortcuts, production app widgets, work/private profile policy, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
 
 Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `default` x86_64 emulator is not that device.
 
@@ -39,6 +39,7 @@ That script:
 12. Sends `FORCE_NATIVE_FAILURE`, checks persistence, retry, and reset isolation
 13. Exercises widget discovery, rendering, updates, resize, duplicate instances, move, configure, pin, removal, and emergency isolation
 14. Installs a `-PomitNative` APK and checks emergency HOME search and launch
+15. The `profiles` suite creates managed/private profiles, applies a minimal test DPC for work widgets, and verifies profile launch, shortcuts, widgets, quiet/unquiet, package isolation, permanent removal, and private lock leakage
 
 Final P3 evidence used clean implementation commit `735286c011cf2559bc31d5a7aaf1f277d6ef5e7c`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `37885e2ab618120ef75acc81772f6549b309579b88e188f328b3e2cfb0c55b90`.
 
