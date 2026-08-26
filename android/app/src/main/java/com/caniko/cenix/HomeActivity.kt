@@ -5,11 +5,9 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.ApplicationInfo
-import android.content.pm.ShortcutInfo
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.KeyEvent
@@ -23,11 +21,13 @@ import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.Folder
@@ -44,8 +44,6 @@ import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
 import com.caniko.cenix.db.WidgetItemEntity
-import kotlin.math.max
-import kotlin.math.min
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var app: CenixApplication
@@ -53,6 +51,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var profiles: ProfileController
     private lateinit var profileReceiver: BroadcastReceiver
     private lateinit var shortcutCatalog: ShortcutCatalog
+    private lateinit var packageSessions: PackageSessionController
     private lateinit var search: SearchController
     private lateinit var root: LauncherRoot
     private lateinit var homeSurface: HomeSurface
@@ -89,17 +88,6 @@ class HomeActivity : AppCompatActivity() {
     private val widgetBindings = mutableMapOf<Long, WidgetItemEntity>()
     private var contextQueryToken = 0
 
-    private val packageCallback = object : LauncherApps.Callback() {
-        override fun onPackageAdded(packageName: String, user: android.os.UserHandle) = scheduleReload("add")
-        override fun onPackageRemoved(packageName: String, user: android.os.UserHandle) = scheduleReload("remove")
-        override fun onPackageChanged(packageName: String, user: android.os.UserHandle) = scheduleReload("change")
-        override fun onPackagesAvailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) = scheduleReload("available")
-        override fun onPackagesUnavailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) = scheduleReload("unavailable")
-        override fun onPackagesSuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("suspended")
-        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: android.os.UserHandle) = scheduleReload("unsuspended")
-        override fun onShortcutsChanged(packageName: String, shortcuts: MutableList<ShortcutInfo>, user: android.os.UserHandle) = scheduleReload("shortcuts")
-    }
-
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
         uri ?: return@registerForActivityResult
         contentResolver.openOutputStream(uri)?.use { out ->
@@ -121,6 +109,7 @@ class HomeActivity : AppCompatActivity() {
         profiles = ProfileController(this)
         catalog = AppCatalog(this, profiles)
         shortcutCatalog = ShortcutCatalog(this, catalog, profiles)
+        packageSessions = PackageSessionController(this, profiles, ::scheduleReload)
         selectedPageId = savedInstanceState?.getLong(STATE_PAGE_ID)?.toULong()
         search = SearchController(
             filterOf = { app.activeFilter() },
@@ -144,7 +133,7 @@ class HomeActivity : AppCompatActivity() {
             profiles::isAvailable,
             profiles::userForSerial,
         )
-        catalog.register(packageCallback)
+        packageSessions.start()
         profileReceiver = profiles.register(this) { scheduleReload("profile") }
         scheduleReload("create")
     }
@@ -190,6 +179,7 @@ class HomeActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
+        findViewById<Button>(R.id.launcherSettings).setOnClickListener { openLauncherSettings() }
         searchField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -210,7 +200,7 @@ class HomeActivity : AppCompatActivity() {
         appList.setOnItemClickListener { _, _, position, _ -> launch(visible[position]) }
         privateAppList.setOnItemClickListener { _, _, position, _ -> launch(privateVisible[position]) }
         privateAppList.setOnItemLongClickListener { _, view, position, _ ->
-            if (app.emergency) false else openContext(view, privateVisible[position], null, null)
+            if (app.emergency || !privateVisible[position].canPlace) false else openContext(view, privateVisible[position], null, null)
         }
         personalTab.setOnClickListener { selectProfileSection(ProfileKind.PERSONAL) }
         workTab.setOnClickListener { selectProfileSection(ProfileKind.WORK) }
@@ -220,7 +210,7 @@ class HomeActivity : AppCompatActivity() {
         var allAppsSource: View? = null
         var allAppsItem: LaunchableApp? = null
         appList.setOnItemLongClickListener { _, view, position, _ ->
-            if (app.emergency) return@setOnItemLongClickListener false
+            if (app.emergency || !visible[position].canPlace) return@setOnItemLongClickListener false
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
             searchField.clearFocus()
             allAppsLongPress.longPress()
@@ -239,7 +229,7 @@ class HomeActivity : AppCompatActivity() {
                 ) {
                     val source = allAppsSource
                     val item = allAppsItem
-                    if (source != null && item != null) {
+                    if (source != null && item?.canPlace == true) {
                         closeContext("drag")
                         setSurface(LauncherSurface.HOME, false)
                         if (dragLayer.beginDrag(source, LauncherDrag(item, null))) dragLayer.handleMotionEvent(event)
@@ -292,7 +282,7 @@ class HomeActivity : AppCompatActivity() {
         closeFolder("lifecycle")
         closeContext("lifecycle")
         dragLayer.cancel("lifecycle")
-        catalog.unregister(packageCallback)
+        packageSessions.stop()
         unregisterReceiver(profileReceiver)
         search.close()
         widgetHost.destroy()
@@ -305,7 +295,7 @@ class HomeActivity : AppCompatActivity() {
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
             val database = app.database ?: return@io
-            val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
+            val workspace = WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
                 val profileChange = profiles.refresh()
                 widgetHost.recover()
@@ -313,11 +303,17 @@ class HomeActivity : AppCompatActivity() {
                     .filter { it.descriptor.access == ProfileAccess.AVAILABLE }
                     .map { it.descriptor.profileId.toLong() }
                     .toSet()
-                val loaded = catalog.load(profileChange.profiles)
+                val loaded = packageSessions.decorate(
+                    catalog.load(profileChange.profiles),
+                    database.dao().workspaceApplications(),
+                )
                 val inaccessible = profileChange.newlyInaccessibleProfileIds + profileChange.removedProfileIds
                 dragLayer.post {
-                    dragLayer.cancel(if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) "profile-or-package" else "reload")
-                    if (reason in setOf("remove", "unavailable", "shortcuts", "profile")) {
+                    val invalidating = reason in setOf(
+                        "remove", "unavailable", "shortcuts", "profile", "change", "suspended", "loading", "session",
+                    )
+                    dragLayer.cancel(if (invalidating) "profile-or-package" else "reload")
+                    if (invalidating) {
                         closeContext("catalog")
                     }
                     if (inaccessible.isNotEmpty()) closeFolder("profile")
@@ -325,13 +321,10 @@ class HomeActivity : AppCompatActivity() {
                 }
                 workspace.removeProfiles(profileChange.removedProfileIds)
                 workspace.dropMissing(loaded, availableProfileIds)
-                val metrics = resources.displayMetrics
-                val widthDp = metrics.widthPixels / metrics.density
-                val heightDp = metrics.heightPixels / metrics.density
-                val desired = PhoneGrid.pick(min(widthDp, heightDp), max(widthDp, heightDp))
-                var state = workspace.setGrid(desired.cols, desired.rows)?.asSnapshot() ?: workspace.snapshot()
+                var state = workspace.snapshot()
                 val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
-                state = workspace.reconcileShortcuts(resolvedShortcuts.keys, availableProfileIds)?.asSnapshot()?.also {
+                val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), loaded)
+                state = workspace.reconcileShortcuts(liveShortcuts, availableProfileIds)?.asSnapshot()?.also {
                     CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
                 } ?: state
                 shortcutCatalog.pin(state.shortcutIds())
@@ -380,6 +373,7 @@ class HomeActivity : AppCompatActivity() {
                     widgetBindings.putAll(bindings.associateBy { it.itemId })
                     bindList(matches)
                     render(state)
+                    widgetHost.refreshOptions(state, widgetBindings)
                     applySurface()
                 }
             } catch (_: Throwable) {
@@ -498,8 +492,10 @@ class HomeActivity : AppCompatActivity() {
         view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon ?: shortcutItem?.icon)
         view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label ?: shortcutItem?.label.orEmpty()
         val label = appItem?.label ?: shortcutItem?.label
+        val packageStatus = appItem?.let(::packageStatus)
         view.contentDescription = if (label == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
-        else "$label, $location, row ${y + 1}, column ${x + 1}"
+        else listOfNotNull(label, packageStatus, location, "row ${y + 1}", "column ${x + 1}").joinToString()
+        if (packageStatus != null) view.alpha = 0.55f
         view.isFocusable = label != null
         if (item == null && pageId != null) {
             view.setOnLongClickListener { widgetHost.pick(pageId, x, y); true }
@@ -521,12 +517,20 @@ class HomeActivity : AppCompatActivity() {
         if (appItem != null) {
             view.tag = CellTarget(item.itemId)
             view.setOnClickListener { launch(appItem) }
-            attachLongPress(
+            if (appItem.canPlace) {
+                attachLongPress(
+                    view,
+                    onPopup = { openContext(view, appItem, item.itemId, null) },
+                    onDrag = { dragLayer.beginDrag(view, LauncherDrag(appItem, item.itemId)) },
+                )
+            }
+            addAccessibilityMoves(
                 view,
-                onPopup = { openContext(view, appItem, item.itemId, null) },
-                onDrag = { dragLayer.beginDrag(view, LauncherDrag(appItem, item.itemId)) },
+                item,
+                x,
+                y,
+                onContext = if (appItem.canPlace) ({ openContext(view, appItem, item.itemId, null) }) else null,
             )
-            addAccessibilityMoves(view, item, x, y, onContext = { openContext(view, appItem, item.itemId, null) })
         } else if (shortcutItem != null) {
             view.tag = CellTarget(item!!.itemId)
             view.setOnClickListener { launch(shortcutItem) }
@@ -1183,7 +1187,7 @@ class HomeActivity : AppCompatActivity() {
             override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean = when (action) {
                 R.id.action_open_all_apps -> { setSurface(LauncherSurface.ALL_APPS); true }
                 R.id.action_close_all_apps -> { setSurface(LauncherSurface.HOME); true }
-                R.id.action_open_launcher_settings -> { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)); true }
+                R.id.action_open_launcher_settings -> { openLauncherSettings(); true }
                 R.id.action_export_diagnostics -> { exportDiagnostics.launch("cenix-diagnostics.txt"); true }
                 else -> super.performAccessibilityAction(host, action, args)
             }
@@ -1193,7 +1197,7 @@ class HomeActivity : AppCompatActivity() {
     private fun launch(appItem: LaunchableApp) {
         closeFolder("launch")
         closeContext("launch")
-        if (!profiles.isAvailable(appItem.profileId)) {
+        if (!profiles.isAvailable(appItem.profileId) || !appItem.canLaunch) {
             return Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
         }
         val user = appItem.user ?: catalog.userForSerial(appItem.profileId)
@@ -1240,6 +1244,15 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun resetState() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.reset_state)
+            .setMessage(R.string.reset_confirmation)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.reset_state) { _, _ -> resetStateConfirmed() }
+            .show()
+    }
+
+    private fun resetStateConfirmed() {
         widgetHost.deleteHost()
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
@@ -1248,6 +1261,10 @@ class HomeActivity : AppCompatActivity() {
             selectedPageId = null
             scheduleReload("reset")
         }
+    }
+
+    private fun openLauncherSettings() {
+        startActivity(Intent(this, LauncherSettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private inner class AppAdapter(private val items: List<LaunchableApp>) : BaseAdapter() {
@@ -1262,9 +1279,30 @@ class HomeActivity : AppCompatActivity() {
             view.findViewById<TextView>(R.id.appLabel).text = item.label
             val profile = profileLabel(item.profileKind)
             view.findViewById<TextView>(R.id.appProfile).text = profile
-            view.contentDescription = "${item.label}, $profile"
+            val packageStatus = packageStatus(item)
+            view.findViewById<TextView>(R.id.appStatus).apply {
+                text = packageStatus
+                visibility = if (packageStatus == null) View.GONE else View.VISIBLE
+            }
+            view.findViewById<ProgressBar>(R.id.appProgress).apply {
+                val show = item.packageState == PackageState.INSTALLING || item.packageState == PackageState.UPDATING
+                visibility = if (show) View.VISIBLE else View.GONE
+                progress = item.installProgress ?: 0
+            }
+            view.alpha = if (item.packageState == PackageState.READY) 1f else 0.65f
+            view.contentDescription = listOfNotNull(item.label, profile, packageStatus).joinToString()
             return view
         }
+    }
+
+    private fun packageStatus(item: LaunchableApp): String? = when (item.packageState) {
+        PackageState.READY -> null
+        PackageState.INSTALLING -> getString(R.string.package_installing, item.installProgress ?: 0)
+        PackageState.UPDATING -> getString(R.string.package_updating, item.installProgress ?: 0)
+        PackageState.SUSPENDED -> getString(R.string.package_suspended)
+        PackageState.DISABLED -> getString(R.string.package_disabled)
+        PackageState.ARCHIVED -> getString(R.string.package_archived)
+        PackageState.TEMPORARILY_UNAVAILABLE -> getString(R.string.package_temporarily_unavailable)
     }
 
     private fun profileLabel(kind: ProfileKind): String = getString(
@@ -1296,4 +1334,11 @@ private fun ItemPayload.profileId(): Long? = when (this) {
     is ItemPayload.Shortcut -> shortcut.profileId.toLong()
     is ItemPayload.Widget -> provider.profileId.toLong()
     is ItemPayload.Folder -> null
+}
+
+internal fun retainedShortcutIds(current: List<ShortcutId>, apps: List<LaunchableApp>): List<ShortcutId> {
+    val retained = apps.filter { it.packageState != PackageState.READY }
+        .map { PackageKey(it.packageName, it.profileId) }
+        .toSet()
+    return current.filter { PackageKey(it.`package`, it.profileId.toLong()) in retained }
 }

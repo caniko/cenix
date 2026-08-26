@@ -48,7 +48,7 @@ object CenixLog {
 
     private val sensitive = listOf(
         "package", "class", "label", "query", "profile", "component", "title",
-        "serial", "user", "shortcut", "widget", "provider",
+        "serial", "user", "shortcut", "widget", "provider", "session", "folder", "appwidget",
     )
 
     fun event(id: EventId, severity: Severity, fields: Map<String, String> = emptyMap()) {

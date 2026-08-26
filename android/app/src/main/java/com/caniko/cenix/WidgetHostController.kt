@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -27,10 +28,36 @@ import com.caniko.cenix.db.WidgetOperationPhase
 import com.caniko.cenix.uniffi.CellRect
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.WidgetProviderId
+import com.caniko.cenix.uniffi.WidgetMinimumSpan
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+fun widgetMinimumSpans(
+    context: Context,
+    database: CenixDatabase,
+    state: WorkspaceSnapshot,
+    grid: PhoneGrid,
+): List<WidgetMinimumSpan> {
+    val manager = context.getSystemService(AppWidgetManager::class.java)
+    val bindings = database.dao().workspaceWidgets().associateBy { it.itemId }
+    val metrics = context.resources.displayMetrics
+    val shortEdge = minOf(metrics.widthPixels, metrics.heightPixels)
+    val cellWidth = ((shortEdge - 32 * metrics.density) / grid.cols).toInt().coerceAtLeast(1)
+    val cellHeight = ((shortEdge - 120 * metrics.density) / grid.rows).toInt().coerceAtLeast(1)
+    return state.items.mapNotNull { item ->
+        if (item.payload !is com.caniko.cenix.uniffi.ItemPayload.Widget) return@mapNotNull null
+        val info = bindings[item.itemId.toLong()]?.appWidgetId?.let(manager::getAppWidgetInfo)
+        val spanX = info?.let {
+            ceil((if (it.minResizeWidth > 0) it.minResizeWidth else it.minWidth).toDouble() / cellWidth).toInt()
+        }?.coerceAtLeast(1) ?: item.cell.spanX
+        val spanY = info?.let {
+            ceil((if (it.minResizeHeight > 0) it.minResizeHeight else it.minHeight).toDouble() / cellHeight).toInt()
+        }?.coerceAtLeast(1) ?: item.cell.spanY
+        WidgetMinimumSpan(item.itemId, spanX, spanY)
+    }
+}
 
 @Suppress("DEPRECATION")
 class WidgetHostController(
@@ -213,6 +240,14 @@ class WidgetHostController(
             database()?.dao()?.pendingWidgetOperations()
                 ?.filter { it.profileId in profileIds }
                 ?.forEach { rollback(it, false) }
+        }
+    }
+
+    fun refreshOptions(state: WorkspaceSnapshot, bindings: Map<Long, WidgetItemEntity>) {
+        state.items.forEach { item ->
+            if (item.payload is com.caniko.cenix.uniffi.ItemPayload.Widget) {
+                bindings[item.itemId.toLong()]?.appWidgetId?.let { manager.updateAppWidgetOptions(it, sizeOptions(item.cell)) }
+            }
         }
     }
 

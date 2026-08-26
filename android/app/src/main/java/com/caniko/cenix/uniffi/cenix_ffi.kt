@@ -1536,6 +1536,42 @@ public object FfiConverterTypeShortcutId: FfiConverterRustBuffer<ShortcutId> {
 
 
 
+data class WidgetMinimumSpan (
+    var `itemId`: kotlin.ULong,
+    var `spanX`: kotlin.Int,
+    var `spanY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetMinimumSpan: FfiConverterRustBuffer<WidgetMinimumSpan> {
+    override fun read(buf: ByteBuffer): WidgetMinimumSpan {
+        return WidgetMinimumSpan(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetMinimumSpan) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterInt.allocationSize(value.`spanX`) +
+            FfiConverterInt.allocationSize(value.`spanY`)
+    )
+
+    override fun write(value: WidgetMinimumSpan, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterInt.write(value.`spanX`, buf)
+            FfiConverterInt.write(value.`spanY`, buf)
+    }
+}
+
+
+
 data class WidgetProviderId (
     var `package`: kotlin.String,
     var `class`: kotlin.String,
@@ -2265,7 +2301,9 @@ sealed class WorkspaceCommand {
 
     data class SetGrid(
         val `expectedGeneration`: kotlin.ULong,
-        val `grid`: GridSpec) : WorkspaceCommand() {
+        val `grid`: GridSpec,
+        val `nextPageId`: kotlin.ULong,
+        val `widgetMinimumSpans`: List<WidgetMinimumSpan>) : WorkspaceCommand() {
         companion object
     }
 
@@ -2413,6 +2451,8 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
             19 -> WorkspaceCommand.SetGrid(
                 FfiConverterULong.read(buf),
                 FfiConverterTypeGridSpec.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceTypeWidgetMinimumSpan.read(buf),
                 )
             20 -> WorkspaceCommand.DropMissing(
                 FfiConverterULong.read(buf),
@@ -2619,6 +2659,8 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 4UL
                 + FfiConverterULong.allocationSize(value.`expectedGeneration`)
                 + FfiConverterTypeGridSpec.allocationSize(value.`grid`)
+                + FfiConverterULong.allocationSize(value.`nextPageId`)
+                + FfiConverterSequenceTypeWidgetMinimumSpan.allocationSize(value.`widgetMinimumSpans`)
             )
         }
         is WorkspaceCommand.DropMissing -> {
@@ -2803,6 +2845,8 @@ public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<Workspac
                 buf.putInt(19)
                 FfiConverterULong.write(value.`expectedGeneration`, buf)
                 FfiConverterTypeGridSpec.write(value.`grid`, buf)
+                FfiConverterULong.write(value.`nextPageId`, buf)
+                FfiConverterSequenceTypeWidgetMinimumSpan.write(value.`widgetMinimumSpans`, buf)
                 Unit
             }
             is WorkspaceCommand.DropMissing -> {
@@ -2908,6 +2952,12 @@ sealed class WorkspaceException: kotlin.Exception() {
             get() = ""
     }
 
+    class WidgetTooLarge(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
     class InvariantViolation(
         ) : WorkspaceException() {
         override val message
@@ -2941,7 +2991,8 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
             9 -> WorkspaceException.InvalidGrid()
             10 -> WorkspaceException.InvalidTitle()
             11 -> WorkspaceException.CrossProfile()
-            12 -> WorkspaceException.InvariantViolation()
+            12 -> WorkspaceException.WidgetTooLarge()
+            13 -> WorkspaceException.InvariantViolation()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -2989,6 +3040,10 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 4UL
             )
             is WorkspaceException.CrossProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.WidgetTooLarge -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
@@ -3045,8 +3100,12 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
                 buf.putInt(11)
                 Unit
             }
-            is WorkspaceException.InvariantViolation -> {
+            is WorkspaceException.WidgetTooLarge -> {
                 buf.putInt(12)
+                Unit
+            }
+            is WorkspaceException.InvariantViolation -> {
+                buf.putInt(13)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3246,6 +3305,34 @@ public object FfiConverterSequenceTypeShortcutId: FfiConverterRustBuffer<List<Sh
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeShortcutId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetMinimumSpan: FfiConverterRustBuffer<List<WidgetMinimumSpan>> {
+    override fun read(buf: ByteBuffer): List<WidgetMinimumSpan> {
+        val len = buf.getInt()
+        return List<WidgetMinimumSpan>(len) {
+            FfiConverterTypeWidgetMinimumSpan.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetMinimumSpan>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetMinimumSpan.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetMinimumSpan>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetMinimumSpan.write(it, buf)
         }
     }
 }

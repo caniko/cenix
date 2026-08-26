@@ -36,6 +36,13 @@ pub struct CellRect {
     pub span_y: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WidgetMinimumSpan {
+    pub item_id: u64,
+    pub span_x: i32,
+    pub span_y: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContainerRef {
     Workspace { page_id: u64 },
@@ -197,6 +204,8 @@ pub enum WorkspaceCommand {
     SetGrid {
         expected_generation: u64,
         grid: GridSpec,
+        next_page_id: u64,
+        widget_minimum_spans: Vec<WidgetMinimumSpan>,
     },
     DropMissing {
         expected_generation: u64,
@@ -242,6 +251,7 @@ pub enum WorkspaceError {
     InvalidGrid,
     InvalidTitle,
     CrossProfile,
+    WidgetTooLarge,
     InvariantViolation,
 }
 
@@ -480,10 +490,19 @@ pub fn apply_workspace_command(
             remove_empty_page(&mut snapshot, page_id)?;
             removed_page_ids.push(page_id);
         }
-        WorkspaceCommand::SetGrid { grid, .. } => {
-            snapshot.grid = grid;
-            validate_snapshot(&snapshot)?;
-        }
+        WorkspaceCommand::SetGrid {
+            grid,
+            next_page_id,
+            widget_minimum_spans,
+            ..
+        } => migrate_grid(
+            &mut snapshot,
+            grid,
+            next_page_id,
+            widget_minimum_spans,
+            &mut created_page_ids,
+            &mut removed_page_ids,
+        )?,
         WorkspaceCommand::DropMissing {
             live,
             authoritative_profile_ids,
@@ -1258,6 +1277,156 @@ fn trim_empty_trailing_pages(snapshot: &mut WorkspaceSnapshot) -> Vec<u64> {
     removed
 }
 
+fn migrate_grid(
+    snapshot: &mut WorkspaceSnapshot,
+    grid: GridSpec,
+    mut next_page_id: u64,
+    widget_minimum_spans: Vec<WidgetMinimumSpan>,
+    created_page_ids: &mut Vec<u64>,
+    removed_page_ids: &mut Vec<u64>,
+) -> Result<(), WorkspaceError> {
+    validate_grid(grid)?;
+    if next_page_id == 0 || next_page_id >= i64::MAX as u64 {
+        return Err(WorkspaceError::InvariantViolation);
+    }
+
+    let mut minimums = HashMap::new();
+    for minimum in widget_minimum_spans {
+        if minimum.item_id == 0
+            || minimum.span_x <= 0
+            || minimum.span_y <= 0
+            || minimums
+                .insert(minimum.item_id, (minimum.span_x, minimum.span_y))
+                .is_some()
+        {
+            return Err(WorkspaceError::InvariantViolation);
+        }
+        let item = snapshot
+            .items
+            .iter()
+            .find(|item| item.item_id == minimum.item_id)
+            .ok_or(WorkspaceError::MissingItem)?;
+        if !matches!(item.payload, ItemPayload::Widget(_)) {
+            return Err(WorkspaceError::InvariantViolation);
+        }
+    }
+
+    let page_ranks: HashMap<_, _> = snapshot
+        .pages
+        .iter()
+        .map(|page| (page.page_id, page.rank))
+        .collect();
+    let mut ordered = snapshot.items.clone();
+    ordered.sort_by_key(|item| match item.container {
+        ContainerRef::Hotseat => (0, 0, item.cell.cell_x, item.cell.cell_y, item.item_id),
+        ContainerRef::Workspace { page_id } => (
+            1,
+            *page_ranks.get(&page_id).unwrap_or(&i32::MAX),
+            item.cell.cell_y,
+            item.cell.cell_x,
+            item.item_id,
+        ),
+    });
+
+    snapshot.grid = grid;
+    snapshot.items.clear();
+    let mut pending = Vec::new();
+    for mut item in ordered {
+        if matches!(item.payload, ItemPayload::Widget(_)) {
+            let minimum = minimums
+                .get(&item.item_id)
+                .copied()
+                .unwrap_or((item.cell.span_x, item.cell.span_y));
+            if minimum.0 > grid.cols || minimum.1 > grid.rows {
+                return Err(WorkspaceError::WidgetTooLarge);
+            }
+            item.cell.span_x = item.cell.span_x.min(grid.cols).max(minimum.0);
+            item.cell.span_y = item.cell.span_y.min(grid.rows).max(minimum.1);
+        }
+        let fits = validate_destination(snapshot, &item.container, item.cell).is_ok()
+            && !occupied(snapshot, &item.container, item.cell, None);
+        if fits {
+            snapshot.items.push(item);
+        } else {
+            pending.push(item);
+        }
+    }
+
+    for mut item in pending {
+        let start_rank = match item.container {
+            ContainerRef::Workspace { page_id } => *page_ranks.get(&page_id).unwrap_or(&0),
+            ContainerRef::Hotseat => 0,
+        };
+        let span = item.cell;
+        let mut destination = snapshot
+            .pages
+            .iter()
+            .skip(start_rank.max(0) as usize)
+            .find_map(|page| {
+                let container = ContainerRef::Workspace {
+                    page_id: page.page_id,
+                };
+                first_vacancy(snapshot, &container, span.span_x, span.span_y)
+                    .map(|cell| (container, cell))
+            });
+        if destination.is_none() {
+            while snapshot
+                .pages
+                .iter()
+                .any(|page| page.page_id == next_page_id)
+            {
+                next_page_id = next_page_id
+                    .checked_add(1)
+                    .filter(|id| *id < i64::MAX as u64)
+                    .ok_or(WorkspaceError::InvariantViolation)?;
+            }
+            let page_id = next_page_id;
+            next_page_id = next_page_id
+                .checked_add(1)
+                .filter(|id| *id < i64::MAX as u64)
+                .ok_or(WorkspaceError::InvariantViolation)?;
+            snapshot.pages.push(WorkspacePage {
+                page_id,
+                rank: snapshot.pages.len() as i32,
+            });
+            created_page_ids.push(page_id);
+            let container = ContainerRef::Workspace { page_id };
+            destination = first_vacancy(snapshot, &container, span.span_x, span.span_y)
+                .map(|cell| (container, cell));
+        }
+        let (container, cell) = destination.ok_or(WorkspaceError::Full)?;
+        item.container = container;
+        item.cell = cell;
+        snapshot.items.push(item);
+    }
+
+    removed_page_ids.extend(trim_empty_trailing_pages(snapshot));
+    Ok(())
+}
+
+fn first_vacancy(
+    snapshot: &WorkspaceSnapshot,
+    container: &ContainerRef,
+    span_x: i32,
+    span_y: i32,
+) -> Option<CellRect> {
+    let (cols, rows) = dimensions(snapshot.grid, container);
+    for y in 0..=rows - span_y {
+        for x in 0..=cols - span_x {
+            let cell = CellRect {
+                cell_x: x,
+                cell_y: y,
+                span_x,
+                span_y,
+            };
+            if !occupied(snapshot, container, cell, None) {
+                return Some(cell);
+            }
+        }
+    }
+    None
+}
+
 // Nearest means Manhattan distance, then visual row, column, and finally item-independent order.
 fn nearest_vacancy(
     snapshot: &WorkspaceSnapshot,
@@ -1435,15 +1604,7 @@ fn payload_exists(snapshot: &WorkspaceSnapshot, payload: &ItemPayload) -> bool {
 }
 
 fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
-    if snapshot.grid.cols <= 0
-        || snapshot.grid.rows <= 0
-        || snapshot.grid.hotseat_cols <= 0
-        || snapshot.grid.cols > 64
-        || snapshot.grid.rows > 64
-        || snapshot.grid.hotseat_cols > 64
-    {
-        return Err(WorkspaceError::InvalidGrid);
-    }
+    validate_grid(snapshot.grid)?;
     if snapshot.pages.is_empty() {
         return Err(WorkspaceError::MissingPage);
     }
@@ -1554,6 +1715,19 @@ fn validate_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError>
         {
             return Err(WorkspaceError::InvariantViolation);
         }
+    }
+    Ok(())
+}
+
+fn validate_grid(grid: GridSpec) -> Result<(), WorkspaceError> {
+    if grid.cols <= 0
+        || grid.rows <= 0
+        || grid.hotseat_cols <= 0
+        || grid.cols > 64
+        || grid.rows > 64
+        || grid.hotseat_cols > 64
+    {
+        return Err(WorkspaceError::InvalidGrid);
     }
     Ok(())
 }
@@ -1920,10 +2094,201 @@ mod tests {
                         cols: 0,
                         rows: 1,
                         hotseat_cols: 1
-                    }
+                    },
+                    next_page_id: 20,
+                    widget_minimum_spans: vec![],
                 }
             ),
             Err(WorkspaceError::InvalidGrid)
+        );
+    }
+
+    #[test]
+    fn grid_migration_preserves_ids_and_reflows_hotseat_overflow_to_new_pages() {
+        let mut source = snapshot();
+        source.items = vec![
+            WorkspaceItem {
+                item_id: 1,
+                payload: ItemPayload::Application(component("one")),
+                container: ContainerRef::Workspace { page_id: 10 },
+                cell: CellRect::single(0, 0),
+            },
+            WorkspaceItem {
+                item_id: 2,
+                payload: ItemPayload::Application(component("two")),
+                container: ContainerRef::Workspace { page_id: 10 },
+                cell: CellRect::single(1, 0),
+            },
+            WorkspaceItem {
+                item_id: 3,
+                payload: ItemPayload::Application(component("three")),
+                container: ContainerRef::Hotseat,
+                cell: CellRect::single(0, 0),
+            },
+            WorkspaceItem {
+                item_id: 4,
+                payload: ItemPayload::Application(component("four")),
+                container: ContainerRef::Hotseat,
+                cell: CellRect::single(1, 0),
+            },
+        ];
+        let command = WorkspaceCommand::SetGrid {
+            expected_generation: 4,
+            grid: GridSpec {
+                cols: 1,
+                rows: 1,
+                hotseat_cols: 1,
+            },
+            next_page_id: 20,
+            widget_minimum_spans: vec![],
+        };
+        let left = apply_workspace_command(source.clone(), command.clone()).unwrap();
+        let right = apply_workspace_command(source, command).unwrap();
+
+        assert_eq!(left, right);
+        assert_eq!(left.generation, 5);
+        assert_eq!(left.created_page_ids, [20, 21]);
+        assert_eq!(
+            left.items
+                .iter()
+                .map(|item| item.item_id)
+                .collect::<HashSet<_>>(),
+            HashSet::from([1, 2, 3, 4])
+        );
+        assert!(
+            left.items
+                .iter()
+                .any(|item| item.item_id == 3 && item.container == ContainerRef::Hotseat)
+        );
+        assert!(
+            left.items.iter().any(|item| item.item_id == 4
+                && item.container == ContainerRef::Workspace { page_id: 20 })
+        );
+    }
+
+    #[test]
+    fn grid_migration_reports_impossible_widget_minimum_without_mutation() {
+        let mut source = snapshot();
+        source.items.push(WorkspaceItem {
+            item_id: 1,
+            payload: ItemPayload::Widget(WidgetProviderId {
+                package: "widgets".into(),
+                class: "Clock".into(),
+                profile_id: 0,
+            }),
+            container: ContainerRef::Workspace { page_id: 10 },
+            cell: CellRect {
+                cell_x: 0,
+                cell_y: 0,
+                span_x: 2,
+                span_y: 2,
+            },
+        });
+        let before = source.clone();
+        assert_eq!(
+            apply_workspace_command(
+                source,
+                WorkspaceCommand::SetGrid {
+                    expected_generation: 4,
+                    grid: GridSpec {
+                        cols: 1,
+                        rows: 2,
+                        hotseat_cols: 1
+                    },
+                    next_page_id: 20,
+                    widget_minimum_spans: vec![WidgetMinimumSpan {
+                        item_id: 1,
+                        span_x: 2,
+                        span_y: 1
+                    }],
+                },
+            ),
+            Err(WorkspaceError::WidgetTooLarge),
+        );
+        assert_eq!(before.grid.cols, 2);
+        assert_eq!(before.items[0].cell.span_x, 2);
+    }
+
+    #[test]
+    fn grid_expansion_and_repeat_preserve_positions_and_generation() {
+        let mut source = snapshot();
+        source.items.push(WorkspaceItem {
+            item_id: 1,
+            payload: ItemPayload::Widget(WidgetProviderId {
+                package: "widgets".into(),
+                class: "Clock".into(),
+                profile_id: 0,
+            }),
+            container: ContainerRef::Workspace { page_id: 10 },
+            cell: CellRect {
+                cell_x: 0,
+                cell_y: 0,
+                span_x: 2,
+                span_y: 2,
+            },
+        });
+        let expanded = apply_workspace_command(
+            source,
+            WorkspaceCommand::SetGrid {
+                expected_generation: 4,
+                grid: GridSpec {
+                    cols: 3,
+                    rows: 3,
+                    hotseat_cols: 3,
+                },
+                next_page_id: 20,
+                widget_minimum_spans: vec![WidgetMinimumSpan {
+                    item_id: 1,
+                    span_x: 1,
+                    span_y: 1,
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            expanded.items[0].cell,
+            CellRect {
+                cell_x: 0,
+                cell_y: 0,
+                span_x: 2,
+                span_y: 2
+            }
+        );
+
+        let repeated = apply_workspace_command(
+            expanded.clone().into(),
+            WorkspaceCommand::SetGrid {
+                expected_generation: 5,
+                grid: expanded.grid,
+                next_page_id: 20,
+                widget_minimum_spans: vec![WidgetMinimumSpan {
+                    item_id: 1,
+                    span_x: 1,
+                    span_y: 1,
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(repeated.generation, 5);
+        assert_eq!(
+            WorkspaceSnapshot::from(repeated),
+            WorkspaceSnapshot::from(expanded.clone())
+        );
+        assert_eq!(
+            apply_workspace_command(
+                expanded.into(),
+                WorkspaceCommand::SetGrid {
+                    expected_generation: 4,
+                    grid: GridSpec {
+                        cols: 2,
+                        rows: 2,
+                        hotseat_cols: 2
+                    },
+                    next_page_id: 20,
+                    widget_minimum_spans: vec![],
+                },
+            ),
+            Err(WorkspaceError::StaleGeneration),
         );
     }
 

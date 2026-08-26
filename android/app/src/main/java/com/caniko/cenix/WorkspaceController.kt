@@ -10,6 +10,7 @@ import com.caniko.cenix.uniffi.WorkspaceException
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
 import com.caniko.cenix.uniffi.WidgetProviderId
+import com.caniko.cenix.uniffi.WidgetMinimumSpan
 
 class WorkspaceController(
     private val repository: LauncherRepository,
@@ -179,11 +180,28 @@ class WorkspaceController(
         return execute("add-page", WorkspaceCommand.AddPage(state.generation, repository.nextPageId()))
     }
 
-    fun setGrid(cols: Int, rows: Int): WorkspaceTransition? {
+    fun setGrid(gridOption: PhoneGrid, widgetMinimumSpans: List<WidgetMinimumSpan>): WorkspaceTransition? {
         val state = snapshot()
-        val grid = GridSpec(cols, rows, cols)
-        if (state.grid == grid) return null
-        return execute("set-grid", WorkspaceCommand.SetGrid(state.generation, grid))
+        val grid = GridSpec(gridOption.cols, gridOption.rows, gridOption.cols)
+        if (state.grid == grid && repository.selectedGridName() == gridOption.name) return null
+        if (!nativeAvailable()) return null
+        val command = WorkspaceCommand.SetGrid(
+            state.generation,
+            grid,
+            repository.nextPageId(),
+            widgetMinimumSpans,
+        )
+        CenixLog.event(EventId.WORKSPACE_COMMAND, Severity.INFO, mapOf("category" to "set-grid"))
+        return try {
+            repository.applyGrid(command, gridOption.name)
+        } catch (error: WorkspaceException) {
+            CenixLog.event(
+                EventId.WORKSPACE_TRANSITION,
+                Severity.WARN,
+                mapOf("result" to "rejected", "category" to error.javaClass.simpleName),
+            )
+            throw error
+        }
     }
 
     fun dropMissing(live: Collection<LaunchableApp>, authoritativeProfiles: Collection<Long>): WorkspaceTransition? {

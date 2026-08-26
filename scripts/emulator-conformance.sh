@@ -6,8 +6,8 @@ if [[ "${1:-}" == "--suite" ]]; then
   suite="${2:-}"
   shift 2
 fi
-[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|full]" >&2; exit 2; }
-case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
+[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|settings|packages|full]" >&2; exit 2; }
+case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|settings|packages|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
@@ -211,7 +211,7 @@ dump_ui() {
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
       xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
       if grep -q 'package="com.caniko.cenix"' <<<"$xml" &&
-        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation|widget_picker)' <<<"$xml"; then
+        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation|widget_picker|settingsTitle)' <<<"$xml"; then
         printf '%s\n' "$xml"
         return 0
       fi
@@ -406,17 +406,20 @@ swipe_surface() {
 }
 
 open_all_apps() {
-  local ui
-  ui="$(dump_ui)"
-  if ! printf '%s\n' "$ui" | grep -q 'resource-id="com.caniko.cenix:id/searchField"'; then
+  local ui attempt
+  for attempt in 1 2 3; do
+    ui="$(dump_ui)"
+    grep -q 'resource-id="com.caniko.cenix:id/searchField"' <<<"$ui" && return 0
+    if ! grep -q 'resource-id="com.caniko.cenix:id/launcherRoot"' <<<"$ui"; then
+      "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+      go_home
+      sleep 1
+      continue
+    fi
     swipe_surface up
     sleep 1
-    ui="$(dump_ui)"
-    if ! grep -q 'resource-id="com.caniko.cenix:id/searchField"' <<<"$ui"; then
-      swipe_surface up
-    fi
-    wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 1
-  fi
+  done
+  wait_ui 'resource-id="com.caniko.cenix:id/searchField"' 1
 }
 
 close_all_apps() {
@@ -644,6 +647,75 @@ wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
 pass "launch: fixture activity resumed"
 go_home
 pass "launch: KEYCODE_HOME returns to Cenix"
+
+if [[ "$suite" == "settings" || "$suite" == "full" ]]; then
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  ui="$(dump_ui)"
+  for grid in grid_2_by_2 grid_3_by_3 grid_4_by_4; do
+    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$grid\"" || fail "compatible setting missing: $grid"
+  done
+  echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
+  echo "$ui" | grep -q "$CENIX_GIT_COMMIT" || fail "settings build identity missing exact source commit"
+  pass "settings: finite compatible phone grids and build identity are visible"
+
+  tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
+  wait_ui 'text="Grid applied"' 1
+  device_settings_ui="$(dump_ui)"
+  echo "$device_settings_ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "selected grid not checked"
+  "$adb" -s "$serial" shell am force-stop com.caniko.cenix
+  go_home
+  sleep 2
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
+  pass "settings: selected grid survives process recreation"
+
+  tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
+  sleep 1
+  ui="$(dump_any_ui)"
+  echo "$ui" | grep -q 'Remove all local pages' || fail "reset confirmation did not open"
+  tap_any_pattern 'resource-id="android:id/button2"'
+  sleep 1
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'Remove all local pages' && fail "reset confirmation did not close"
+  pass "settings: reset requires confirmation and cancellation preserves state"
+  tap_pattern 'resource-id="com.caniko.cenix:id/grid_4_by_4"'
+  wait_ui 'text="Grid applied"' 1
+  go_home
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'column 4' || fail "restored 4 x 4 grid did not render"
+  pass "settings: shrink, repeat-safe persistence, and expansion render through Room/Rust"
+fi
+
+if [[ "$suite" == "packages" || "$suite" == "full" ]]; then
+  "$adb" -s "$serial" shell pm suspend --user 0 com.caniko.cenix.fixture >/dev/null || fail "fixture suspend failed"
+  go_home
+  set_search "Fixture"
+  wait_ui 'text="Suspended"' 1
+  wait_ui 'text="Cenix Fixture"' 1
+  pass "packages: suspended state retains and disables the application presentation"
+  "$adb" -s "$serial" shell pm unsuspend --user 0 com.caniko.cenix.fixture >/dev/null || fail "fixture unsuspend failed"
+  wait_ui 'text="Suspended"' 0
+
+  "$adb" -s "$serial" shell pm disable-user --user 0 com.caniko.cenix.fixture >/dev/null || fail "fixture disable failed"
+  wait_ui 'text="Disabled"' 1
+  wait_ui 'text="Cenix Fixture"' 1
+  pass "packages: disabled state retains application identity without launching"
+  "$adb" -s "$serial" shell pm enable --user 0 com.caniko.cenix.fixture >/dev/null || fail "fixture enable failed"
+  wait_ui 'text="Disabled"' 0
+  "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk" >/dev/null
+  wait_ui 'text="Cenix Fixture"' 1
+  pass "packages: replacement update completes without deleting presentation"
+  printf '%s\n' \
+    'ARCHIVED=UNKNOWN_REQUIRES_SPIKE: no stable AOSP emulator shell setup' \
+    'TEMPORARILY_UNAVAILABLE=UNKNOWN_REQUIRES_SPIKE: no removable-app-volume fixture' \
+    'INSTALL_PROGRESS=UNKNOWN_REQUIRES_SPIKE: local adb replacement completes before observable progress' \
+    >"$art/package-capabilities.txt"
+fi
 
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 set_search "Fixture"
@@ -1249,6 +1321,10 @@ echo "$holders" | grep -q 'com.caniko.cenix' || fail "retry-native changed HOME 
 wait_ui 'Emergency mode' 1
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 tap_pattern 'resource-id="com.caniko.cenix:id/resetState"'
+sleep 1
+ui="$(dump_any_ui)"
+echo "$ui" | grep -q 'Remove all local pages' || fail "emergency reset confirmation did not open"
+tap_any_pattern 'resource-id="android:id/button1"'
 sleep 1
 ui="$(dump_ui)"
 echo "$ui" | grep -q 'Emergency mode' && fail "reset-local-state did not leave emergency"

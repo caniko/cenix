@@ -92,6 +92,23 @@ class HomeConformanceTest {
         assertTrue(device.wait(Until.hasObject(By.pkg("com.caniko.cenix.fixture")), 5_000))
     }
 
+    @Test
+    fun launcherSettingsEntryUsesStableAccessibleControls() {
+        openAllApps()
+        val entry = device.wait(Until.findObject(By.res(PKG, "launcherSettings")), 5_000)
+        assertTrue(entry != null)
+        entry.click()
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "settingsTitle")), 5_000))
+        assertTrue(device.hasObject(By.res(PKG, "grid_2_by_2")))
+        assertTrue(device.hasObject(By.res(PKG, "grid_3_by_3")))
+        assertTrue(device.hasObject(By.res(PKG, "grid_4_by_4")))
+        assertTrue(device.hasObject(By.res(PKG, "selectHomeRole")))
+        assertTrue(device.hasObject(By.res(PKG, "exportDiagnostics")))
+        assertTrue(device.hasObject(By.res(PKG, "resetLauncher")))
+        device.pressBack()
+        assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
+    }
+
     private fun openAllApps() {
         repeat(2) {
             device.pressHome()

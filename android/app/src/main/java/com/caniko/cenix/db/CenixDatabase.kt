@@ -18,6 +18,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.caniko.cenix.StartupState
 import com.caniko.cenix.StartupStore
+import com.caniko.cenix.PhoneGrid
 
 @Entity(tableName = "launcher_metadata")
 data class MetadataEntity(
@@ -38,6 +39,12 @@ data class WorkspaceMetadataEntity(
     val hotseatCols: Int,
     val nextItemId: Long = 1,
     val nextPageId: Long = 2,
+)
+
+@Entity(tableName = "launcher_settings")
+data class LauncherSettingsEntity(
+    @PrimaryKey val singletonId: Int = 1,
+    val gridName: String,
 )
 
 @Entity(
@@ -190,6 +197,12 @@ interface CenixDao {
 
     @Query("SELECT * FROM workspace_metadata WHERE singletonId = 1")
     fun workspaceMetadata(): WorkspaceMetadataEntity?
+
+    @Query("SELECT * FROM launcher_settings WHERE singletonId = 1")
+    fun launcherSettings(): LauncherSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertLauncherSettings(entity: LauncherSettingsEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertWorkspaceMetadata(entity: WorkspaceMetadataEntity)
@@ -467,6 +480,7 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
     entities = [
         MetadataEntity::class,
         WorkspaceMetadataEntity::class,
+        LauncherSettingsEntity::class,
         WorkspacePageEntity::class,
         WorkspaceItemEntity::class,
         ApplicationItemEntity::class,
@@ -485,7 +499,7 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 6
+        const val VERSION = 7
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -596,16 +610,38 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `launcher_settings` (`singletonId` INTEGER NOT NULL, `gridName` TEXT NOT NULL, PRIMARY KEY(`singletonId`))",
+                )
+                db.execSQL(
+                    "INSERT INTO `launcher_settings` SELECT 1, CASE " +
+                        "WHEN `cols` = 2 AND `rows` = 2 THEN '2_by_2' " +
+                        "WHEN `cols` = 3 AND `rows` = 3 THEN '3_by_3' " +
+                        "WHEN `cols` = 4 AND `rows` = 4 THEN '4_by_4' " +
+                        "WHEN `cols` = 4 AND `rows` = 5 THEN '4_by_5' " +
+                        "WHEN `cols` = 5 AND `rows` = 5 THEN '5_by_5' ELSE '' END " +
+                        "FROM `workspace_metadata` WHERE `singletonId` = 1",
+                )
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
-            return builder.build().also { it.ensureSeed() }
+            val metrics = context.resources.displayMetrics
+            val grid = PhoneGrid.pick(
+                minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+                maxOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+            )
+            return builder.build().also { it.ensureSeed(grid) }
         }
     }
 
     @Transaction
-    fun ensureSeed() {
+    fun ensureSeed(defaultGrid: PhoneGrid = PhoneGrid.DEFAULT) {
         if (dao().metadata() == null) {
             dao().upsertMetadata(
                 MetadataEntity(
@@ -618,8 +654,18 @@ abstract class CenixDatabase : RoomDatabase() {
             )
         }
         if (dao().workspaceMetadata() == null) {
-            dao().upsertWorkspaceMetadata(WorkspaceMetadataEntity(generation = 0, cols = 4, rows = 5, hotseatCols = 4))
+            dao().upsertWorkspaceMetadata(
+                WorkspaceMetadataEntity(
+                    generation = 0,
+                    cols = defaultGrid.cols,
+                    rows = defaultGrid.rows,
+                    hotseatCols = defaultGrid.cols,
+                ),
+            )
             dao().insertPages(listOf(WorkspacePageEntity(pageId = 1, rank = 0)))
+        }
+        if (dao().launcherSettings() == null) {
+            dao().upsertLauncherSettings(LauncherSettingsEntity(gridName = defaultGrid.name))
         }
     }
 }

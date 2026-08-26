@@ -4,6 +4,7 @@ import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.ApplicationItemEntity
 import com.caniko.cenix.db.FolderEntity
 import com.caniko.cenix.db.FolderMemberEntity
+import com.caniko.cenix.db.LauncherSettingsEntity
 import com.caniko.cenix.db.ShortcutItemEntity
 import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.WidgetItemEntity
@@ -54,12 +55,22 @@ class LauncherRepository(private val db: CenixDatabase) {
         }
     }
 
-    fun apply(command: WorkspaceCommand): WorkspaceTransition = apply(command, null, null)
+    fun apply(command: WorkspaceCommand): WorkspaceTransition = apply(command, null, null, null)
 
     fun applyWidget(command: WorkspaceCommand, itemId: ULong, appWidgetId: Int): WorkspaceTransition =
-        apply(command, itemId, appWidgetId)
+        apply(command, itemId, appWidgetId, null)
 
-    private fun apply(command: WorkspaceCommand, boundItemId: ULong?, appWidgetId: Int?): WorkspaceTransition {
+    fun applyGrid(command: WorkspaceCommand, gridName: String): WorkspaceTransition =
+        apply(command, null, null, gridName)
+
+    fun selectedGridName(): String = db.dao().launcherSettings()?.gridName.orEmpty()
+
+    private fun apply(
+        command: WorkspaceCommand,
+        boundItemId: ULong?,
+        appWidgetId: Int?,
+        selectedGridName: String?,
+    ): WorkspaceTransition {
         val before = snapshot()
         val currentMetadata = checkNotNull(db.dao().workspaceMetadata())
         val existingWidgets = db.dao().workspaceWidgets().associateBy { it.itemId }
@@ -87,26 +98,36 @@ class LauncherRepository(private val db: CenixDatabase) {
             }
         }
         try {
-            db.dao().commitWorkspace(
-                expectedGeneration = before.generation.toLong(),
-                metadata = WorkspaceMetadataEntity(
-                    generation = transition.generation.toLong(),
-                    cols = transition.grid.cols,
-                    rows = transition.grid.rows,
-                    hotseatCols = transition.grid.hotseatCols,
-                    nextItemId = maxOf(currentMetadata.nextItemId, maxItemId.toLong() + 1),
-                    nextPageId = maxOf(currentMetadata.nextPageId, (transition.pages.maxOfOrNull { it.pageId } ?: 0UL).toLong() + 1),
-                ),
-                pages = transition.pages.map { WorkspacePageEntity(it.pageId.toLong(), it.rank) },
-                items = transition.items.map(::toEntity),
-                applications = applicationItems.map { (itemId, component) -> component.toEntity(itemId) }.sortedBy { it.itemId },
-                shortcuts = shortcutItems.map { (itemId, shortcut) -> shortcut.toEntity(itemId) }.sortedBy { it.itemId },
-                widgets = widgetItems.sortedBy { it.itemId },
-                folders = transition.folders.map { FolderEntity(it.folderId.toLong(), it.title) },
-                folderMembers = transition.folders.flatMap { folder ->
-                    folder.members.map { FolderMemberEntity(it.itemId.toLong(), folder.folderId.toLong(), it.rank.toInt()) }
-                },
-            )
+            val commit = {
+                db.dao().commitWorkspace(
+                    expectedGeneration = before.generation.toLong(),
+                    metadata = WorkspaceMetadataEntity(
+                        generation = transition.generation.toLong(),
+                        cols = transition.grid.cols,
+                        rows = transition.grid.rows,
+                        hotseatCols = transition.grid.hotseatCols,
+                        nextItemId = maxOf(currentMetadata.nextItemId, maxItemId.toLong() + 1),
+                        nextPageId = maxOf(currentMetadata.nextPageId, (transition.pages.maxOfOrNull { it.pageId } ?: 0UL).toLong() + 1),
+                    ),
+                    pages = transition.pages.map { WorkspacePageEntity(it.pageId.toLong(), it.rank) },
+                    items = transition.items.map(::toEntity),
+                    applications = applicationItems.map { (itemId, component) -> component.toEntity(itemId) }.sortedBy { it.itemId },
+                    shortcuts = shortcutItems.map { (itemId, shortcut) -> shortcut.toEntity(itemId) }.sortedBy { it.itemId },
+                    widgets = widgetItems.sortedBy { it.itemId },
+                    folders = transition.folders.map { FolderEntity(it.folderId.toLong(), it.title) },
+                    folderMembers = transition.folders.flatMap { folder ->
+                        folder.members.map { FolderMemberEntity(it.itemId.toLong(), folder.folderId.toLong(), it.rank.toInt()) }
+                    },
+                )
+            }
+            if (selectedGridName == null) {
+                commit()
+            } else {
+                db.runInTransaction {
+                    commit()
+                    db.dao().upsertLauncherSettings(LauncherSettingsEntity(gridName = selectedGridName))
+                }
+            }
             CenixLog.event(
                 EventId.ROOM_COMMIT,
                 Severity.INFO,

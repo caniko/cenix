@@ -115,6 +115,7 @@ class CenixApplication : Application() {
         val store = database?.let(::RoomStartupStore) ?: MemoryStartupStore()
         crashLoop = CrashLoopGuard(store)
         emergency = database == null || !crashLoop.beginStartup()
+        DiagnosticStore.reset()
         CenixLog.event(EventId.RESET, Severity.INFO, mapOf("emergency" to emergency.toString()))
     }
 

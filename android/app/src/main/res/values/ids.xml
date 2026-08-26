@@ -37,4 +37,9 @@
     <item name="widget_picker" type="id" />
     <item name="widget_search" type="id" />
     <item name="action_add_widget" type="id" />
+    <item name="grid_2_by_2" type="id" />
+    <item name="grid_3_by_3" type="id" />
+    <item name="grid_4_by_4" type="id" />
+    <item name="grid_4_by_5" type="id" />
+    <item name="grid_5_by_5" type="id" />
 </resources>

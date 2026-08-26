@@ -63,4 +63,21 @@
     <string name="move_widget">Move</string>
     <string name="remove_widget">Remove widget</string>
     <string name="rebind_widget">Rebind widget</string>
+    <string name="launcher_settings">Launcher settings</string>
+    <string name="grid">Grid</string>
+    <string name="grid_dimensions">%1$d x %2$d</string>
+    <string name="grid_migrating">Applying grid...</string>
+    <string name="grid_applied">Grid applied</string>
+    <string name="grid_widget_too_large">A widget does not fit this grid</string>
+    <string name="grid_failed">Grid was not changed</string>
+    <string name="default_home_selected">Default HOME selected</string>
+    <string name="build_identity">Version %1$s\nBuild type %2$s\nSource commit %3$s</string>
+    <string name="reset_confirmation">Remove all local pages, folders, shortcuts, widgets, settings, and diagnostics?</string>
+    <string name="reset_complete">Local state reset</string>
+    <string name="package_installing">Installing, %1$d%%</string>
+    <string name="package_updating">Updating, %1$d%%</string>
+    <string name="package_suspended">Suspended</string>
+    <string name="package_disabled">Disabled</string>
+    <string name="package_archived">Archived</string>
+    <string name="package_temporarily_unavailable">Temporarily unavailable</string>
 </resources>

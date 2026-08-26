@@ -37,6 +37,13 @@ object DiagnosticStore {
         }
     }
 
+    fun reset() {
+        dir.get()?.let {
+            it.deleteRecursively()
+            it.mkdirs()
+        }
+    }
+
     private fun rotate(root: File) {
         File(root, "events.${MAX_FILES - 1}.log").delete()
         for (i in (MAX_FILES - 2) downTo 0) {

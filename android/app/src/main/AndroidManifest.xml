@@ -65,6 +65,14 @@
             android:name=".WidgetPickerActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".LauncherSettingsActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/launcher_settings"
+            android:taskAffinity="${applicationId}.settings"
+            android:theme="@style/Theme.Cenix.Settings" />
+
         <!-- Exported for Android's protected app-widget host restore broadcast. -->
         <receiver
             android:name=".WidgetRestoreReceiver"

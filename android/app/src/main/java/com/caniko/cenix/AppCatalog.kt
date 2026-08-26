@@ -27,11 +27,4 @@ class AppCatalog(context: Context, private val profiles: ProfileController) {
             }
         }
 
-    fun register(callback: LauncherApps.Callback) {
-        launcherApps.registerCallback(callback)
-    }
-
-    fun unregister(callback: LauncherApps.Callback) {
-        launcherApps.unregisterCallback(callback)
-    }
 }

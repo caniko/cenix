@@ -90,7 +90,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV6KeepsMetadata() {
+    fun migratesV1ToV7KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -115,6 +115,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_3_4,
                 CenixDatabase.MIGRATION_4_5,
                 CenixDatabase.MIGRATION_5_6,
+                CenixDatabase.MIGRATION_6_7,
             )
             .allowMainThreadQueries()
             .build()
@@ -129,7 +130,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV2ToV6PreservesPagesHotseatAndProfiles() {
+    fun migratesV2ToV7PreservesPagesHotseatAndProfiles() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-v2-v3.db"
         context.deleteDatabase(name)
@@ -147,7 +148,13 @@ class CenixDatabaseTest {
         sqlite.version = 2
         sqlite.close()
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6)
+            .addMigrations(
+                CenixDatabase.MIGRATION_2_3,
+                CenixDatabase.MIGRATION_3_4,
+                CenixDatabase.MIGRATION_4_5,
+                CenixDatabase.MIGRATION_5_6,
+                CenixDatabase.MIGRATION_6_7,
+            )
             .allowMainThreadQueries()
             .build()
         val items = db.dao().workspaceItems().associateBy { it.id }
@@ -158,6 +165,7 @@ class CenixDatabaseTest {
         assertEquals(10L, db.dao().workspaceMetadata()!!.nextItemId)
         assertEquals(3L, db.dao().workspaceMetadata()!!.nextPageId)
         assertTrue(db.dao().workspaceShortcuts().isEmpty())
+        assertEquals("4_by_5", db.dao().launcherSettings()!!.gridName)
         db.close()
         context.deleteDatabase(name)
     }

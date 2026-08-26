@@ -96,6 +96,13 @@ pub struct CellRect {
     pub span_y: i32,
 }
 
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct WidgetMinimumSpan {
+    pub item_id: u64,
+    pub span_x: i32,
+    pub span_y: i32,
+}
+
 #[derive(Clone, uniffi::Enum)]
 pub enum ContainerRef {
     Workspace { page_id: u64 },
@@ -257,6 +264,8 @@ pub enum WorkspaceCommand {
     SetGrid {
         expected_generation: u64,
         grid: GridSpec,
+        next_page_id: u64,
+        widget_minimum_spans: Vec<WidgetMinimumSpan>,
     },
     DropMissing {
         expected_generation: u64,
@@ -327,6 +336,8 @@ pub enum WorkspaceError {
     InvalidTitle,
     #[error("cross profile")]
     CrossProfile,
+    #[error("widget is too large for grid")]
+    WidgetTooLarge,
     #[error("invariant violation")]
     InvariantViolation,
 }
@@ -358,6 +369,7 @@ impl From<core::WorkspaceError> for WorkspaceError {
             core::WorkspaceError::InvalidGrid => Self::InvalidGrid,
             core::WorkspaceError::InvalidTitle => Self::InvalidTitle,
             core::WorkspaceError::CrossProfile => Self::CrossProfile,
+            core::WorkspaceError::WidgetTooLarge => Self::WidgetTooLarge,
             core::WorkspaceError::InvariantViolation => Self::InvariantViolation,
         }
     }
@@ -558,6 +570,16 @@ impl From<core::CellRect> for CellRect {
         Self {
             cell_x: value.cell_x,
             cell_y: value.cell_y,
+            span_x: value.span_x,
+            span_y: value.span_y,
+        }
+    }
+}
+
+impl From<WidgetMinimumSpan> for core::WidgetMinimumSpan {
+    fn from(value: WidgetMinimumSpan) -> Self {
+        Self {
+            item_id: value.item_id,
             span_x: value.span_x,
             span_y: value.span_y,
         }
@@ -900,9 +922,13 @@ impl From<WorkspaceCommand> for core::WorkspaceCommand {
             WorkspaceCommand::SetGrid {
                 expected_generation,
                 grid,
+                next_page_id,
+                widget_minimum_spans,
             } => Self::SetGrid {
                 expected_generation,
                 grid: grid.into(),
+                next_page_id,
+                widget_minimum_spans: widget_minimum_spans.into_iter().map(Into::into).collect(),
             },
             WorkspaceCommand::DropMissing {
                 expected_generation,

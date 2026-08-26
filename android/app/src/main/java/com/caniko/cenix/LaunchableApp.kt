@@ -15,7 +15,12 @@ data class LaunchableApp(
     val normalizedLabel: String,
     val user: UserHandle?,
     val icon: Drawable?,
+    val packageState: PackageState = PackageState.READY,
+    val installProgress: Int? = null,
 ) {
+    val canLaunch: Boolean get() = packageState == PackageState.READY || packageState == PackageState.ARCHIVED
+    val canPlace: Boolean get() = packageState == PackageState.READY
+
     companion object {
         fun from(info: LauncherActivityInfo, profile: ProfileDescriptor): LaunchableApp {
             val label = info.label?.toString().orEmpty()
@@ -28,6 +33,12 @@ data class LaunchableApp(
                 normalizedLabel = EmergencyFilter.normalize(label),
                 user = info.user,
                 icon = info.getBadgedIcon(0),
+                packageState = when {
+                    info.applicationInfo.isArchived -> PackageState.ARCHIVED
+                    !info.applicationInfo.enabled -> PackageState.DISABLED
+                    info.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SUSPENDED != 0 -> PackageState.SUSPENDED
+                    else -> PackageState.READY
+                },
             )
         }
     }
