@@ -33,6 +33,9 @@ AOSP emulator is not GrapheneOS and not Pixel 10 Pro XL (`mustang`).
 - P3 canonical conformance: 5/5 isolated AOSP API 35 runs from clean commit `735286c011cf2559bc31d5a7aaf1f277d6ef5e7c`, debug APK SHA-256 `37885e2ab618120ef75acc81772f6549b309579b88e188f328b3e2cfb0c55b90` (`AOSP_EMU`)
 - P3 forced-RTL and 1.3x font-scale full suites passed at the same commit (`AOSP_EMU`)
 - P3 byte-identical unsigned release APK SHA-256 `53ff39ce44a5f1dcc0ac0562130b371e0290c04cb38033bf26e87d704700f657`; its validated CycloneDX SBOM contains 326 components
+- P4 canonical conformance: 5/5 isolated AOSP API 35 full runs from clean implementation commit `d0f41c640646d5c8ac83d1b43c09b2964d9c7752`, debug APK SHA-256 `f92d79b11dce320af796e29c06a67c5bd728d65b85fa2d1e4807603a80b97124` (`AOSP_EMU`)
+- P4 forced-RTL and 1.3x font-scale full suites passed on test-only descendants with unchanged production code (`AOSP_EMU`)
+- P4 byte-identical unsigned release APK SHA-256 `4be5b24ddf2e7077c757b134ad86304e5cae6353df0582b03e0dc80564991f1a`; its validated CycloneDX SBOM contains 326 components
 - Crash-loop 3/60s process-local; user/native persist emergency (`API`, host tests)
 - Diagnostics: redacted events, SAF export, 64KiB×4 ring (`API`)
 - Isolated AVD name `cenix-ci-$RUN_ID`; refuse shared `cenix-api35` unless `CENIX_ALLOW_SHARED_AVD=1`

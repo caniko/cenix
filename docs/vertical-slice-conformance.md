@@ -41,6 +41,18 @@ That script:
 14. Installs a `-PomitNative` APK and checks emergency HOME search and launch
 15. The `profiles` suite creates managed/private profiles, applies a minimal test DPC for work widgets, and verifies profile launch, shortcuts, widgets, quiet/unquiet, package isolation, permanent removal, and private lock leakage
 
+Final P4 production evidence used clean implementation commit `d0f41c640646d5c8ac83d1b43c09b2964d9c7752`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `f92d79b11dce320af796e29c06a67c5bd728d65b85fa2d1e4807603a80b97124`.
+
+| Run | Serial | Duration | Evidence |
+| --- | --- | ---: | --- |
+| 1 | `emulator-5586` | 1309s | `AOSP_EMU` |
+| 2 | `emulator-5604` | 1201s | `AOSP_EMU` |
+| 3 | `emulator-5574` | 1248s | `AOSP_EMU` |
+| 4 | `emulator-5574` | 1264s | `AOSP_EMU` |
+| 5 | `emulator-5606` | 1239s | `AOSP_EMU` |
+
+The full suite also passed forced RTL at test-only descendant `7c2296d539855dd15d885b60bf7ab6028ca1e6df` (`emulator-5586`) and font scale 1.3 at test-only descendant `2635177c069b7ed43834e9ea6e322eb51a93c060` (`emulator-5608`); production code did not change after the canonical implementation commit. At `2635177`, two clean unsigned release builds were byte-identical at SHA-256 `4be5b24ddf2e7077c757b134ad86304e5cae6353df0582b03e0dc80564991f1a`, and the linked CycloneDX SBOM validated 326 components. Artifacts are under `/data/scratch/tmp/opencode/cenix-p4-final/{repeat-d0f41c6,rtl-7c2296d,font-1.3-2635177}`. This is `AOSP_EMU`, never `GOS_DEV`; no physical mustang, TalkBack certification, or Macrobenchmark evidence exists.
+
 Final P3 evidence used clean implementation commit `735286c011cf2559bc31d5a7aaf1f277d6ef5e7c`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `37885e2ab618120ef75acc81772f6549b309579b88e188f328b3e2cfb0c55b90`.
 
 | Run | Duration | Evidence |
