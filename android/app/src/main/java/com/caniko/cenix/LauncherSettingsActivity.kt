@@ -2,18 +2,25 @@ package com.caniko.cenix
 
 import android.app.role.RoleManager
 import android.appwidget.AppWidgetHost
+import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.service.notification.NotificationListenerService
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.Switch
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import com.caniko.cenix.db.CenixDatabase
+import com.caniko.cenix.db.LauncherSettingsEntity
 import com.caniko.cenix.uniffi.WorkspaceException
 
 class LauncherSettingsActivity : AppCompatActivity() {
@@ -22,6 +29,10 @@ class LauncherSettingsActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
     private lateinit var homeRole: Button
+    private lateinit var notificationDots: Switch
+    private lateinit var themedIcons: Switch
+    private lateinit var autoAddApps: Switch
+    private lateinit var appearance: WallpaperAppearanceController
     private var binding = false
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
@@ -44,13 +55,21 @@ class LauncherSettingsActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        WallpaperAppearanceController.applyTheme(this)
         super.onCreate(savedInstanceState)
+        appearance = WallpaperAppearanceController(this) { recreate() }
         app = application as CenixApplication
         setContentView(R.layout.activity_launcher_settings)
         options = findViewById(R.id.gridOptions)
         progress = findViewById(R.id.gridProgress)
         status = findViewById(R.id.gridStatus)
         homeRole = findViewById(R.id.selectHomeRole)
+        notificationDots = findViewById(R.id.notificationDots)
+        themedIcons = findViewById(R.id.themedIcons)
+        autoAddApps = findViewById(R.id.autoAddApps)
+        findViewById<Button>(R.id.wallpaper).setOnClickListener {
+            if (!SystemWallpaperPicker.open(this)) status.setText(R.string.wallpaper_unavailable)
+        }
         findViewById<Button>(R.id.exportDiagnostics).setOnClickListener {
             exportDiagnostics.launch("cenix-diagnostics.txt")
         }
@@ -68,12 +87,24 @@ class LauncherSettingsActivity : AppCompatActivity() {
             }
         }
         bindGridOptions()
+        bindPreferences()
         updateHomeRole()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        appearance.start()
+    }
+
+    override fun onStop() {
+        appearance.stop()
+        super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
         updateHomeRole()
+        updateNotificationAccess()
     }
 
     private fun bindGridOptions() {
@@ -106,6 +137,62 @@ class LauncherSettingsActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun bindPreferences() {
+        CenixExecutors.io {
+            if (!app.awaitReady()) return@io
+            val settings = app.database?.dao()?.launcherSettings() ?: return@io
+            runOnUiThread {
+                binding = true
+                notificationDots.isChecked = settings.notificationDots
+                themedIcons.isChecked = settings.themedIcons
+                autoAddApps.isChecked = settings.autoAddApps
+                binding = false
+                notificationDots.setOnCheckedChangeListener { _, checked ->
+                    if (!binding) updateSettings { it.copy(notificationDots = checked) }
+                    NotificationDotStore.setEnabled(checked)
+                    if (checked) requestNotificationAccess()
+                }
+                themedIcons.setOnCheckedChangeListener { _, checked ->
+                    if (!binding) updateSettings { it.copy(themedIcons = checked) }
+                }
+                autoAddApps.setOnCheckedChangeListener { _, checked ->
+                    if (!binding) updateSettings { it.copy(autoAddApps = checked) }
+                }
+                updateNotificationAccess()
+            }
+        }
+    }
+
+    private fun updateSettings(transform: (LauncherSettingsEntity) -> LauncherSettingsEntity) {
+        CenixExecutors.io {
+            val dao = app.database?.dao() ?: return@io
+            dao.launcherSettings()?.let(transform)?.let(dao::upsertLauncherSettings)
+        }
+    }
+
+    private fun requestNotificationAccess() {
+        if (hasNotificationAccess()) {
+            NotificationListenerService.requestRebind(ComponentName(this, CenixNotificationListener::class.java))
+            return
+        }
+        startActivity(
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, ComponentName(this, CenixNotificationListener::class.java)),
+        )
+    }
+
+    private fun updateNotificationAccess() {
+        if (!this::notificationDots.isInitialized) return
+        notificationDots.text = getString(
+            if (notificationDots.isChecked && !hasNotificationAccess()) R.string.notification_access_required
+            else R.string.notification_dots,
+        )
+        if (!hasNotificationAccess()) NotificationDotStore.replace(emptyMap())
+    }
+
+    private fun hasNotificationAccess(): Boolean =
+        packageName in NotificationManagerCompat.getEnabledListenerPackages(this)
 
     private fun selectGrid(grid: PhoneGrid) {
         progress.visibility = View.VISIBLE
@@ -153,6 +240,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                     runOnUiThread {
                         status.setText(R.string.reset_complete)
                         bindGridOptions()
+                        bindPreferences()
                     }
                 }
             }

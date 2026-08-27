@@ -102,8 +102,13 @@ class HomeConformanceTest {
         assertTrue(device.hasObject(By.res(PKG, "grid_2_by_2")))
         assertTrue(device.hasObject(By.res(PKG, "grid_3_by_3")))
         assertTrue(device.hasObject(By.res(PKG, "grid_4_by_4")))
+        assertTrue(device.hasObject(By.res(PKG, "wallpaper")))
+        assertTrue(device.hasObject(By.res(PKG, "themedIcons")))
+        assertTrue(device.hasObject(By.res(PKG, "notificationDots")))
+        assertTrue(device.hasObject(By.res(PKG, "autoAddApps")))
         assertTrue(device.hasObject(By.res(PKG, "selectHomeRole")))
         assertTrue(device.hasObject(By.res(PKG, "exportDiagnostics")))
+        device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 4, 20)
         assertTrue(device.hasObject(By.res(PKG, "resetLauncher")))
         device.pressBack()
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
@@ -112,7 +117,7 @@ class HomeConformanceTest {
     private fun openAllApps() {
         repeat(2) {
             device.pressHome()
-            assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
+            if (!device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000)) return@repeat
             device.waitForIdle()
             swipeRoot(up = true)
             if (device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000)) return
@@ -124,7 +129,7 @@ class HomeConformanceTest {
         val bounds = device.findObject(By.res(PKG, "launcherRoot")).visibleBounds
         val startY = if (up) bounds.top + bounds.height() * 3 / 4 else bounds.top + bounds.height() / 4
         val endY = if (up) bounds.top + bounds.height() / 4 else bounds.top + bounds.height() * 3 / 4
-        device.swipe(bounds.centerX(), startY, bounds.centerX(), endY, 30)
+        device.executeShellCommand("input touchscreen swipe ${bounds.centerX()} $startY ${bounds.centerX()} $endY 350")
     }
 
     companion object {

@@ -109,6 +109,7 @@ class CenixApplication : Application() {
     }
 
     fun resetLocalState() {
+        NotificationDotStore.replace(emptyMap())
         database?.close()
         deleteDatabase(CenixDatabase.NAME)
         database = openDatabase()

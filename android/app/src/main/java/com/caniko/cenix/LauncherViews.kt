@@ -409,7 +409,10 @@ class FolderIconView(context: Context) : LinearLayout(context) {
         isFocusable = true
     }
 
-    fun bind(title: String, count: Int, icons: List<Drawable?>) {
+    private var hasDot = false
+
+    fun bind(title: String, count: Int, icons: List<Drawable?>, hasDot: Boolean = false) {
+        this.hasDot = hasDot
         preview.removeAllViews()
         repeat(4) { index ->
             preview.addView(ImageView(context).apply {
@@ -418,7 +421,20 @@ class FolderIconView(context: Context) : LinearLayout(context) {
             }, GridLayout.LayoutParams().apply { width = dp(18); height = dp(18) })
         }
         label.text = title.ifEmpty { context.getString(R.string.folder) }
-        contentDescription = context.getString(R.string.folder_description, label.text, count)
+        contentDescription = listOfNotNull(
+            context.getString(R.string.folder_description, label.text, count),
+            if (hasDot) context.getString(R.string.notifications_available) else null,
+        ).joinToString()
+        invalidate()
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (hasDot) {
+            val radius = dp(4).toFloat()
+            val x = if (layoutDirection == LAYOUT_DIRECTION_RTL) radius else width - radius
+            canvas.drawCircle(x, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.getColor(R.color.notification_dot) })
+        }
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

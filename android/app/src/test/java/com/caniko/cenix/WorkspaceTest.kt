@@ -15,6 +15,7 @@ import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.ShortcutItemEntity
 import com.caniko.cenix.db.WidgetItemEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -203,6 +204,28 @@ class WorkspaceTest {
         db.dao().remapWidgetIds(intArrayOf(10, 20), intArrayOf(20, 10), 100)
         assertEquals(mapOf(1L to 20, 2L to 10), db.dao().workspaceWidgets().associate { it.itemId to it.appWidgetId })
         assertTrue(db.dao().pendingWidgetOperations().isEmpty())
+        db.close()
+    }
+
+    @Test
+    fun automaticPlacementFindsRowMajorVacancyAndRejectsDuplicatePackageProfile() {
+        val db = openDb()
+        val items = (1L..4L).map { id ->
+            item(id, "WORKSPACE", 1).copy(cellX = ((id - 1) % 2).toInt(), cellY = ((id - 1) / 2).toInt())
+        }
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 2, rows = 2, hotseatCols = 2, nextItemId = 5, nextPageId = 2),
+            listOf(WorkspacePageEntity(1, 0)),
+            items,
+            applications = (1L..4L).map { id -> app(id, "full$id") },
+        )
+        val full = LauncherRepository(db).snapshot()
+        assertNull(full.firstVacantCell())
+        assertTrue(full.containsPackageProfile("full1", 0))
+        assertTrue(!full.containsPackageProfile("full1", 10))
+        val vacancy = full.copy(items = full.items.filter { it.itemId != 2UL }).firstVacantCell()
+        assertEquals(Triple(1UL, 1, 0), vacancy)
         db.close()
     }
 

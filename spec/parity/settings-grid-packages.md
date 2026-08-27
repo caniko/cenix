@@ -2,7 +2,7 @@
 
 ## Durable authority
 
-1. Room schema v7 is the sole durable authority for the selected grid and workspace.
+1. Room schema v8 is the sole durable authority for launcher preferences, the selected grid, and workspace.
 2. `launcher_settings` contains one normalized singleton row keyed by `singletonId = 1`.
 3. A grid selection and its workspace transition commit in one Room transaction.
 4. Failed, stale, impossible, repeated, or cancelled migration leaves both settings and workspace unchanged.
@@ -38,4 +38,4 @@
 
 ## Out of scope
 
-Notification dots/listener, wallpaper and dynamic color controls, themed icons, icon packs, backup/import/export, Quickstep/Recents, feeds, weather, search services, arbitrary grids, hidden APIs, reflection, shell-based production behavior, network services, and P5B remain intentionally omitted.
+Icon packs, backup/import/export, Quickstep/Recents, feeds, weather, search services, arbitrary grids, hidden APIs, reflection, shell-based production behavior, and network services remain intentionally omitted.

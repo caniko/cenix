@@ -45,6 +45,9 @@ data class WorkspaceMetadataEntity(
 data class LauncherSettingsEntity(
     @PrimaryKey val singletonId: Int = 1,
     val gridName: String,
+    val notificationDots: Boolean = true,
+    val themedIcons: Boolean = false,
+    val autoAddApps: Boolean = true,
 )
 
 @Entity(
@@ -499,7 +502,7 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 7
+        const val VERSION = 8
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -627,9 +630,17 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `launcher_settings` ADD COLUMN `notificationDots` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `launcher_settings` ADD COLUMN `themedIcons` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `launcher_settings` ADD COLUMN `autoAddApps` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             val metrics = context.resources.displayMetrics
             val grid = PhoneGrid.pick(

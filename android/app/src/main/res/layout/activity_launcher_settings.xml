@@ -23,6 +23,38 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:accessibilityHeading="true"
+            android:text="@string/appearance"
+            android:textAppearance="?android:attr/textAppearanceMedium" />
+
+        <Button
+            android:id="@+id/wallpaper"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/wallpaper" />
+
+        <Switch
+            android:id="@+id/themedIcons"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/themed_icons" />
+
+        <Switch
+            android:id="@+id/notificationDots"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/notification_dots" />
+
+        <Switch
+            android:id="@+id/autoAddApps"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/auto_add_apps" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:accessibilityHeading="true"
             android:text="@string/grid"
             android:textAppearance="?android:attr/textAppearanceMedium" />
 

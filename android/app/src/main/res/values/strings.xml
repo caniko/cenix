@@ -80,4 +80,13 @@
     <string name="package_disabled">Disabled</string>
     <string name="package_archived">Archived</string>
     <string name="package_temporarily_unavailable">Temporarily unavailable</string>
+    <string name="appearance">Appearance</string>
+    <string name="wallpaper">Wallpaper</string>
+    <string name="wallpaper_unavailable">Wallpaper settings are unavailable</string>
+    <string name="themed_icons">Themed icons</string>
+    <string name="notification_dots">Notification dots</string>
+    <string name="notification_access_required">Notification dots (access required)</string>
+    <string name="auto_add_apps">Add new app icons to Home</string>
+    <string name="notifications_available">Notifications available</string>
+    <string name="workspace_options">Home options</string>
 </resources>

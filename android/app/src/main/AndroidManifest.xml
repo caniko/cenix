@@ -73,6 +73,16 @@
             android:taskAffinity="${applicationId}.settings"
             android:theme="@style/Theme.Cenix.Settings" />
 
+        <service
+            android:name=".CenixNotificationListener"
+            android:exported="true"
+            android:label="@string/notification_dots"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Exported for Android's protected app-widget host restore broadcast. -->
         <receiver
             android:name=".WidgetRestoreReceiver"

@@ -125,7 +125,9 @@ class LauncherRepository(private val db: CenixDatabase) {
             } else {
                 db.runInTransaction {
                     commit()
-                    db.dao().upsertLauncherSettings(LauncherSettingsEntity(gridName = selectedGridName))
+                    db.dao().upsertLauncherSettings(
+                        checkNotNull(db.dao().launcherSettings()).copy(gridName = selectedGridName),
+                    )
                 }
             }
             CenixLog.event(

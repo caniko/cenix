@@ -90,7 +90,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV1ToV7KeepsMetadata() {
+    fun migratesV1ToV8KeepsMetadata() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-migrate.db"
         context.deleteDatabase(name)
@@ -116,6 +116,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_4_5,
                 CenixDatabase.MIGRATION_5_6,
                 CenixDatabase.MIGRATION_6_7,
+                CenixDatabase.MIGRATION_7_8,
             )
             .allowMainThreadQueries()
             .build()
@@ -130,7 +131,7 @@ class CenixDatabaseTest {
     }
 
     @Test
-    fun migratesV2ToV7PreservesPagesHotseatAndProfiles() {
+    fun migratesV2ToV8PreservesPagesHotseatAndProfiles() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val name = "cenix-v2-v3.db"
         context.deleteDatabase(name)
@@ -154,6 +155,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_4_5,
                 CenixDatabase.MIGRATION_5_6,
                 CenixDatabase.MIGRATION_6_7,
+                CenixDatabase.MIGRATION_7_8,
             )
             .allowMainThreadQueries()
             .build()
@@ -166,6 +168,9 @@ class CenixDatabaseTest {
         assertEquals(3L, db.dao().workspaceMetadata()!!.nextPageId)
         assertTrue(db.dao().workspaceShortcuts().isEmpty())
         assertEquals("4_by_5", db.dao().launcherSettings()!!.gridName)
+        assertTrue(db.dao().launcherSettings()!!.notificationDots)
+        assertFalse(db.dao().launcherSettings()!!.themedIcons)
+        assertTrue(db.dao().launcherSettings()!!.autoAddApps)
         db.close()
         context.deleteDatabase(name)
     }

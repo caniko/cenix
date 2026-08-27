@@ -32,6 +32,15 @@ class WorkspaceController(
         )
     }
 
+    fun autoPlace(app: LaunchableApp): WorkspaceTransition? {
+        var state = snapshot()
+        if (state.containsPackageProfile(app.packageName, app.profileId)) return null
+        state.firstVacantCell()?.let { (pageId, x, y) -> return placeFromAllApps(app, pageId, x, y) }
+        val transition = addPage() ?: return null
+        state = transition.asSnapshot()
+        return placeFromAllApps(app, state.pages.maxByOrNull { it.rank }?.pageId ?: return null, 0, 0)
+    }
+
     fun placeShortcut(shortcut: ShortcutId, container: ContainerRef, cellX: Int, cellY: Int): WorkspaceTransition? {
         val state = snapshot()
         return execute(
@@ -256,3 +265,30 @@ class WorkspaceController(
         }
     }
 }
+
+private fun WorkspaceSnapshot.components(): Sequence<ComponentId> = sequence {
+    items.forEach { (it.payload as? com.caniko.cenix.uniffi.ItemPayload.Application)?.component?.let { component -> yield(component) } }
+    folders.forEach { folder ->
+        folder.members.forEach { (it.payload as? com.caniko.cenix.uniffi.ItemPayload.Application)?.component?.let { component -> yield(component) } }
+    }
+}
+
+internal fun WorkspaceSnapshot.containsPackageProfile(packageName: String, profileId: Long): Boolean =
+    components().any { it.`package` == packageName && it.profileId.toLong() == profileId }
+
+internal fun WorkspaceSnapshot.firstVacantCell(): Triple<ULong, Int, Int>? {
+    val occupied = items.filter { it.container is ContainerRef.Workspace }.flatMap { item ->
+        val pageId = (item.container as ContainerRef.Workspace).pageId
+        (item.cell.cellX until item.cell.cellX + item.cell.spanX).flatMap { x ->
+            (item.cell.cellY until item.cell.cellY + item.cell.spanY).map { y -> Triple(pageId, x, y) }
+        }
+    }.toSet()
+    pages.sortedBy { it.rank }.forEach { page ->
+        for (y in 0 until grid.rows) for (x in 0 until grid.cols) {
+            if (Triple(page.pageId, x, y) !in occupied) return Triple(page.pageId, x, y)
+        }
+    }
+    return null
+}
+
+private fun WorkspaceTransition.asSnapshot() = WorkspaceSnapshot(generation, grid, pages, items, folders)

@@ -23,7 +23,7 @@ class WorkspaceMigrationTest {
     )
 
     @Test
-    fun migration2To7PreservesWorkspaceAndHotseat() {
+    fun migration2To8PreservesWorkspaceAndHotseat() {
         helper.createDatabase(NAME, 2).apply {
             execSQL("INSERT INTO launcher_metadata VALUES (1,0,0,0,0,0)")
             execSQL("INSERT INTO workspace_items VALUES (7,0,1,2,'page0','Main',10),(8,1,2,3,'page1','Main',11),(9,-1,3,0,'dock','Main',12)")
@@ -31,7 +31,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME)
-            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7)
+            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8)
             .build()
         val items = database.dao().workspaceItems().associateBy { it.id }
         assertEquals(1L, items[7]!!.containerId)
@@ -44,7 +44,7 @@ class WorkspaceMigrationTest {
     }
 
     @Test
-    fun migration3To7NormalizesApplicationIdentity() {
+    fun migration3To8NormalizesApplicationIdentity() {
         helper.createDatabase(NAME_V3, 3).apply {
             execSQL("INSERT INTO launcher_metadata VALUES (1,0,0,0,0,0)")
             execSQL("INSERT INTO workspace_metadata VALUES (1,4,4,5,4,8,2)")
@@ -54,7 +54,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V3)
-            .addMigrations(CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7)
+            .addMigrations(CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8)
             .build()
         assertEquals(7L, database.dao().workspaceItems().single().id)
         assertEquals("pkg", database.dao().workspaceApplications().single().packageName)
@@ -64,7 +64,7 @@ class WorkspaceMigrationTest {
     }
 
     @Test
-    fun migration4To7PreservesFoldersAndAllocators() {
+    fun migration4To8PreservesFoldersAndAllocators() {
         helper.createDatabase(NAME_V4, 4).apply {
             execSQL("INSERT INTO launcher_metadata VALUES (1,0,1,9,0,10)")
             execSQL("INSERT INTO workspace_metadata VALUES (1,7,4,5,4,20,3)")
@@ -77,7 +77,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V4)
-            .addMigrations(CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7)
+            .addMigrations(CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8)
             .build()
         assertEquals(7L, database.dao().workspaceMetadata()!!.generation)
         assertEquals(20L, database.dao().workspaceMetadata()!!.nextItemId)
@@ -90,7 +90,7 @@ class WorkspaceMigrationTest {
     }
 
     @Test
-    fun migration5To7PreservesP2bStateAndCreatesEmptyWidgetTables() {
+    fun migration5To8PreservesP2bStateAndCreatesEmptyWidgetTables() {
         helper.createDatabase(NAME_V5, 5).apply {
             execSQL("INSERT INTO launcher_metadata VALUES (1,0,1,9,0,10)")
             execSQL("INSERT INTO workspace_metadata VALUES (1,7,4,5,4,20,3)")
@@ -104,7 +104,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V5)
-            .addMigrations(CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7)
+            .addMigrations(CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8)
             .build()
         assertEquals(7L, database.dao().workspaceMetadata()!!.generation)
         assertEquals(listOf(10L, 13L), database.dao().workspaceItems().map { it.id })
@@ -119,7 +119,7 @@ class WorkspaceMigrationTest {
     }
 
     @Test
-    fun migration6To7DerivesNormalizedGridSettingWithoutChangingWorkspace() {
+    fun migration6To8DerivesNormalizedGridSettingWithoutChangingWorkspace() {
         helper.createDatabase(NAME_V6, 6).apply {
             execSQL("INSERT INTO launcher_metadata VALUES (1,0,0,0,0,0)")
             execSQL("INSERT INTO workspace_metadata VALUES (1,9,5,5,5,20,3)")
@@ -130,13 +130,42 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V6)
-            .addMigrations(CenixDatabase.MIGRATION_6_7)
+            .addMigrations(CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8)
             .build()
         assertEquals("5_by_5", database.dao().launcherSettings()!!.gridName)
+        assertTrue(database.dao().launcherSettings()!!.notificationDots)
+        assertEquals(false, database.dao().launcherSettings()!!.themedIcons)
+        assertTrue(database.dao().launcherSettings()!!.autoAddApps)
         assertEquals(9L, database.dao().workspaceMetadata()!!.generation)
         assertEquals(7L, database.dao().workspaceItems().single().id)
         database.close()
         context.deleteDatabase(NAME_V6)
+    }
+
+    @Test
+    fun migration7To8PreservesWorkspaceAndAddsReferenceDefaults() {
+        helper.createDatabase(NAME_V7, 7).apply {
+            execSQL("INSERT INTO launcher_metadata VALUES (1,0,0,0,0,0)")
+            execSQL("INSERT INTO workspace_metadata VALUES (1,9,4,5,4,20,3)")
+            execSQL("INSERT INTO workspace_pages VALUES (1,0)")
+            execSQL("INSERT INTO workspace_items VALUES (7,'WORKSPACE',1,1,2,1,1,'APPLICATION')")
+            execSQL("INSERT INTO workspace_applications VALUES (7,'pkg','Main',10)")
+            execSQL("INSERT INTO launcher_settings VALUES (1,'4_by_5')")
+            close()
+        }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V7)
+            .addMigrations(CenixDatabase.MIGRATION_7_8)
+            .build()
+        val settings = database.dao().launcherSettings()!!
+        assertEquals("4_by_5", settings.gridName)
+        assertTrue(settings.notificationDots)
+        assertEquals(false, settings.themedIcons)
+        assertTrue(settings.autoAddApps)
+        assertEquals(9L, database.dao().workspaceMetadata()!!.generation)
+        assertEquals(7L, database.dao().workspaceItems().single().id)
+        database.close()
+        context.deleteDatabase(NAME_V7)
     }
 
     companion object {
@@ -145,5 +174,6 @@ class WorkspaceMigrationTest {
         private const val NAME_V4 = "workspace-migration-v4-test"
         private const val NAME_V5 = "workspace-migration-v5-test"
         private const val NAME_V6 = "workspace-migration-v6-test"
+        private const val NAME_V7 = "workspace-migration-v7-test"
     }
 }

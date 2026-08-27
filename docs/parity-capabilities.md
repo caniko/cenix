@@ -19,15 +19,16 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | Widget restore / ID remap | `USER_AUTHORIZED` | done | `APPWIDGET_HOST_RESTORED`; journaled Room remap; `src`+`api`+`emu` |
 | Pinned shortcuts | `USER_AUTHORIZED` | done | `LauncherApps`, typed Room state, `CONFIRM_PIN_SHORTCUT`; `emu` |
 | Pinned-widget confirmation | `USER_AUTHORIZED` | done | explicit Add/Cancel through `CONFIRM_PIN_APPWIDGET`; `api`+`emu` |
-| Notification dots | `USER_AUTHORIZED` | later | `NotificationListenerService` |
+| Notification dots | `USER_AUTHORIZED` | P5B implemented | public `NotificationListenerService`; exact emulator evidence pending final matrix |
 | Package add/update/remove | `INSTALLABLE_PUBLIC` | done | `LauncherApps.Callback`; `emu` |
-| Session commit | `INSTALLABLE_PUBLIC` | later | `SESSION_COMMITTED`; `src` |
+| Automatic new-app placement | `INSTALLABLE_PUBLIC` | P5B implemented | installer session callbacks plus typed workspace placement; emulator evidence pending final matrix |
 | Disabled / suspended apps | `INSTALLABLE_PUBLIC` | partial | callbacks exist; no dedicated UI |
 | Work profiles | `INSTALLABLE_PUBLIC` | done | typed discovery, tabs, quiet/unquiet, apps, shortcuts, DPC-allowed widgets, reconciliation; `api`+`emu` |
 | Private Space | `ROLE_HOME_GATED` | public boundary | public API 35 permission/type/access, isolated section and lock-time leakage policy; `api`+`emu` |
 | App locking | `SIGNATURE_OR_SYSTEM` | omitted | `LOCK_APPS` in `src` |
-| Wallpaper / dynamic colors | `USER_AUTHORIZED` | later | `SET_WALLPAPER`; WallpaperColors |
-| Grid migration | `INSTALLABLE_PUBLIC` | later | out-of-grid pins kept, not remapped |
+| Wallpaper / dynamic colors | `USER_AUTHORIZED` | P5B implemented | `ACTION_SET_WALLPAPER`, `WallpaperColors`, system dynamic resources; emulator evidence pending final matrix |
+| Themed icons | `INSTALLABLE_PUBLIC` | P5B implemented | public adaptive monochrome layer with original-icon fallback |
+| Grid migration | `INSTALLABLE_PUBLIC` | done | Room/Rust transaction and emulator evidence |
 | Launcher backup | `INSTALLABLE_PUBLIC` | omitted for now | `src` backup agent; Cenix `allowBackup=false` |
 | Accessibility | `INSTALLABLE_PUBLIC` | partial | content descriptions; no TalkBack pass |
 | Secondary display | `INSTALLABLE_PUBLIC` | omitted | `SECONDARY_HOME`; not phone v1 |
@@ -35,7 +36,7 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | Launcher data provider | `SIGNATURE_OR_SYSTEM` | omitted | `ACCESS_LAUNCHER_DATA` |
 | Organizer / folder creator | `INTENTIONALLY_OMITTED` | — | internal `src` activities |
 | App Functions | `UNKNOWN_REQUIRES_SPIKE` | omitted | `src` service |
-| Icon packs / Cuscon | `INSTALLABLE_PUBLIC` | later | public resources only; no Cuscon assets |
+| Icon packs / Cuscon | `INTENTIONALLY_OMITTED` | — | themed adaptive icons only; no external icon packs or Cuscon assets |
 | `QUERY_ALL_PACKAGES` | `INTENTIONALLY_OMITTED` | — | Cenix uses `<queries>` MAIN+LAUNCHER |
 | Internet / WebView / JS runtime | `INTENTIONALLY_OMITTED` | — | forbidden |
 

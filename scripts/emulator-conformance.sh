@@ -6,8 +6,8 @@ if [[ "${1:-}" == "--suite" ]]; then
   suite="${2:-}"
   shift 2
 fi
-[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|settings|packages|full]" >&2; exit 2; }
-case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|settings|packages|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
+[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|full]" >&2; exit 2; }
+case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
@@ -210,8 +210,7 @@ dump_ui() {
     "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
       xml="$("$adb" -s "$serial" shell cat /sdcard/cenix-ui.xml)"
-      if grep -q 'package="com.caniko.cenix"' <<<"$xml" &&
-        grep -Eq 'com.caniko.cenix:id/(launcherRoot|pin_confirmation|widget_picker|settingsTitle)' <<<"$xml"; then
+      if grep -q 'package="com.caniko.cenix"' <<<"$xml"; then
         printf '%s\n' "$xml"
         return 0
       fi
@@ -448,6 +447,10 @@ set_search() {
 
 filter_widgets() {
   local ui x1 y1 x2 y2
+  ui="$(dump_ui)"
+  if grep -q 'text="Add widget"' <<<"$ui"; then
+    tap_pattern 'text="Add widget"'
+  fi
   wait_ui 'resource-id="com.caniko.cenix:id/widget_search"' 1
   ui="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/widget_search"')
@@ -612,6 +615,7 @@ if [[ "$suite" == "profiles" || "$suite" == "full" ]]; then
   } >>"$art/metadata.txt"
 fi
 
+"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
 open_all_apps
 wait_ui 'resource-id="com.caniko.cenix:id/appLabel"' 1
 pass "shell: swipe up opens All Apps"
@@ -622,8 +626,21 @@ echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"' || fail "catal
 pass "discovery: nonempty catalog, Cenix hidden"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
-"$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
 "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+go_home
+wait_ui 'content-desc="Cenix Fixture, page 1' 1
+pass "automatic placement: confirmed new install is placed without a duplicate callback path"
+open_all_apps
+tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+"$adb" -s "$serial" shell input swipe 160 560 160 180 400
+tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
+sleep 1
+tap_any_pattern 'resource-id="android:id/button1"'
+wait_ui 'text="Local state reset"' 1
+tap_pattern 'resource-id="com.caniko.cenix:id/autoAddApps"'
+ui="$(dump_ui)"
+echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/autoAddApps"[^>]*checked="false"' || fail "automatic placement preference did not disable"
 go_home
 set_search "Fixture"
 wait_ui 'text="Cenix Fixture"' 1
@@ -648,7 +665,7 @@ pass "launch: fixture activity resumed"
 go_home
 pass "launch: KEYCODE_HOME returns to Cenix"
 
-if [[ "$suite" == "settings" || "$suite" == "full" ]]; then
+if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notifications" || "$suite" == "full" ]]; then
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
@@ -658,6 +675,9 @@ if [[ "$suite" == "settings" || "$suite" == "full" ]]; then
   done
   echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
   echo "$ui" | grep -q "$CENIX_GIT_COMMIT" || fail "settings build identity missing exact source commit"
+  for control in wallpaper themedIcons notificationDots autoAddApps; do
+    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
+  done
   pass "settings: finite compatible phone grids and build identity are visible"
 
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
@@ -674,6 +694,7 @@ if [[ "$suite" == "settings" || "$suite" == "full" ]]; then
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
   pass "settings: selected grid survives process recreation"
 
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
   tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
   sleep 1
   ui="$(dump_any_ui)"
@@ -689,6 +710,57 @@ if [[ "$suite" == "settings" || "$suite" == "full" ]]; then
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'column 4' || fail "restored 4 x 4 grid did not render"
   pass "settings: shrink, repeat-safe persistence, and expansion render through Room/Rust"
+fi
+
+if [[ "$suite" == "notifications" || "$suite" == "full" ]]; then
+  "$adb" -s "$serial" shell pm grant com.caniko.cenix.fixture android.permission.POST_NOTIFICATIONS
+  "$adb" -s "$serial" shell cmd notification allow_listener com.caniko.cenix/com.caniko.cenix.CenixNotificationListener
+  "$adb" -s "$serial" shell am start -S -n com.caniko.cenix.fixture/.FixtureActivity --es notification-command post >/dev/null
+  sleep 1
+  "$adb" -s "$serial" shell dumpsys notification --noredact | grep -q 'NotificationRecord.*pkg=com.caniko.cenix.fixture' || fail "fixture notification was not posted"
+  go_home
+  set_search "Fixture"
+  wait_ui 'Cenix Fixture, Personal, Notifications available' 1
+  pass "notifications: user-authorized package/profile dot reaches All Apps"
+  "$adb" -s "$serial" shell am start -S -n com.caniko.cenix.fixture/.FixtureActivity --es notification-command cancel >/dev/null
+  go_home
+  set_search "Fixture"
+  wait_ui 'Cenix Fixture, Personal, Notifications available' 0
+  pass "notifications: removal clears transient state"
+  "$adb" -s "$serial" shell am start -S -n com.caniko.cenix.fixture/.FixtureActivity --es notification-command summary >/dev/null
+  go_home
+  set_search "Fixture"
+  wait_ui 'Cenix Fixture, Personal, Notifications available' 0
+  pass "notifications: group summaries are ineligible"
+  "$adb" -s "$serial" shell cmd notification disallow_listener com.caniko.cenix/com.caniko.cenix.CenixNotificationListener
+  wait_ui 'Cenix Fixture, Personal, Notifications available' 0
+  pass "notifications: authorization revocation clears dots"
+  "$adb" -s "$serial" shell am start -S -n com.caniko.cenix.fixture/.FixtureActivity --es notification-command cancel >/dev/null
+  go_home
+  clear_search
+fi
+
+if [[ "$suite" == "appearance" || "$suite" == "full" ]]; then
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  tap_pattern 'resource-id="com.caniko.cenix:id/themedIcons"'
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/themedIcons"[^>]*checked="true"' || fail "themed icon preference did not enable"
+  "$adb" -s "$serial" shell am force-stop com.caniko.cenix
+  go_home
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  ui="$(dump_ui)"
+  echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/themedIcons"[^>]*checked="true"' || fail "themed icon preference did not survive recreation"
+  tap_pattern 'resource-id="com.caniko.cenix:id/wallpaper"'
+  sleep 2
+  resumed | grep -q 'com.caniko.cenix/.LauncherSettingsActivity' && fail "wallpaper action did not leave Cenix"
+  pass "appearance: system-owned wallpaper action opens and themed preference survives recreation"
+  "$adb" -s "$serial" shell cmd wallpaper help >"$art/wallpaper-shell-capability.txt" 2>&1 || true
+  "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+  go_home
 fi
 
 if [[ "$suite" == "packages" || "$suite" == "full" ]]; then

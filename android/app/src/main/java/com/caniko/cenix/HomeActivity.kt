@@ -52,6 +52,8 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var profileReceiver: BroadcastReceiver
     private lateinit var shortcutCatalog: ShortcutCatalog
     private lateinit var packageSessions: PackageSessionController
+    private lateinit var themedIcons: ThemedIconRenderer
+    private lateinit var appearance: WallpaperAppearanceController
     private lateinit var search: SearchController
     private lateinit var root: LauncherRoot
     private lateinit var homeSurface: HomeSurface
@@ -87,6 +89,7 @@ class HomeActivity : AppCompatActivity() {
     private val shortcuts = mutableMapOf<ShortcutId, LauncherShortcut>()
     private val widgetBindings = mutableMapOf<Long, WidgetItemEntity>()
     private var contextQueryToken = 0
+    private var notificationSubscription: AutoCloseable? = null
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
         uri ?: return@registerForActivityResult
@@ -104,12 +107,18 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        WallpaperAppearanceController.applyTheme(this)
         super.onCreate(savedInstanceState)
         app = application as CenixApplication
         profiles = ProfileController(this)
         catalog = AppCatalog(this, profiles)
         shortcutCatalog = ShortcutCatalog(this, catalog, profiles)
-        packageSessions = PackageSessionController(this, profiles, ::scheduleReload)
+        themedIcons = ThemedIconRenderer(this)
+        appearance = WallpaperAppearanceController(this) {
+            themedIcons.invalidate(null)
+            scheduleReload("appearance")
+        }
+        packageSessions = PackageSessionController(this, profiles, ::scheduleReload, ::autoPlace)
         selectedPageId = savedInstanceState?.getLong(STATE_PAGE_ID)?.toULong()
         search = SearchController(
             filterOf = { app.activeFilter() },
@@ -123,6 +132,7 @@ class HomeActivity : AppCompatActivity() {
         )
         setContentView(R.layout.activity_home)
         bindViews()
+        notificationSubscription = NotificationDotStore.subscribe { runOnUiThread(::refreshDots) }
         widgetHost = WidgetHostController(
             this,
             { app.database },
@@ -247,12 +257,14 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        appearance.start()
         widgetHost.start()
         scheduleReload("start")
         applyForceNativeFailure()
     }
 
     override fun onStop() {
+        appearance.stop()
         widgetHost.stop()
         super.onStop()
     }
@@ -283,13 +295,16 @@ class HomeActivity : AppCompatActivity() {
         closeContext("lifecycle")
         dragLayer.cancel("lifecycle")
         packageSessions.stop()
+        notificationSubscription?.close()
         unregisterReceiver(profileReceiver)
         search.close()
         widgetHost.destroy()
         super.onDestroy()
     }
 
-    private fun scheduleReload(reason: String) {
+    private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
+        if (reason in PACKAGE_INVALIDATIONS) themedIcons.invalidate(packageKey)
+        if (reason == "remove" && packageKey != null) NotificationDotStore.remove(packageKey)
         search.cancel()
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
@@ -303,11 +318,15 @@ class HomeActivity : AppCompatActivity() {
                     .filter { it.descriptor.access == ProfileAccess.AVAILABLE }
                     .map { it.descriptor.profileId.toLong() }
                     .toSet()
+                val settings = checkNotNull(database.dao().launcherSettings())
+                NotificationDotStore.setEnabled(settings.notificationDots && !app.emergency)
                 val loaded = packageSessions.decorate(
                     catalog.load(profileChange.profiles),
                     database.dao().workspaceApplications(),
-                )
+                ).map { item -> item.copy(icon = themedIcons.icon(item, settings.themedIcons, appearance.generation)) }
                 val inaccessible = profileChange.newlyInaccessibleProfileIds + profileChange.removedProfileIds
+                NotificationDotStore.removeProfiles(inaccessible)
+                themedIcons.invalidateProfiles(inaccessible)
                 dragLayer.post {
                     val invalidating = reason in setOf(
                         "remove", "unavailable", "shortcuts", "profile", "change", "suspended", "loading", "session",
@@ -461,6 +480,7 @@ class HomeActivity : AppCompatActivity() {
                     folder.title,
                     folder.members.size,
                     folder.members.take(4).map { member -> member.icon(byComponent) },
+                    folder.members.any { it.hasDot() },
                 )
                 contentDescription = "$contentDescription, $location, row ${y + 1}, column ${x + 1}"
                 tag = CellTarget(item.itemId, folder.folderId)
@@ -489,16 +509,23 @@ class HomeActivity : AppCompatActivity() {
         val appItem = (item?.payload as? ItemPayload.Application)?.component?.let { byComponent[it.key()] }
         val shortcutItem = (item?.payload as? ItemPayload.Shortcut)?.shortcut?.let(shortcuts::get)
         val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
-        view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.icon ?: shortcutItem?.icon)
+        view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.displayIcon() ?: shortcutItem?.displayIcon())
         view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label ?: shortcutItem?.label.orEmpty()
         val label = appItem?.label ?: shortcutItem?.label
         val packageStatus = appItem?.let(::packageStatus)
         view.contentDescription = if (label == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
-        else listOfNotNull(label, packageStatus, location, "row ${y + 1}", "column ${x + 1}").joinToString()
+        else listOfNotNull(
+            label,
+            packageStatus,
+            if (appItem?.hasDot() == true || shortcutItem?.hasDot() == true) getString(R.string.notifications_available) else null,
+            location,
+            "row ${y + 1}",
+            "column ${x + 1}",
+        ).joinToString()
         if (packageStatus != null) view.alpha = 0.55f
         view.isFocusable = label != null
         if (item == null && pageId != null) {
-            view.setOnLongClickListener { widgetHost.pick(pageId, x, y); true }
+            view.setOnLongClickListener { showWorkspaceOptions(pageId, x, y); true }
             view.accessibilityDelegate = object : View.AccessibilityDelegate() {
                 override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                     super.onInitializeAccessibilityNodeInfo(host, info)
@@ -724,17 +751,17 @@ class HomeActivity : AppCompatActivity() {
         byComponent: Map<Triple<String, String, Long>, LaunchableApp>,
     ): FolderEntry? = when (val memberPayload = payload) {
         is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.let {
-            FolderEntry(this, it.label, it.icon, app = it)
+            FolderEntry(this, it.label, it.displayIcon(), app = it)
         }
         is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.let {
-            FolderEntry(this, it.label, it.icon, shortcut = it)
+            FolderEntry(this, it.label, it.displayIcon(), shortcut = it)
         }
         is ItemPayload.Folder, is ItemPayload.Widget -> null
     }
 
     private fun FolderMember.icon(byComponent: Map<Triple<String, String, Long>, LaunchableApp>) = when (val memberPayload = payload) {
-        is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.icon
-        is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.icon
+        is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.displayIcon()
+        is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.displayIcon()
         is ItemPayload.Folder, is ItemPayload.Widget -> null
     }
 
@@ -1071,6 +1098,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun applySurface() {
+        if (app.emergency) NotificationDotStore.setEnabled(false)
         if (app.emergency) widgetHost.stop()
         else if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) widgetHost.start()
         val target = when {
@@ -1275,7 +1303,7 @@ class HomeActivity : AppCompatActivity() {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.app_row, parent, false)
             val item = items[position]
-            view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.icon)
+            view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.displayIcon())
             view.findViewById<TextView>(R.id.appLabel).text = item.label
             val profile = profileLabel(item.profileKind)
             view.findViewById<TextView>(R.id.appProfile).text = profile
@@ -1290,7 +1318,12 @@ class HomeActivity : AppCompatActivity() {
                 progress = item.installProgress ?: 0
             }
             view.alpha = if (item.packageState == PackageState.READY) 1f else 0.65f
-            view.contentDescription = listOfNotNull(item.label, profile, packageStatus).joinToString()
+            view.contentDescription = listOfNotNull(
+                item.label,
+                profile,
+                packageStatus,
+                if (item.hasDot()) getString(R.string.notifications_available) else null,
+            ).joinToString()
             return view
         }
     }
@@ -1303,6 +1336,62 @@ class HomeActivity : AppCompatActivity() {
         PackageState.DISABLED -> getString(R.string.package_disabled)
         PackageState.ARCHIVED -> getString(R.string.package_archived)
         PackageState.TEMPORARILY_UNAVAILABLE -> getString(R.string.package_temporarily_unavailable)
+    }
+
+    private fun refreshDots() {
+        if (!this::root.isInitialized || isFinishing || isDestroyed) return
+        (appList.adapter as? AppAdapter)?.notifyDataSetChanged()
+        (privateAppList.adapter as? AppAdapter)?.notifyDataSetChanged()
+        render(rendered)
+    }
+
+    private fun LaunchableApp.hasDot(): Boolean = NotificationDotStore.dot(PackageKey(packageName, profileId)) != null
+
+    private fun LauncherShortcut.hasDot(): Boolean = NotificationDotStore.dot(this) != null
+
+    private fun LaunchableApp.displayIcon(): android.graphics.drawable.Drawable? = icon?.let {
+        if (hasDot()) NotificationDotDrawable(it, getColor(R.color.notification_dot)) else it
+    }
+
+    private fun LauncherShortcut.displayIcon(): android.graphics.drawable.Drawable? = icon?.let {
+        if (hasDot()) NotificationDotDrawable(it, getColor(R.color.notification_dot)) else it
+    }
+
+    private fun FolderMember.hasDot(): Boolean = when (val value = payload) {
+        is ItemPayload.Application -> NotificationDotStore.dot(PackageKey(value.component.`package`, value.component.profileId.toLong())) != null
+        is ItemPayload.Shortcut -> shortcuts[value.shortcut]?.hasDot() == true
+        is ItemPayload.Folder, is ItemPayload.Widget -> false
+    }
+
+    private fun showWorkspaceOptions(pageId: ULong, x: Int, y: Int) {
+        val labels = arrayOf(getString(R.string.wallpaper), getString(R.string.add_widget), getString(R.string.open_all_apps), getString(R.string.launcher_settings))
+        AlertDialog.Builder(this)
+            .setTitle(R.string.workspace_options)
+            .setItems(labels) { _, which ->
+                when (which) {
+                    0 -> if (!SystemWallpaperPicker.open(this)) Toast.makeText(this, R.string.wallpaper_unavailable, Toast.LENGTH_SHORT).show()
+                    1 -> widgetHost.pick(pageId, x, y)
+                    2 -> setSurface(LauncherSurface.ALL_APPS)
+                    3 -> openLauncherSettings()
+                }
+            }
+            .show()
+    }
+
+    private fun autoPlace(key: PackageKey) {
+        CenixExecutors.io {
+            if (!app.awaitReady() || app.emergency) return@io
+            val database = app.database ?: return@io
+            if (database.dao().launcherSettings()?.autoAddApps != true) return@io
+            val profile = profiles.profile(key.profileId)
+                ?.takeIf { it.descriptor.access == ProfileAccess.AVAILABLE && it.descriptor.kind != ProfileKind.PRIVATE }
+                ?: return@io
+            val item = catalog.load(listOf(profile))
+                .filter { it.packageName == key.packageName && it.canPlace }
+                .minByOrNull { it.className } ?: return@io
+            val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }
+            workspace.autoPlace(item)?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+        }
     }
 
     private fun profileLabel(kind: ProfileKind): String = getString(
@@ -1320,6 +1409,7 @@ class HomeActivity : AppCompatActivity() {
         const val EXTRA_FORCE_NATIVE_FAILURE = "com.caniko.cenix.FORCE_NATIVE_FAILURE"
         private const val SURFACE_ANIMATION_MS = 220L
         private const val STATE_PAGE_ID = "workspace.pageId"
+        private val PACKAGE_INVALIDATIONS = setOf("add", "remove", "change", "available", "unavailable", "suspended", "unsuspended", "loading", "session", "session-finished")
         private fun emptySnapshot() = WorkspaceSnapshot(0UL, com.caniko.cenix.uniffi.GridSpec(1, 1, 1), emptyList(), emptyList(), emptyList())
     }
 }

@@ -45,7 +45,7 @@
         android:id="@+id/allAppsContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="?android:attr/colorBackground"
+        android:background="@color/launcher_surface"
         android:contentDescription="@string/all_apps_surface"
         android:padding="16dp"
         android:visibility="gone">
@@ -180,7 +180,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:accessibilityLiveRegion="polite"
-        android:background="?android:attr/colorBackground"
+        android:background="@color/launcher_surface"
         android:orientation="vertical"
         android:padding="16dp"
         android:visibility="gone">

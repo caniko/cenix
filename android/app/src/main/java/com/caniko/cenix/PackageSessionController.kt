@@ -11,6 +11,7 @@ import android.os.UserHandle
 import com.caniko.cenix.db.ApplicationItemEntity
 import com.caniko.cenix.uniffi.ProfileAccess
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class PackageState {
     READY,
@@ -31,12 +32,14 @@ private data class SessionDisplay(
     val icon: android.graphics.drawable.Drawable?,
     val progress: Int,
     val user: UserHandle,
+    val newInstall: Boolean,
 )
 
 class PackageSessionController(
     private val context: Context,
     private val profiles: ProfileController,
-    private val onChanged: (String) -> Unit,
+    private val onChanged: (String, PackageKey?) -> Unit,
+    private val onNewInstall: (PackageKey) -> Unit,
 ) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val packageManager = context.packageManager
@@ -44,50 +47,58 @@ class PackageSessionController(
     private val overrides = ConcurrentHashMap<PackageKey, PackageState>()
     private val progresses = ConcurrentHashMap<PackageKey, Int>()
     private val sessions = ConcurrentHashMap<Int, SessionDisplay>()
+    private val installed = ConcurrentHashMap.newKeySet<PackageKey>()
+    private val installedSeeded = AtomicBoolean()
 
     private val packageCallback = object : LauncherApps.Callback() {
-        override fun onPackageAdded(packageName: String, user: UserHandle) = clear(packageName, user, "add")
+        override fun onPackageAdded(packageName: String, user: UserHandle) {
+            val key = key(packageName, user)
+            val newInstall = key?.takeIf { installed.add(it) }
+            clear(packageName, user, "add")
+            newInstall?.let(onNewInstall)
+        }
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
             key(packageName, user)?.let {
                 overrides.remove(it)
                 progresses.remove(it)
                 retained.remove(it)
+                installed.remove(it)
             }
-            onChanged("remove")
+            onChanged("remove", key(packageName, user))
         }
         override fun onPackageChanged(packageName: String, user: UserHandle) {
             key(packageName, user)?.let { key ->
                 overrides[key] = applicationState(packageName, user)
             }
-            onChanged("change")
+            onChanged("change", key(packageName, user))
         }
         override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
             packageNames.forEach { clear(it, user, "available", notify = false) }
-            onChanged("available")
+            onChanged("available", null)
         }
         override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
             packageNames.forEach { packageName ->
                 key(packageName, user)?.let { overrides[it] = PackageState.TEMPORARILY_UNAVAILABLE }
             }
-            onChanged("unavailable")
+            onChanged("unavailable", null)
         }
         override fun onPackagesSuspended(packageNames: Array<out String>, user: UserHandle) {
             packageNames.forEach { packageName -> key(packageName, user)?.let { overrides[it] = PackageState.SUSPENDED } }
-            onChanged("suspended")
+            onChanged("suspended", null)
         }
         override fun onPackagesUnsuspended(packageNames: Array<out String>, user: UserHandle) {
             packageNames.forEach { clear(it, user, "unsuspended", notify = false) }
-            onChanged("unsuspended")
+            onChanged("unsuspended", null)
         }
         override fun onShortcutsChanged(packageName: String, shortcuts: MutableList<ShortcutInfo>, user: UserHandle) {
-            onChanged("shortcuts")
+            onChanged("shortcuts", key(packageName, user))
         }
         override fun onPackageLoadingProgressChanged(packageName: String, user: UserHandle, progress: Float) {
             key(packageName, user)?.let {
                 overrides[it] = PackageState.UPDATING
                 progresses[it] = (progress.coerceIn(0f, 1f) * 100).toInt()
             }
-            onChanged("loading")
+            onChanged("loading", key(packageName, user))
         }
     }
 
@@ -97,8 +108,9 @@ class PackageSessionController(
         override fun onActiveChanged(sessionId: Int, active: Boolean) = Unit
         override fun onProgressChanged(sessionId: Int, progress: Float) = refreshSession(sessionId)
         override fun onFinished(sessionId: Int, success: Boolean) {
-            sessions.remove(sessionId)
-            onChanged(if (success) "session-finished" else "session-failed")
+            val session = sessions.remove(sessionId)
+            if (success && session?.newInstall == true && installed.add(session.key)) onNewInstall(session.key)
+            onChanged(if (success) "session-finished" else "session-failed", session?.key)
         }
     }
 
@@ -115,6 +127,7 @@ class PackageSessionController(
 
     fun decorate(loaded: List<LaunchableApp>, durable: List<ApplicationItemEntity>): List<LaunchableApp> {
         launcherApps.allPackageInstallerSessions.forEach(::rememberSession)
+        if (installedSeeded.compareAndSet(false, true)) installed.addAll(loaded.map { PackageKey(it.packageName, it.profileId) })
         val loadedComponents = loaded.map { Triple(it.packageName, it.className, it.profileId) }.toSet()
         val preserved = durable.mapNotNull { row ->
             if (Triple(row.packageName, row.className, row.profileId) in loadedComponents) return@mapNotNull null
@@ -145,6 +158,7 @@ class PackageSessionController(
                 profile.user,
                 info?.loadIcon(packageManager)?.let { packageManager.getUserBadgedIcon(it, profile.user) },
                 state,
+                baseIcon = info?.loadIcon(packageManager),
             )
         }
         val known = loaded + preserved
@@ -174,6 +188,7 @@ class PackageSessionController(
                     normalizedLabel = EmergencyFilter.normalize(session.label),
                     user = session.user,
                     icon = session.icon,
+                    baseIcon = session.icon,
                     packageState = state,
                     installProgress = session.progress,
                 )
@@ -192,7 +207,7 @@ class PackageSessionController(
 
     private fun refreshSession(sessionId: Int) {
         launcherApps.allPackageInstallerSessions.firstOrNull { it.sessionId == sessionId }?.let(::rememberSession)
-        onChanged("session")
+        onChanged("session", sessions[sessionId]?.key)
     }
 
     private fun rememberSession(info: PackageInstaller.SessionInfo) {
@@ -209,6 +224,11 @@ class PackageSessionController(
             if (!trusted) return
         }
         val key = key(packageName, user) ?: return
+        val newInstall = sessions[info.sessionId]?.newInstall ?: try {
+            launcherApps.getActivityList(packageName, user).isEmpty()
+        } catch (_: RuntimeException) {
+            false
+        }
         sessions[info.sessionId] = SessionDisplay(
             info.sessionId,
             key,
@@ -216,6 +236,7 @@ class PackageSessionController(
             info.appIcon?.let { BitmapDrawable(context.resources, it) },
             (info.progress.coerceIn(0f, 1f) * 100).toInt(),
             user,
+            newInstall,
         )
     }
 
@@ -224,7 +245,7 @@ class PackageSessionController(
             overrides.remove(it)
             progresses.remove(it)
         }
-        if (notify) onChanged(reason)
+        if (notify) onChanged(reason, key(packageName, user))
     }
 
     private fun key(packageName: String, user: UserHandle): PackageKey? =

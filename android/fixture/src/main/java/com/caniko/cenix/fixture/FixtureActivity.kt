@@ -1,5 +1,8 @@
 package com.caniko.cenix.fixture
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.os.Bundle
 import android.widget.TextView
 import android.widget.Button
@@ -14,6 +17,11 @@ class FixtureActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val manager = getSystemService(ShortcutManager::class.java)
+        intent.getStringExtra(EXTRA_NOTIFICATION_COMMAND)?.let { command ->
+            controlNotification(command)
+            finish()
+            return
+        }
         val fixture = application as FixtureApplication
         val admin = ComponentName(this, FixtureAdminReceiver::class.java)
         getSystemService(DevicePolicyManager::class.java).let { policy ->
@@ -57,5 +65,30 @@ class FixtureActivity : AppCompatActivity() {
         this.id = id
         text = getString(label)
         setOnClickListener { block() }
+    }
+
+    private fun controlNotification(command: String) {
+        val notifications = getSystemService(NotificationManager::class.java)
+        notifications.createNotificationChannel(NotificationChannel(CHANNEL, "Fixture", NotificationManager.IMPORTANCE_DEFAULT))
+        when (command) {
+            "cancel" -> notifications.cancelAll()
+            "post", "shortcut", "ongoing", "summary" -> notifications.notify(
+                if (command == "shortcut") 2 else 1,
+                Notification.Builder(this, CHANNEL)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("Fixture notification")
+                    .setContentText("Conformance only")
+                    .setOngoing(command == "ongoing")
+                    .setGroup("fixture-group")
+                    .setGroupSummary(command == "summary")
+                    .setShortcutId(if (command == "shortcut") FixtureApplication.DYNAMIC_ID else null)
+                    .build(),
+            )
+        }
+    }
+
+    companion object {
+        private const val CHANNEL = "fixture"
+        private const val EXTRA_NOTIFICATION_COMMAND = "notification-command"
     }
 }

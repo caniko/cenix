@@ -20,15 +20,16 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | widget-restore | USER_AUTHORIZED | p3-contract | SRC,API |
 | pinned-shortcuts | USER_AUTHORIZED | done-p2b | API,AOSP_EMU |
 | pin-widget-confirm | USER_AUTHORIZED | p3-contract | SRC,API |
-| notification-dots | USER_AUTHORIZED | later | API |
+| notification-dots | USER_AUTHORIZED | implemented-p5b | SRC,API |
 | package-events | INSTALLABLE_PUBLIC | done | API,AOSP_EMU |
-| session-commit | INSTALLABLE_PUBLIC | later | SRC |
+| auto-placement | INSTALLABLE_PUBLIC | implemented-p5b | SRC,API |
 | disabled-suspended | INSTALLABLE_PUBLIC | partial | API |
 | work-profiles | INSTALLABLE_PUBLIC | done-p4 | SRC,API,AOSP_EMU |
 | private-space | ROLE_HOME_GATED | public-boundary-p4 | SRC,API,AOSP_EMU |
 | app-lock | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
-| wallpaper | USER_AUTHORIZED | later | API |
-| grid-migration | INSTALLABLE_PUBLIC | room-v4-done; user-grid-later | API |
+| wallpaper | USER_AUTHORIZED | implemented-p5b | SRC,API |
+| themed-icons | INSTALLABLE_PUBLIC | implemented-p5b | SRC,API |
+| grid-migration | INSTALLABLE_PUBLIC | done-p5a | SRC,API,AOSP_EMU |
 | backup | INSTALLABLE_PUBLIC | omitted | SRC |
 | a11y | INSTALLABLE_PUBLIC | keyboard-and-semantics-p2b; TalkBack-unverified | API,AOSP_EMU |
 | secondary-display | INSTALLABLE_PUBLIC | omitted | API |
@@ -36,6 +37,6 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | launcher-provider | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
 | organizer | INTENTIONALLY_OMITTED | — | SRC |
 | app-functions | UNKNOWN_REQUIRES_SPIKE | omitted | SRC |
-| icon-packs | INSTALLABLE_PUBLIC | later | SRC |
+| icon-packs | INTENTIONALLY_OMITTED | — | SRC |
 | query-all-packages | INTENTIONALLY_OMITTED | — | — |
 | internet-webview-js | INTENTIONALLY_OMITTED | — | — |

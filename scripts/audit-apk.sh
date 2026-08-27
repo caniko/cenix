@@ -15,11 +15,14 @@ if ! grep -q 'android.intent.category.HOME' "$manifest"; then
   exit 1
 fi
 exported="$(grep -c 'android:exported="true"' "$manifest" || true)"
-if [[ "$exported" -ne 4 ]] ||
+if [[ "$exported" -ne 5 ]] ||
   ! grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' "$manifest" ||
   ! grep -q 'android.content.pm.action.CONFIRM_PIN_APPWIDGET' "$manifest" ||
-  ! grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' "$manifest"; then
-  echo "only HOME, pin confirmations, and widget restore may be exported, found $exported" >&2
+  ! grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' "$manifest" ||
+  ! grep -q 'android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"' "$manifest" ||
+  grep -q '<uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"' "$manifest" ||
+  grep -q 'android.permission.ACCESS_NOTIFICATION_POLICY' "$manifest"; then
+  echo "only HOME, pin confirmations, widget restore, and the bound notification listener may be exported, found $exported" >&2
   exit 1
 fi
 if grep -R --include='*.kt' --include='*.xml' -nE 'WebView|cuscon|Cuscon|cenix_jni|FilterProtocol|NativeBridge|harbor-js' "$root/android" \
@@ -74,6 +77,9 @@ grep -q 'android.intent.category.HOME' <<<"$xmltree" || { echo "HOME missing fro
 grep -q 'android.content.pm.action.CONFIRM_PIN_SHORTCUT' <<<"$xmltree" || { echo "pin shortcut confirmation missing from merged manifest" >&2; exit 1; }
 grep -q 'android.content.pm.action.CONFIRM_PIN_APPWIDGET' <<<"$xmltree" || { echo "pin widget confirmation missing from merged manifest" >&2; exit 1; }
 grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' <<<"$xmltree" || { echo "widget restore receiver missing from merged manifest" >&2; exit 1; }
+grep -q 'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE' <<<"$xmltree" || { echo "bound notification listener missing from merged manifest" >&2; exit 1; }
+grep -q 'android.service.notification.NotificationListenerService' <<<"$xmltree" || { echo "notification listener action missing from merged manifest" >&2; exit 1; }
+grep -q 'android.permission.ACCESS_NOTIFICATION_POLICY' <<<"$xmltree" && { echo "notification policy access is forbidden" >&2; exit 1; }
 grep -qiE 'cuscon|harbor-js|cenix_jni' <<<"$badging" && { echo "forbidden string in badging" >&2; exit 1; }
 python3 - "$apk" <<'PY' || { echo "Play Services reference in APK" >&2; exit 1; }
 import sys, zipfile
