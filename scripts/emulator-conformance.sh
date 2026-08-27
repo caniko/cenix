@@ -669,15 +669,18 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  "$adb" -s "$serial" shell input swipe 160 180 160 560 400
+  ui="$(dump_ui)"
+  for control in wallpaper themedIcons notificationDots autoAddApps; do
+    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
+  done
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
   ui="$(dump_ui)"
   for grid in grid_2_by_2 grid_3_by_3 grid_4_by_4; do
     echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$grid\"" || fail "compatible setting missing: $grid"
   done
   echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
   echo "$ui" | grep -q "$CENIX_GIT_COMMIT" || fail "settings build identity missing exact source commit"
-  for control in wallpaper themedIcons notificationDots autoAddApps; do
-    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
-  done
   pass "settings: finite compatible phone grids and build identity are visible"
 
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
