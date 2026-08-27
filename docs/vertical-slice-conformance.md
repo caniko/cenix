@@ -1,6 +1,6 @@
 # Vertical slice conformance
 
-Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, dynamic pages, hotseat, folders, shortcuts, production app widgets, work/private profile policy, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
+Cenix is an installable HOME app with separate full-screen HOME and All Apps surfaces, a generation-checked Room workspace, typed Rust reducer, finite grid settings, transient package lifecycle presentation, dynamic pages, hotseat, folders, shortcuts, production app widgets, work/private profile policy, transient context actions, internal drag, local application search, process-death recovery, and Kotlin emergency mode.
 
 Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The AOSP API 35 `default` x86_64 emulator is not that device.
 
@@ -12,7 +12,7 @@ Device target remains Pixel 10 Pro XL (`mustang`) / GrapheneOS `2026081300`. The
 - Emergency path never constructs `NativeAppFilter` or generated UniFFI types
 - Native probe failure (`filterFactory` throw or probe throw) enters persisted emergency
 - Rust command sequences preserve generation, no-overlap, deterministic ordering, page trimming, grid, and reorder invariants
-- Room rejects stale generations, verifies no-op equality, rolls back failed writes, and migrates workspace data through the normalized v5 shortcut schema
+- Room rejects stale generations, verifies no-op equality, rolls back failed writes, and migrates workspace data through the v7 settings schema
 - Debug APK audit: HOME exported, no `INTERNET`, no `QUERY_ALL_PACKAGES`, no WebView, `libcenix_ffi.so` present
 
 ## Proven on emulator
@@ -40,6 +40,20 @@ That script:
 13. Exercises widget discovery, rendering, updates, resize, duplicate instances, move, configure, pin, removal, and emergency isolation
 14. Installs a `-PomitNative` APK and checks emergency HOME search and launch
 15. The `profiles` suite creates managed/private profiles, applies a minimal test DPC for work widgets, and verifies profile launch, shortcuts, widgets, quiet/unquiet, package isolation, permanent removal, and private lock leakage
+16. The `settings` suite checks finite compatible grids, build identity, recreation, confirmation, and shrink/repeat/expand migration
+17. The `packages` suite checks suspended, disabled, replacement-update, and removal presentation without durable package state
+
+Final P5A production evidence used clean implementation commit `235a0e5fb6ec453728fbbde076074358cef1e9a3`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `9b0513b3f65e4d4cbbe4be3eea963599c4dac39c4dc8aa7e6f8b2175acb42aa1`.
+
+| Run | Serial | Duration | Evidence |
+| --- | --- | ---: | --- |
+| 1 | `emulator-5582` | 1422s | `AOSP_EMU` |
+| 2 | `emulator-5572` | 1438s | `AOSP_EMU` |
+| 3 | `emulator-5576` | 1308s | `AOSP_EMU` |
+| 4 | `emulator-5586` | 1353s | `AOSP_EMU` |
+| 5 | `emulator-5608` | 1234s | `AOSP_EMU` |
+
+The same commit and APK passed forced RTL (`emulator-5598`) and font scale 1.3 (`emulator-5580`). Two clean unsigned release builds were byte-identical at SHA-256 `4edb1da171e7848d475ccdd22fceb2d36a738c2822b466811efa6dc3324313dd`; the linked CycloneDX SBOM validated 326 components. See [Settings, grid, and package conformance](settings-grid-package-conformance.md). Artifacts are under `/data/scratch/tmp/opencode/cenix-p5a-final-235a0e5`. This is `AOSP_EMU`, never `GOS_DEV`; no physical mustang, TalkBack certification, or Macrobenchmark evidence exists.
 
 Final P4 production evidence used clean implementation commit `d0f41c640646d5c8ac83d1b43c09b2964d9c7752`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `f92d79b11dce320af796e29c06a67c5bd728d65b85fa2d1e4807603a80b97124`.
 
