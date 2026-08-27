@@ -669,7 +669,8 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
-  "$adb" -s "$serial" shell input swipe 160 180 160 560 400
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   ui="$(dump_ui)"
   for control in wallpaper themedIcons notificationDots autoAddApps; do
     echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
