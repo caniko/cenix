@@ -16,6 +16,7 @@ cargo run --manifest-path "$root/Cargo.toml" -p uniffi-bindgen --locked --offlin
 # strip generator trailing whitespace; keep UniFFI semantics
 while IFS= read -r -d '' f; do
   sed -i 's/[[:space:]]\+$//' "$f"
+  sed -i -e :a -e '/^\n*$/{$d;N;ba;}' "$f"
   if [[ -s "$f" && "$(tail -c1 "$f" | wc -l)" -eq 0 ]]; then
     printf '\n' >> "$f"
   fi

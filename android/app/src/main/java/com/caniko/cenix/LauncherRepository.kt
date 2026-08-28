@@ -80,6 +80,7 @@ class LauncherRepository(private val db: CenixDatabase) {
         val maxItemId = (transition.items.map { it.itemId } + memberIds).maxOrNull() ?: 0UL
         val payloads = transition.items.map { it.itemId to it.payload } +
             transition.folders.flatMap { folder -> folder.members.map { it.itemId to it.payload } }
+        val itemCells = transition.items.associate { it.itemId to it.cell }
         val applicationItems = payloads.mapNotNull { (itemId, payload) ->
             (payload as? ItemPayload.Application)?.let { itemId to it.component }
         }
@@ -88,12 +89,17 @@ class LauncherRepository(private val db: CenixDatabase) {
         }
         val widgetItems = payloads.mapNotNull { (itemId, payload) ->
             (payload as? ItemPayload.Widget)?.let {
+                val existing = existingWidgets[itemId.toLong()]
                 WidgetItemEntity(
                     itemId.toLong(),
                     it.provider.`package`,
                     it.provider.`class`,
                     it.provider.profileId.toLong(),
-                    if (itemId == boundItemId) appWidgetId else existingWidgets[itemId.toLong()]?.appWidgetId,
+                    if (itemId == boundItemId) appWidgetId else existing?.appWidgetId,
+                    existing?.minSpanX ?: 1,
+                    existing?.minSpanY ?: 1,
+                    existing?.resizeX ?: itemCells.getValue(itemId).spanX,
+                    existing?.resizeY ?: itemCells.getValue(itemId).spanY,
                 )
             }
         }

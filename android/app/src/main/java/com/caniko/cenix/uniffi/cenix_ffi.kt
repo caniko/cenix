@@ -721,6 +721,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -738,13 +744,19 @@ internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_cenix_ffi_checksum_func_apply_workspace_command(
 ): Short
+fun uniffi_cenix_ffi_checksum_func_build_backup_document(
+): Short
 fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_init_diagnostics(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_native_panicked(
 ): Short
+fun uniffi_cenix_ffi_checksum_func_plan_backup_import(
+): Short
 fun uniffi_cenix_ffi_checksum_func_project_profile_item(
+): Short
+fun uniffi_cenix_ffi_checksum_func_validate_backup_document(
 ): Short
 fun ffi_cenix_ffi_uniffi_contract_version(
 ): Int
@@ -793,14 +805,20 @@ internal interface UniffiLib : Library {
     // FFI functions
     fun uniffi_cenix_ffi_fn_func_apply_workspace_command(`snapshot`: RustBuffer.ByValue,`command`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_build_backup_document(`workspace`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,`widgets`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`nextItemId`: Long,`nextPageId`: Long,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_init_diagnostics(`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 fun uniffi_cenix_ffi_fn_func_native_panicked(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
+fun uniffi_cenix_ffi_fn_func_plan_backup_import(`document`: RustBuffer.ByValue,`target`: RustBuffer.ByValue,`mappings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_project_profile_item(`profile`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_validate_backup_document(`document`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Unit
 fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -930,6 +948,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cenix_ffi_checksum_func_apply_workspace_command() != 56944.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_cenix_ffi_checksum_func_build_backup_document() != 55615.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cenix_ffi_checksum_func_filter_and_order_apps() != 6283.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -939,7 +960,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cenix_ffi_checksum_func_native_panicked() != 51392.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_cenix_ffi_checksum_func_plan_backup_import() != 11565.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cenix_ffi_checksum_func_project_profile_item() != 373.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_validate_backup_document() != 7715.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1248,6 +1275,338 @@ public object FfiConverterTypeAppId: FfiConverterRustBuffer<AppId> {
 
 
 
+data class BackupDocument (
+    var `formatVersion`: kotlin.UInt,
+    var `sourceVersion`: kotlin.String,
+    var `sourceCommit`: kotlin.String,
+    var `settings`: BackupSettings,
+    var `profiles`: List<BackupProfileRef>,
+    var `workspace`: WorkspaceSnapshot,
+    var `widgets`: List<BackupWidgetMetadata>,
+    var `nextItemId`: kotlin.ULong,
+    var `nextPageId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupDocument: FfiConverterRustBuffer<BackupDocument> {
+    override fun read(buf: ByteBuffer): BackupDocument {
+        return BackupDocument(
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeBackupSettings.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterTypeWorkspaceSnapshot.read(buf),
+            FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupDocument) = (
+            FfiConverterUInt.allocationSize(value.`formatVersion`) +
+            FfiConverterString.allocationSize(value.`sourceVersion`) +
+            FfiConverterString.allocationSize(value.`sourceCommit`) +
+            FfiConverterTypeBackupSettings.allocationSize(value.`settings`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterTypeWorkspaceSnapshot.allocationSize(value.`workspace`) +
+            FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterULong.allocationSize(value.`nextItemId`) +
+            FfiConverterULong.allocationSize(value.`nextPageId`)
+    )
+
+    override fun write(value: BackupDocument, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`formatVersion`, buf)
+            FfiConverterString.write(value.`sourceVersion`, buf)
+            FfiConverterString.write(value.`sourceCommit`, buf)
+            FfiConverterTypeBackupSettings.write(value.`settings`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterTypeWorkspaceSnapshot.write(value.`workspace`, buf)
+            FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterULong.write(value.`nextItemId`, buf)
+            FfiConverterULong.write(value.`nextPageId`, buf)
+    }
+}
+
+
+
+data class BackupExportOptions (
+    var `includeWork`: kotlin.Boolean,
+    var `sourceVersion`: kotlin.String,
+    var `sourceCommit`: kotlin.String,
+    var `profiles`: List<BackupProfileRef>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupExportOptions: FfiConverterRustBuffer<BackupExportOptions> {
+    override fun read(buf: ByteBuffer): BackupExportOptions {
+        return BackupExportOptions(
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupExportOptions) = (
+            FfiConverterBoolean.allocationSize(value.`includeWork`) +
+            FfiConverterString.allocationSize(value.`sourceVersion`) +
+            FfiConverterString.allocationSize(value.`sourceCommit`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`)
+    )
+
+    override fun write(value: BackupExportOptions, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`includeWork`, buf)
+            FfiConverterString.write(value.`sourceVersion`, buf)
+            FfiConverterString.write(value.`sourceCommit`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+    }
+}
+
+
+
+data class BackupImportPlan (
+    var `workspace`: WorkspaceSnapshot,
+    var `settings`: BackupSettings,
+    var `profiles`: List<BackupProfileRef>,
+    var `widgets`: List<BackupWidgetMetadata>,
+    var `nextItemId`: kotlin.ULong,
+    var `nextPageId`: kotlin.ULong,
+    var `unresolvedApplications`: List<kotlin.ULong>,
+    var `unresolvedShortcuts`: List<kotlin.ULong>,
+    var `unresolvedWidgets`: List<kotlin.ULong>,
+    var `warnings`: List<BackupImportWarning>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportPlan: FfiConverterRustBuffer<BackupImportPlan> {
+    override fun read(buf: ByteBuffer): BackupImportPlan {
+        return BackupImportPlan(
+            FfiConverterTypeWorkspaceSnapshot.read(buf),
+            FfiConverterTypeBackupSettings.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceTypeBackupImportWarning.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupImportPlan) = (
+            FfiConverterTypeWorkspaceSnapshot.allocationSize(value.`workspace`) +
+            FfiConverterTypeBackupSettings.allocationSize(value.`settings`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterULong.allocationSize(value.`nextItemId`) +
+            FfiConverterULong.allocationSize(value.`nextPageId`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedApplications`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedShortcuts`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedWidgets`) +
+            FfiConverterSequenceTypeBackupImportWarning.allocationSize(value.`warnings`)
+    )
+
+    override fun write(value: BackupImportPlan, buf: ByteBuffer) {
+            FfiConverterTypeWorkspaceSnapshot.write(value.`workspace`, buf)
+            FfiConverterTypeBackupSettings.write(value.`settings`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterULong.write(value.`nextItemId`, buf)
+            FfiConverterULong.write(value.`nextPageId`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedApplications`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedShortcuts`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedWidgets`, buf)
+            FfiConverterSequenceTypeBackupImportWarning.write(value.`warnings`, buf)
+    }
+}
+
+
+
+data class BackupImportTarget (
+    var `generation`: kotlin.ULong,
+    var `expectedGeneration`: kotlin.ULong,
+    var `profiles`: List<BackupProfileRef>,
+    var `supportedGridNames`: List<kotlin.String>,
+    var `applications`: List<ComponentId>,
+    var `shortcuts`: List<ShortcutId>,
+    var `widgetProviders`: List<WidgetProviderId>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportTarget: FfiConverterRustBuffer<BackupImportTarget> {
+    override fun read(buf: ByteBuffer): BackupImportTarget {
+        return BackupImportTarget(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceTypeComponentId.read(buf),
+            FfiConverterSequenceTypeShortcutId.read(buf),
+            FfiConverterSequenceTypeWidgetProviderId.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupImportTarget) = (
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterULong.allocationSize(value.`expectedGeneration`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterSequenceString.allocationSize(value.`supportedGridNames`) +
+            FfiConverterSequenceTypeComponentId.allocationSize(value.`applications`) +
+            FfiConverterSequenceTypeShortcutId.allocationSize(value.`shortcuts`) +
+            FfiConverterSequenceTypeWidgetProviderId.allocationSize(value.`widgetProviders`)
+    )
+
+    override fun write(value: BackupImportTarget, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterULong.write(value.`expectedGeneration`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterSequenceString.write(value.`supportedGridNames`, buf)
+            FfiConverterSequenceTypeComponentId.write(value.`applications`, buf)
+            FfiConverterSequenceTypeShortcutId.write(value.`shortcuts`, buf)
+            FfiConverterSequenceTypeWidgetProviderId.write(value.`widgetProviders`, buf)
+    }
+}
+
+
+
+data class BackupProfileRef (
+    var `profileId`: kotlin.ULong,
+    var `kind`: ProfileKind
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupProfileRef: FfiConverterRustBuffer<BackupProfileRef> {
+    override fun read(buf: ByteBuffer): BackupProfileRef {
+        return BackupProfileRef(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeProfileKind.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupProfileRef) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterTypeProfileKind.allocationSize(value.`kind`)
+    )
+
+    override fun write(value: BackupProfileRef, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterTypeProfileKind.write(value.`kind`, buf)
+    }
+}
+
+
+
+data class BackupSettings (
+    var `gridName`: kotlin.String,
+    var `notificationDots`: kotlin.Boolean,
+    var `themedIcons`: kotlin.Boolean,
+    var `autoAddApps`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupSettings: FfiConverterRustBuffer<BackupSettings> {
+    override fun read(buf: ByteBuffer): BackupSettings {
+        return BackupSettings(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupSettings) = (
+            FfiConverterString.allocationSize(value.`gridName`) +
+            FfiConverterBoolean.allocationSize(value.`notificationDots`) +
+            FfiConverterBoolean.allocationSize(value.`themedIcons`) +
+            FfiConverterBoolean.allocationSize(value.`autoAddApps`)
+    )
+
+    override fun write(value: BackupSettings, buf: ByteBuffer) {
+            FfiConverterString.write(value.`gridName`, buf)
+            FfiConverterBoolean.write(value.`notificationDots`, buf)
+            FfiConverterBoolean.write(value.`themedIcons`, buf)
+            FfiConverterBoolean.write(value.`autoAddApps`, buf)
+    }
+}
+
+
+
+data class BackupWidgetMetadata (
+    var `itemId`: kotlin.ULong,
+    var `minSpanX`: kotlin.Int,
+    var `minSpanY`: kotlin.Int,
+    var `resizeX`: kotlin.Int,
+    var `resizeY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupWidgetMetadata: FfiConverterRustBuffer<BackupWidgetMetadata> {
+    override fun read(buf: ByteBuffer): BackupWidgetMetadata {
+        return BackupWidgetMetadata(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupWidgetMetadata) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterInt.allocationSize(value.`minSpanX`) +
+            FfiConverterInt.allocationSize(value.`minSpanY`) +
+            FfiConverterInt.allocationSize(value.`resizeX`) +
+            FfiConverterInt.allocationSize(value.`resizeY`)
+    )
+
+    override fun write(value: BackupWidgetMetadata, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterInt.write(value.`minSpanX`, buf)
+            FfiConverterInt.write(value.`minSpanY`, buf)
+            FfiConverterInt.write(value.`resizeX`, buf)
+            FfiConverterInt.write(value.`resizeY`, buf)
+    }
+}
+
+
+
 data class CellRect (
     var `cellX`: kotlin.Int,
     var `cellY`: kotlin.Int,
@@ -1495,6 +1854,38 @@ public object FfiConverterTypeProfileDescriptor: FfiConverterRustBuffer<ProfileD
             FfiConverterULong.write(value.`profileId`, buf)
             FfiConverterTypeProfileKind.write(value.`kind`, buf)
             FfiConverterTypeProfileAccess.write(value.`access`, buf)
+    }
+}
+
+
+
+data class ProfileMapping (
+    var `sourceProfileId`: kotlin.ULong,
+    var `targetProfileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileMapping: FfiConverterRustBuffer<ProfileMapping> {
+    override fun read(buf: ByteBuffer): ProfileMapping {
+        return ProfileMapping(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileMapping) = (
+            FfiConverterULong.allocationSize(value.`sourceProfileId`) +
+            FfiConverterULong.allocationSize(value.`targetProfileId`)
+    )
+
+    override fun write(value: ProfileMapping, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`sourceProfileId`, buf)
+            FfiConverterULong.write(value.`targetProfileId`, buf)
     }
 }
 
@@ -1777,6 +2168,494 @@ public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<Worksp
             FfiConverterSequenceULong.write(value.`changedItemIds`, buf)
     }
 }
+
+
+
+
+
+sealed class BackupException: kotlin.Exception() {
+
+    class UnsupportedVersion(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidSourceMetadata(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class PrivateProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class UnmappedProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateMapping(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateId(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateComponent(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateShortcut(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidSpan(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidAllocator(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class UnsupportedGrid(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class StaleGeneration(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class Occupied(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class OutOfBounds(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingItem(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingPage(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingFolder(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class Full(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidGrid(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidTitle(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class CrossProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class WidgetTooLarge(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvariantViolation(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<BackupException> {
+        override fun lift(error_buf: RustBuffer.ByValue): BackupException = FfiConverterTypeBackupError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupError : FfiConverterRustBuffer<BackupException> {
+    override fun read(buf: ByteBuffer): BackupException {
+
+
+        return when(buf.getInt()) {
+            1 -> BackupException.UnsupportedVersion()
+            2 -> BackupException.InvalidSourceMetadata()
+            3 -> BackupException.PrivateProfile()
+            4 -> BackupException.InvalidProfile()
+            5 -> BackupException.UnmappedProfile()
+            6 -> BackupException.DuplicateMapping()
+            7 -> BackupException.DuplicateId()
+            8 -> BackupException.DuplicateComponent()
+            9 -> BackupException.DuplicateShortcut()
+            10 -> BackupException.InvalidSpan()
+            11 -> BackupException.InvalidAllocator()
+            12 -> BackupException.UnsupportedGrid()
+            13 -> BackupException.StaleGeneration()
+            14 -> BackupException.Occupied()
+            15 -> BackupException.OutOfBounds()
+            16 -> BackupException.MissingItem()
+            17 -> BackupException.MissingPage()
+            18 -> BackupException.MissingFolder()
+            19 -> BackupException.Full()
+            20 -> BackupException.InvalidGrid()
+            21 -> BackupException.InvalidTitle()
+            22 -> BackupException.CrossProfile()
+            23 -> BackupException.WidgetTooLarge()
+            24 -> BackupException.InvariantViolation()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BackupException): ULong {
+        return when(value) {
+            is BackupException.UnsupportedVersion -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidSourceMetadata -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.PrivateProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.UnmappedProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateMapping -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateId -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateComponent -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateShortcut -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidSpan -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidAllocator -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.UnsupportedGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.StaleGeneration -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.Occupied -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.OutOfBounds -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingItem -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingPage -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingFolder -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.Full -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidTitle -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.CrossProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.WidgetTooLarge -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvariantViolation -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: BackupException, buf: ByteBuffer) {
+        when(value) {
+            is BackupException.UnsupportedVersion -> {
+                buf.putInt(1)
+                Unit
+            }
+            is BackupException.InvalidSourceMetadata -> {
+                buf.putInt(2)
+                Unit
+            }
+            is BackupException.PrivateProfile -> {
+                buf.putInt(3)
+                Unit
+            }
+            is BackupException.InvalidProfile -> {
+                buf.putInt(4)
+                Unit
+            }
+            is BackupException.UnmappedProfile -> {
+                buf.putInt(5)
+                Unit
+            }
+            is BackupException.DuplicateMapping -> {
+                buf.putInt(6)
+                Unit
+            }
+            is BackupException.DuplicateId -> {
+                buf.putInt(7)
+                Unit
+            }
+            is BackupException.DuplicateComponent -> {
+                buf.putInt(8)
+                Unit
+            }
+            is BackupException.DuplicateShortcut -> {
+                buf.putInt(9)
+                Unit
+            }
+            is BackupException.InvalidSpan -> {
+                buf.putInt(10)
+                Unit
+            }
+            is BackupException.InvalidAllocator -> {
+                buf.putInt(11)
+                Unit
+            }
+            is BackupException.UnsupportedGrid -> {
+                buf.putInt(12)
+                Unit
+            }
+            is BackupException.StaleGeneration -> {
+                buf.putInt(13)
+                Unit
+            }
+            is BackupException.Occupied -> {
+                buf.putInt(14)
+                Unit
+            }
+            is BackupException.OutOfBounds -> {
+                buf.putInt(15)
+                Unit
+            }
+            is BackupException.MissingItem -> {
+                buf.putInt(16)
+                Unit
+            }
+            is BackupException.MissingPage -> {
+                buf.putInt(17)
+                Unit
+            }
+            is BackupException.MissingFolder -> {
+                buf.putInt(18)
+                Unit
+            }
+            is BackupException.Full -> {
+                buf.putInt(19)
+                Unit
+            }
+            is BackupException.InvalidGrid -> {
+                buf.putInt(20)
+                Unit
+            }
+            is BackupException.InvalidTitle -> {
+                buf.putInt(21)
+                Unit
+            }
+            is BackupException.CrossProfile -> {
+                buf.putInt(22)
+                Unit
+            }
+            is BackupException.WidgetTooLarge -> {
+                buf.putInt(23)
+                Unit
+            }
+            is BackupException.InvariantViolation -> {
+                buf.putInt(24)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+sealed class BackupImportWarning {
+
+    data class UnresolvedApplication(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+    data class UnresolvedShortcut(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+    data class UnresolvedWidget(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportWarning : FfiConverterRustBuffer<BackupImportWarning>{
+    override fun read(buf: ByteBuffer): BackupImportWarning {
+        return when(buf.getInt()) {
+            1 -> BackupImportWarning.UnresolvedApplication(
+                FfiConverterULong.read(buf),
+                )
+            2 -> BackupImportWarning.UnresolvedShortcut(
+                FfiConverterULong.read(buf),
+                )
+            3 -> BackupImportWarning.UnresolvedWidget(
+                FfiConverterULong.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BackupImportWarning) = when(value) {
+        is BackupImportWarning.UnresolvedApplication -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+        is BackupImportWarning.UnresolvedShortcut -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+        is BackupImportWarning.UnresolvedWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+    }
+
+    override fun write(value: BackupImportWarning, buf: ByteBuffer) {
+        when(value) {
+            is BackupImportWarning.UnresolvedApplication -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+            is BackupImportWarning.UnresolvedShortcut -> {
+                buf.putInt(2)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+            is BackupImportWarning.UnresolvedWidget -> {
+                buf.putInt(3)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
 
 
 
@@ -3147,6 +4026,34 @@ public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<kotlin.ULon
 /**
  * @suppress
  */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeApp: FfiConverterRustBuffer<List<App>> {
     override fun read(buf: ByteBuffer): List<App> {
         val len = buf.getInt()
@@ -3193,6 +4100,62 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeAppId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupProfileRef: FfiConverterRustBuffer<List<BackupProfileRef>> {
+    override fun read(buf: ByteBuffer): List<BackupProfileRef> {
+        val len = buf.getInt()
+        return List<BackupProfileRef>(len) {
+            FfiConverterTypeBackupProfileRef.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupProfileRef>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupProfileRef.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupProfileRef>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupProfileRef.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupWidgetMetadata: FfiConverterRustBuffer<List<BackupWidgetMetadata>> {
+    override fun read(buf: ByteBuffer): List<BackupWidgetMetadata> {
+        val len = buf.getInt()
+        return List<BackupWidgetMetadata>(len) {
+            FfiConverterTypeBackupWidgetMetadata.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupWidgetMetadata>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupWidgetMetadata.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupWidgetMetadata>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupWidgetMetadata.write(it, buf)
         }
     }
 }
@@ -3287,6 +4250,34 @@ public object FfiConverterSequenceTypeFolderMember: FfiConverterRustBuffer<List<
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeProfileMapping: FfiConverterRustBuffer<List<ProfileMapping>> {
+    override fun read(buf: ByteBuffer): List<ProfileMapping> {
+        val len = buf.getInt()
+        return List<ProfileMapping>(len) {
+            FfiConverterTypeProfileMapping.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProfileMapping>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeProfileMapping.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProfileMapping>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeProfileMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeShortcutId: FfiConverterRustBuffer<List<ShortcutId>> {
     override fun read(buf: ByteBuffer): List<ShortcutId> {
         val len = buf.getInt()
@@ -3333,6 +4324,34 @@ public object FfiConverterSequenceTypeWidgetMinimumSpan: FfiConverterRustBuffer<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeWidgetMinimumSpan.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetProviderId: FfiConverterRustBuffer<List<WidgetProviderId>> {
+    override fun read(buf: ByteBuffer): List<WidgetProviderId> {
+        val len = buf.getInt()
+        return List<WidgetProviderId>(len) {
+            FfiConverterTypeWidgetProviderId.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetProviderId>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetProviderId.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetProviderId>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetProviderId.write(it, buf)
         }
     }
 }
@@ -3392,11 +4411,49 @@ public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupImportWarning: FfiConverterRustBuffer<List<BackupImportWarning>> {
+    override fun read(buf: ByteBuffer): List<BackupImportWarning> {
+        val len = buf.getInt()
+        return List<BackupImportWarning>(len) {
+            FfiConverterTypeBackupImportWarning.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupImportWarning>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupImportWarning.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupImportWarning>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupImportWarning.write(it, buf)
+        }
+    }
+}
     @Throws(WorkspaceException::class) fun `applyWorkspaceCommand`(`snapshot`: WorkspaceSnapshot, `command`: WorkspaceCommand): WorkspaceTransition {
             return FfiConverterTypeWorkspaceTransition.lift(
     uniffiRustCallWithError(WorkspaceException) { _status ->
     UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_apply_workspace_command(
         FfiConverterTypeWorkspaceSnapshot.lower(`snapshot`),FfiConverterTypeWorkspaceCommand.lower(`command`),_status)
+}
+    )
+    }
+
+
+    @Throws(BackupException::class) fun `buildBackupDocument`(`workspace`: WorkspaceSnapshot, `settings`: BackupSettings, `widgets`: List<BackupWidgetMetadata>, `options`: BackupExportOptions, `nextItemId`: kotlin.ULong, `nextPageId`: kotlin.ULong): BackupDocument {
+            return FfiConverterTypeBackupDocument.lift(
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_build_backup_document(
+        FfiConverterTypeWorkspaceSnapshot.lower(`workspace`),FfiConverterTypeBackupSettings.lower(`settings`),FfiConverterSequenceTypeBackupWidgetMetadata.lower(`widgets`),FfiConverterTypeBackupExportOptions.lower(`options`),FfiConverterULong.lower(`nextItemId`),FfiConverterULong.lower(`nextPageId`),_status)
 }
     )
     }
@@ -3428,6 +4485,16 @@ public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List
     )
     }
 
+
+    @Throws(BackupException::class) fun `planBackupImport`(`document`: BackupDocument, `target`: BackupImportTarget, `mappings`: List<ProfileMapping>): BackupImportPlan {
+            return FfiConverterTypeBackupImportPlan.lift(
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_plan_backup_import(
+        FfiConverterTypeBackupDocument.lower(`document`),FfiConverterTypeBackupImportTarget.lower(`target`),FfiConverterSequenceTypeProfileMapping.lower(`mappings`),_status)
+}
+    )
+    }
+
  fun `projectProfileItem`(`profile`: ProfileDescriptor, `surface`: ProfileSurface): ProfileItemProjection {
             return FfiConverterTypeProfileItemProjection.lift(
     uniffiRustCall() { _status ->
@@ -3438,4 +4505,9 @@ public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List
     }
 
 
-
+    @Throws(BackupException::class) fun `validateBackupDocument`(`document`: BackupDocument)
+        =
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_validate_backup_document(
+        FfiConverterTypeBackupDocument.lower(`document`),_status)
+}

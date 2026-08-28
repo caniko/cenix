@@ -22,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.PendingWidgetOperationEntity
+import com.caniko.cenix.db.RestorePhase
 import com.caniko.cenix.db.WidgetItemEntity
 import com.caniko.cenix.db.WidgetOperationKind
 import com.caniko.cenix.db.WidgetOperationPhase
@@ -129,7 +130,9 @@ class WidgetHostController(
             val operations = dao.pendingWidgetOperations()
             val committed = dao.workspaceWidgets()
             val knownIds = (committed.mapNotNull { it.appWidgetId } + operations.mapNotNull { it.appWidgetId }).toSet()
-            host.appWidgetIds.filter { it !in knownIds }.forEach(host::deleteAppWidgetId)
+            if (dao.pendingRestore()?.phase != RestorePhase.PLATFORM_RECONCILE) {
+                host.appWidgetIds.filter { it !in knownIds }.forEach(host::deleteAppWidgetId)
+            }
             operations.forEach { operation ->
                 val row = committed.firstOrNull { it.itemId == operation.itemId }
                 when {

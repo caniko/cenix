@@ -19,6 +19,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.caniko.cenix.StartupState
 import com.caniko.cenix.StartupStore
 import com.caniko.cenix.PhoneGrid
+import java.security.MessageDigest
+
+private fun restoreSha256(payload: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
 @Entity(tableName = "launcher_metadata")
 data class MetadataEntity(
@@ -115,6 +119,10 @@ data class WidgetItemEntity(
     val className: String,
     val profileId: Long,
     val appWidgetId: Int?,
+    val minSpanX: Int = 1,
+    val minSpanY: Int = 1,
+    val resizeX: Int = 1,
+    val resizeY: Int = 1,
 )
 
 enum class WidgetOperationKind { ADD, PIN, RESTORE }
@@ -132,11 +140,29 @@ enum class WidgetOperationPhase {
     REMAP_PENDING,
 }
 
+enum class RestoreSource { LOCAL, SYSTEM }
+
+enum class RestorePhase {
+    PARSED,
+    USER_CONFIRMED,
+    SYSTEM_RESTORE_PENDING,
+    APPLYING,
+    PLATFORM_RECONCILE,
+    FAILED,
+}
+
 class WidgetOperationConverters {
     @TypeConverter fun kind(value: WidgetOperationKind): String = value.name
     @TypeConverter fun kind(value: String): WidgetOperationKind = WidgetOperationKind.valueOf(value)
     @TypeConverter fun phase(value: WidgetOperationPhase): String = value.name
     @TypeConverter fun phase(value: String): WidgetOperationPhase = WidgetOperationPhase.valueOf(value)
+}
+
+class RestoreOperationConverters {
+    @TypeConverter fun source(value: RestoreSource): String = value.name
+    @TypeConverter fun source(value: String): RestoreSource = RestoreSource.valueOf(value)
+    @TypeConverter fun restorePhase(value: RestorePhase): String = value.name
+    @TypeConverter fun restorePhase(value: String): RestorePhase = RestorePhase.valueOf(value)
 }
 
 @Entity(
@@ -159,6 +185,24 @@ data class PendingWidgetOperationEntity(
     val spanY: Int,
     val updatedAt: Long,
 )
+
+@Entity(tableName = "pending_restore_operations")
+data class PendingRestoreOperationEntity(
+    @PrimaryKey val singletonId: Int = 1,
+    val source: RestoreSource,
+    val phase: RestorePhase,
+    val payload: String,
+    val payloadSha256: String,
+    val createdAt: Long,
+    val attemptCount: Int,
+    val expectedGeneration: Long,
+    val committedGeneration: Long? = null,
+) {
+    companion object {
+        const val MAX_ATTEMPTS = 3
+        const val MAX_PAYLOAD_BYTES = 1024 * 1024
+    }
+}
 
 @Entity(tableName = "workspace_folders")
 data class FolderEntity(
@@ -228,6 +272,37 @@ interface CenixDao {
     @Query("SELECT * FROM pending_widget_operations ORDER BY itemId")
     fun pendingWidgetOperations(): List<PendingWidgetOperationEntity>
 
+    @Query("SELECT * FROM pending_restore_operations WHERE singletonId = 1")
+    fun pendingRestore(): PendingRestoreOperationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertPendingRestore(entity: PendingRestoreOperationEntity)
+
+    @Query("DELETE FROM pending_restore_operations")
+    fun deletePendingRestore()
+
+    @Query("UPDATE pending_restore_operations SET phase = 'USER_CONFIRMED' WHERE singletonId = 1 AND source = 'LOCAL' AND phase = 'PARSED'")
+    fun confirmLocalRestore(): Int
+
+    @Query("UPDATE pending_restore_operations SET phase = 'SYSTEM_RESTORE_PENDING' WHERE singletonId = 1 AND source = 'SYSTEM' AND phase = 'PARSED'")
+    fun queueSystemRestore(): Int
+
+    @Query(
+        "UPDATE pending_restore_operations SET phase = 'APPLYING' WHERE singletonId = 1 AND payloadSha256 = :payloadSha256 " +
+            "AND ((source = 'LOCAL' AND phase = 'USER_CONFIRMED') OR (source = 'SYSTEM' AND phase = 'SYSTEM_RESTORE_PENDING'))",
+    )
+    fun markRestoreApplying(payloadSha256: String): Int
+
+    @Query(
+        "UPDATE pending_restore_operations SET phase = 'FAILED', attemptCount = attemptCount + 1 " +
+            "WHERE singletonId = 1 AND payloadSha256 = :payloadSha256 " +
+            "AND phase IN ('USER_CONFIRMED', 'SYSTEM_RESTORE_PENDING')",
+    )
+    fun recordRestoreFailure(payloadSha256: String): Int
+
+    @Query("DELETE FROM pending_restore_operations WHERE createdAt < :cutoff AND phase IN ('PARSED', 'USER_CONFIRMED', 'SYSTEM_RESTORE_PENDING', 'FAILED')")
+    fun cleanupStaleRestores(cutoff: Long): Int
+
     @Query("SELECT * FROM workspace_folders ORDER BY folderId")
     fun workspaceFolders(): List<FolderEntity>
 
@@ -254,6 +329,9 @@ interface CenixDao {
 
     @Query("DELETE FROM pending_widget_operations WHERE itemId = :itemId")
     fun deletePendingWidgetOperation(itemId: Long)
+
+    @Query("DELETE FROM pending_widget_operations")
+    fun clearPendingWidgetOperations()
 
     @Query("UPDATE workspace_widgets SET appWidgetId = :appWidgetId WHERE itemId = :itemId")
     fun updateWidgetBinding(itemId: Long, appWidgetId: Int?)
@@ -286,7 +364,7 @@ interface CenixDao {
     fun clearFolderMembers()
 
     @Transaction
-    fun remapWidgetIds(oldIds: IntArray, newIds: IntArray, now: Long) {
+    fun remapWidgetIds(oldIds: IntArray, newIds: IntArray, now: Long): IntArray {
         if (oldIds.size != newIds.size) throw InvalidWorkspaceTransition()
         val widgets = workspaceWidgets().associateBy { it.appWidgetId }
         val items = workspaceItems().associateBy { it.id }
@@ -314,6 +392,7 @@ interface CenixDao {
             updateWidgetBinding(widget.itemId, replacement)
             deletePendingWidgetOperation(widget.itemId)
         }
+        return mappings.map { it.third }.toIntArray()
     }
 
     @Query(
@@ -403,6 +482,122 @@ interface CenixDao {
         if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
     }
 
+    @Transaction
+    fun stageRestore(entity: PendingRestoreOperationEntity) {
+        if (
+            entity.singletonId != 1 || entity.phase != RestorePhase.PARSED || entity.attemptCount != 0 ||
+            entity.committedGeneration != null || entity.expectedGeneration < 0 || entity.createdAt < 0 ||
+            entity.payload.toByteArray(Charsets.UTF_8).size > PendingRestoreOperationEntity.MAX_PAYLOAD_BYTES ||
+            entity.payloadSha256 != restoreSha256(entity.payload)
+        ) {
+            throw InvalidWorkspaceTransition()
+        }
+        val existing = pendingRestore()
+        if (existing != null) {
+            if (
+                existing.payloadSha256 == entity.payloadSha256 && existing.source == entity.source &&
+                existing.expectedGeneration == entity.expectedGeneration && existing.phase != RestorePhase.FAILED
+            ) {
+                return
+            }
+            if (existing.phase !in setOf(RestorePhase.PARSED, RestorePhase.FAILED) && !restoreReconcileIsStale(existing)) {
+                throw InvalidWorkspaceTransition()
+            }
+        }
+        upsertPendingRestore(entity.copy(singletonId = 1))
+    }
+
+    @Transaction
+    fun retryRestore(maxAttempts: Int = PendingRestoreOperationEntity.MAX_ATTEMPTS): PendingRestoreOperationEntity? {
+        val current = pendingRestore() ?: return null
+        if (current.phase != RestorePhase.FAILED || current.attemptCount >= maxAttempts) return current
+        upsertPendingRestore(
+            current.copy(
+                phase = if (current.source == RestoreSource.LOCAL) RestorePhase.PARSED else RestorePhase.SYSTEM_RESTORE_PENDING,
+            ),
+        )
+        return pendingRestore()
+    }
+
+    @Query("UPDATE pending_restore_operations SET phase = 'PLATFORM_RECONCILE', committedGeneration = :committedGeneration WHERE singletonId = 1 AND phase = 'APPLYING'")
+    fun markRestoreReconcile(committedGeneration: Long): Int
+
+    @Transaction
+    fun completeRestore(committedGeneration: Long): Boolean {
+        val current = pendingRestore() ?: return false
+        if (current.phase != RestorePhase.PLATFORM_RECONCILE || current.committedGeneration != committedGeneration) return false
+        deletePendingRestore()
+        return true
+    }
+
+    @Transaction
+    fun replaceWorkspaceFromRestore(
+        expectedGeneration: Long,
+        payloadSha256: String,
+        metadata: WorkspaceMetadataEntity,
+        pages: List<WorkspacePageEntity>,
+        items: List<WorkspaceItemEntity>,
+        applications: List<ApplicationItemEntity> = emptyList(),
+        shortcuts: List<ShortcutItemEntity> = emptyList(),
+        widgets: List<WidgetItemEntity> = emptyList(),
+        folders: List<FolderEntity> = emptyList(),
+        folderMembers: List<FolderMemberEntity> = emptyList(),
+        settings: LauncherSettingsEntity,
+    ) {
+        val journal = pendingRestore() ?: throw InvalidWorkspaceTransition()
+        val currentMetadata = checkNotNull(workspaceMetadata())
+        if (journal.payloadSha256 != payloadSha256) throw InvalidWorkspaceTransition()
+        if (
+            journal.phase == RestorePhase.PLATFORM_RECONCILE &&
+            journal.committedGeneration == currentMetadata.generation &&
+            currentMetadata.generation == expectedGeneration + 1
+        ) {
+            return
+        }
+        if (currentMetadata.generation != expectedGeneration || journal.expectedGeneration != expectedGeneration) {
+            throw StaleWorkspaceGeneration()
+        }
+        if (metadata.generation != expectedGeneration + 1) throw InvalidWorkspaceTransition()
+        if (markRestoreApplying(payloadSha256) != 1) {
+            throw InvalidWorkspaceTransition()
+        }
+        val unbound = widgets.map { it.copy(appWidgetId = null) }
+        validateWorkspaceRows(items, applications, shortcuts, unbound, folders, folderMembers)
+        if (
+            advanceGeneration(
+                expectedGeneration,
+                metadata.generation,
+                metadata.cols,
+                metadata.rows,
+                metadata.hotseatCols,
+                metadata.nextItemId,
+                metadata.nextPageId,
+            ) != 1
+        ) {
+            throw StaleWorkspaceGeneration()
+        }
+        clearPendingWidgetOperations()
+        clearFolderMembers()
+        clearFolders()
+        clearWidgets()
+        clearShortcuts()
+        clearApplications()
+        clearWorkspace()
+        clearPages()
+        insertPages(pages)
+        if (items.isNotEmpty()) insertWorkspace(items)
+        if (applications.isNotEmpty()) insertApplications(applications)
+        if (shortcuts.isNotEmpty()) insertShortcuts(shortcuts)
+        if (unbound.isNotEmpty()) insertWidgets(unbound)
+        if (folders.isNotEmpty()) insertFolders(folders)
+        if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
+        upsertLauncherSettings(settings)
+        if (markRestoreReconcile(metadata.generation) != 1) throw InvalidWorkspaceTransition()
+    }
+
+    private fun restoreReconcileIsStale(entity: PendingRestoreOperationEntity): Boolean =
+        entity.phase == RestorePhase.PLATFORM_RECONCILE && entity.committedGeneration != workspaceMetadata()?.generation
+
     private fun validateWorkspaceRows(
         items: List<WorkspaceItemEntity>,
         applications: List<ApplicationItemEntity>,
@@ -443,6 +638,14 @@ interface CenixDao {
                 (it.itemKind == WorkspaceItemEntity.ITEM_APPLICATION) != (it.id in applicationIds) ||
                     (it.itemKind == WorkspaceItemEntity.ITEM_SHORTCUT) != (it.id in shortcutIds) ||
                     (it.itemKind == WorkspaceItemEntity.ITEM_WIDGET) != (it.id in widgetIds)
+            } ||
+            items.any {
+                it.itemKind == WorkspaceItemEntity.ITEM_WIDGET &&
+                    (it.containerKind == WorkspaceItemEntity.CONTAINER_HOTSEAT || widgets.first { widget -> widget.itemId == it.id }.let { widget ->
+                        widget.minSpanX <= 0 || widget.minSpanY <= 0 ||
+                            widget.resizeX < widget.minSpanX || widget.resizeY < widget.minSpanY ||
+                            widget.minSpanX > it.spanX || widget.minSpanY > it.spanY
+                    })
             }
         ) {
             throw InvalidWorkspaceTransition()
@@ -490,19 +693,20 @@ class RoomStartupStore(private val db: CenixDatabase) : StartupStore {
         ShortcutItemEntity::class,
         WidgetItemEntity::class,
         PendingWidgetOperationEntity::class,
+        PendingRestoreOperationEntity::class,
         FolderEntity::class,
         FolderMemberEntity::class,
     ],
     version = CenixDatabase.VERSION,
     exportSchema = true,
 )
-@TypeConverters(WidgetOperationConverters::class)
+@TypeConverters(WidgetOperationConverters::class, RestoreOperationConverters::class)
 abstract class CenixDatabase : RoomDatabase() {
     abstract fun dao(): CenixDao
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 8
+        const val VERSION = 9
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -638,9 +842,26 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workspace_widgets` ADD COLUMN `minSpanX` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `workspace_widgets` ADD COLUMN `minSpanY` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `workspace_widgets` ADD COLUMN `resizeX` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `workspace_widgets` ADD COLUMN `resizeY` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL(
+                    "UPDATE `workspace_widgets` SET " +
+                        "`resizeX` = COALESCE((SELECT `spanX` FROM `workspace_items` WHERE `workspace_items`.`id` = `workspace_widgets`.`itemId`), `resizeX`), " +
+                        "`resizeY` = COALESCE((SELECT `spanY` FROM `workspace_items` WHERE `workspace_items`.`id` = `workspace_widgets`.`itemId`), `resizeY`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pending_restore_operations` (`singletonId` INTEGER NOT NULL, `source` TEXT NOT NULL, `phase` TEXT NOT NULL, `payload` TEXT NOT NULL, `payloadSha256` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attemptCount` INTEGER NOT NULL, `expectedGeneration` INTEGER NOT NULL, `committedGeneration` INTEGER, PRIMARY KEY(`singletonId`))",
+                )
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             val metrics = context.resources.displayMetrics
             val grid = PhoneGrid.pick(
