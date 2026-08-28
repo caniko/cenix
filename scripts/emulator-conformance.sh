@@ -99,7 +99,7 @@ avd_serial() {
   local wanted="${1:-$avd}" serial name
   while read -r serial _; do
     [[ -z "${serial:-}" ]] && continue
-    name="$("$adb" -s "$serial" emu avd name 2>/dev/null | tr -d '\r' | head -n1 || true)"
+    name="$("$adb" -s "$serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
     if [[ "$name" == "$wanted" ]]; then
       printf '%s\n' "$serial"
       return 0
