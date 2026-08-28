@@ -494,10 +494,17 @@ set_search() {
 
 filter_widgets() {
   local ui x1 y1 x2 y2
-  ui="$(dump_ui)"
-  if grep -q 'text="Add widget"' <<<"$ui"; then
-    tap_pattern 'text="Add widget"'
-  fi
+  for _ in $(seq 1 4); do
+    ui="$(dump_ui)"
+    grep -q 'resource-id="com.caniko.cenix:id/widget_search"' <<<"$ui" && break
+    if grep -q 'text="Add widget"' <<<"$ui"; then
+      tap_pattern 'text="Add widget"'
+    else
+      read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+      "$adb" -s "$serial" shell input swipe $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) 800
+    fi
+    sleep 1
+  done
   wait_ui 'resource-id="com.caniko.cenix:id/widget_search"' 1
   ui="$(dump_ui)"
   read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="com.caniko.cenix:id/widget_search"')
@@ -511,7 +518,7 @@ accept_widget_bind() {
   local ui x1 y1 x2 y2
   for _ in $(seq 1 20); do
     ui="$(dump_any_ui)"
-    if grep -q 'package="com.android.settings"' <<<"$ui"; then
+    if grep -q 'package="com.android.settings"' <<<"$ui" && grep -q 'resource-id="android:id/button1"' <<<"$ui"; then
       read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="android:id/button1"')
       tap_bounds "$x1" "$y1" "$x2" "$y2"
       return 0
