@@ -1144,7 +1144,7 @@ pass "shortcuts: All Apps context shows and launches manifest and dynamic shortc
 long_press_pattern 'content-desc="Cenix Fixture, page 1'
 wait_ui 'resource-id="com.caniko.cenix:id/context_popup"' 1
 tap_pattern 'resource-id="com.caniko.cenix:id/context_app_info"'
-wait_resumed 'com.android.settings'
+wait_resumed 'com.android.settings/.spa.SpaActivity'
 go_home
 pass "context: workspace app info opens the profile-aware system surface"
 
