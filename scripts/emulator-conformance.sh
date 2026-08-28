@@ -528,9 +528,6 @@ go_home() {
   for _ in $(seq 1 30); do
     "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
     resumed | grep -q 'com.caniko.cenix/.HomeActivity' && return
-    if role_holders | grep -q 'com.caniko.cenix' && resumed | grep -q 'com.android.launcher3/'; then
-      "$adb" -s "$serial" shell am force-stop com.android.launcher3
-    fi
     sleep 1
   done
   fail 'not resumed: com.caniko.cenix/.HomeActivity'
@@ -580,6 +577,7 @@ apply_fixture_wallpaper_appearance() {
 }
 
 reboot_emulator() {
+  local holders
   "$adb" -s "$serial" reboot
   for _ in $(seq 1 60); do
     if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
@@ -591,6 +589,12 @@ reboot_emulator() {
     fail "reboot probe: emulator did not come back"
   fi
   configure_device
+  holders="$(role_holders)"
+  echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing after reboot"
+  "$adb" -s "$serial" shell cmd package set-home-activity --user 0 com.caniko.cenix/.HomeActivity >/dev/null
+  go_home
+  sleep 2
+  go_home
 }
 
 # ponytail: adb reboot races boot/serial/HOME; opt-in with CENIX_APPEARANCE_REBOOT=1
@@ -616,6 +620,11 @@ probe_appearance_reboot() {
 
 role_holders() {
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r'
+}
+
+select_cenix_home() {
+  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+  "$adb" -s "$serial" shell cmd package set-home-activity --user 0 com.caniko.cenix/.HomeActivity >/dev/null
 }
 
 setup_profiles() {
@@ -684,7 +693,7 @@ PY
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null 2>&1 || true
 "$adb" -s "$serial" install -r -t "$apk"
 apply_app_rtl
-"$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+select_cenix_home
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "Cenix is not HOME role holder: $holders"
 pass "HOME role holder is com.caniko.cenix ($holders)"
@@ -719,7 +728,7 @@ pass "instrumentation: HomeConformanceTest"
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 "$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"
 apply_app_rtl
-"$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null || true
+select_cenix_home
 holders="$(role_holders)"
 echo "$holders" | grep -q 'com.caniko.cenix' || fail "instrumentation dropped HOME role: $holders"
 go_home
@@ -1595,7 +1604,7 @@ if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
   grep -q 'PACKAGE_RESTORE_FINISHED.*com.caniko.cenix' "$art/backup-restore.txt" || fail "transport restore did not finish"
   snapshot_restore_state backup-before-home 0 SYSTEM_RESTORE_PENDING
   pass "backup: agent callback stages only and leaves workspace generation unchanged"
-  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+  select_cenix_home
   go_home
   wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
   "$adb" -s "$serial" logcat -d -s cenix >"$art/backup-logcat.txt"
@@ -1692,7 +1701,7 @@ PY
   configure_device
   "$adb" -s "$target_serial" install -r -t "$apk" >/dev/null
   "$adb" -s "$target_serial" push "$art/cenix-backup.json" /sdcard/Download/cenix-backup.json >/dev/null
-  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+  select_cenix_home
   go_home
   open_launcher_settings
   tap_pattern 'resource-id="com.caniko.cenix:id/autoAddApps"'
@@ -1779,7 +1788,7 @@ CENIX_OMIT_NATIVE=1 "$root/scripts/audit-apk.sh" "$omit_apk"
 "$adb" -s "$serial" uninstall com.caniko.cenix >/dev/null 2>&1 || true
 "$adb" -s "$serial" install -r -t "$omit_apk"
 apply_app_rtl
-"$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+select_cenix_home
 go_home
 wait_ui 'Emergency mode' 1
 ui="$(dump_ui)"
