@@ -135,7 +135,15 @@ class BackupRepository(private val db: CenixDatabase) {
 
     fun applyPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
 
-    fun applyLocalPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = true)
+    fun applyLocalPlan(plan: BackupImportPlan, payload: String, now: Long) {
+        db.runInTransaction {
+            stage(RestoreSource.LOCAL, payload, plan.workspace.generation.toLong() - 1, now)
+            confirmLocal()
+            applyPlan(plan, payload, complete = true)
+        }
+    }
+
+    internal fun applySystemPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
 
     fun recoverSystem(context: Context): Boolean {
         var operation = pending() ?: return false
@@ -146,7 +154,7 @@ class BackupRepository(private val db: CenixDatabase) {
         }
         if (operation.phase == RestorePhase.FAILED) operation = retry() ?: return false
         if (operation.phase == RestorePhase.PLATFORM_RECONCILE) {
-            return operation.committedGeneration?.let(::complete) == true
+            return false
         }
         if (operation.phase != RestorePhase.SYSTEM_RESTORE_PENDING) return false
         val document = try {
@@ -161,7 +169,7 @@ class BackupRepository(private val db: CenixDatabase) {
             db.dao().recordRestoreFailure(operation.payloadSha256)
             throw error
         }
-        applyPlan(plan, operation.payload, complete = true)
+        applySystemPlan(plan, operation.payload)
         return true
     }
 

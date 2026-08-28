@@ -13,7 +13,7 @@ import com.caniko.cenix.uniffi.ProfileKind
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
-import java.io.OutputStream
+import java.io.InputStream
 
 class CenixBackupAgent : BackupAgent() {
     override fun onBackup(oldState: ParcelFileDescriptor?, data: BackupDataOutput?, newState: ParcelFileDescriptor?) = Unit
@@ -21,50 +21,56 @@ class CenixBackupAgent : BackupAgent() {
     override fun onRestore(data: BackupDataInput?, appVersionCode: Int, newState: ParcelFileDescriptor?) = Unit
 
     override fun onFullBackup(output: FullBackupDataOutput) {
-        val app = applicationContext as CenixApplication
-        if (!app.awaitReady() || app.emergency) throw IOException("launcher is unavailable")
-        val database = app.database ?: throw IOException("database is unavailable")
-        val profiles = ProfileController(this).also { it.refresh() }.profiles()
-            .filter { it.descriptor.kind == ProfileKind.PERSONAL || it.descriptor.kind == ProfileKind.WORK }
-            .map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
-        val file = artifact(this)
-        file.parentFile?.mkdirs()
-        val atomic = AtomicFile(file)
-        val stream = atomic.startWrite()
-        try {
-            BackupJsonCodec.write(
-                BackupRepository(database).buildDocument(
-                    profiles,
-                    includeWork = false,
-                    sourceVersion = BuildConfig.VERSION_NAME,
-                    sourceCommit = BuildConfig.GIT_COMMIT,
-                ),
-                stream,
-            )
-            atomic.finishWrite(stream)
+        val database = try {
+            CenixDatabase.open(this)
         } catch (error: Exception) {
-            atomic.failWrite(stream)
-            file.delete()
-            throw IOException("backup export failed", error)
+            throw IOException("database is unavailable", error)
         }
         try {
-            val size = file.length()
-            if (size > BackupJsonCodec.MAX_BYTES || (output.quota >= 0 && size > output.quota)) {
-                onQuotaExceeded(size, output.quota)
-                throw IOException("backup quota exceeded")
+            val profiles = ProfileController(this).also { it.refresh() }.profiles()
+                .filter { it.descriptor.kind == ProfileKind.PERSONAL || it.descriptor.kind == ProfileKind.WORK }
+                .map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
+            val file = artifact(this)
+            file.parentFile?.mkdirs()
+            val atomic = AtomicFile(file)
+            val stream = atomic.startWrite()
+            try {
+                BackupJsonCodec.write(
+                    BackupRepository(database).buildDocument(
+                        profiles,
+                        includeWork = false,
+                        sourceVersion = BuildConfig.VERSION_NAME,
+                        sourceCommit = BuildConfig.GIT_COMMIT,
+                    ),
+                    stream,
+                )
+                atomic.finishWrite(stream)
+            } catch (error: Exception) {
+                atomic.failWrite(stream)
+                file.delete()
+                throw IOException("backup export failed", error)
             }
-            val flags = output.transportFlags
-            CenixLog.event(
-                EventId.BACKUP_EXPORT,
-                Severity.INFO,
-                mapOf(
-                    "encrypted" to (flags and FLAG_CLIENT_SIDE_ENCRYPTION_ENABLED != 0).toString(),
-                    "deviceTransfer" to (flags and FLAG_DEVICE_TO_DEVICE_TRANSFER != 0).toString(),
-                ),
-            )
-            fullBackupFile(file, output)
+            try {
+                val size = file.length()
+                if (exceedsQuota(size, output.quota)) {
+                    onQuotaExceeded(size, output.quota)
+                    throw IOException("backup quota exceeded")
+                }
+                val flags = output.transportFlags
+                CenixLog.event(
+                    EventId.BACKUP_EXPORT,
+                    Severity.INFO,
+                    mapOf(
+                        "encrypted" to (flags and FLAG_CLIENT_SIDE_ENCRYPTION_ENABLED != 0).toString(),
+                        "deviceTransfer" to (flags and FLAG_DEVICE_TO_DEVICE_TRANSFER != 0).toString(),
+                    ),
+                )
+                fullBackupFile(file, output)
+            } finally {
+                file.delete()
+            }
         } finally {
-            file.delete()
+            database.close()
         }
     }
 
@@ -82,12 +88,7 @@ class CenixBackupAgent : BackupAgent() {
         mtime: Long,
     ) {
         ParcelFileDescriptor.AutoCloseInputStream(data).use { input ->
-            if (!acceptsRestore(artifact(this), destination, type, size)) {
-                input.transferTo(OutputStream.nullOutputStream())
-                return
-            }
-            val bytes = input.readNBytes(BackupJsonCodec.MAX_BYTES + 1)
-            if (bytes.size.toLong() != size) throw IOException("truncated backup artifact")
+            val bytes = readRestoreEntry(input, size, acceptsRestore(artifact(this), destination, type, size)) ?: return
             val atomic = AtomicFile(restoredArtifact(this))
             atomic.baseFile.parentFile?.mkdirs()
             val stream = atomic.startWrite()
@@ -102,11 +103,17 @@ class CenixBackupAgent : BackupAgent() {
     }
 
     override fun onRestoreFinished() {
-        val app = applicationContext as CenixApplication
-        if (!app.awaitReady() || app.emergency) return
-        val database = app.database ?: return
-        val pending = restoredArtifact(this).isFile
-        if (pending && !stageRestoredArtifact(this, database)) throw IOException("invalid backup artifact")
+        if (!restoredArtifact(this).isFile) return
+        val database = try {
+            CenixDatabase.open(this)
+        } catch (error: Exception) {
+            throw IOException("database is unavailable", error)
+        }
+        try {
+            if (!stageRestoredArtifact(this, database)) throw IOException("invalid backup artifact")
+        } finally {
+            database.close()
+        }
     }
 
     companion object {
@@ -120,6 +127,20 @@ class CenixBackupAgent : BackupAgent() {
         internal fun acceptsRestore(expected: File, destination: File, type: Int, size: Long): Boolean =
             type == TYPE_FILE && size in 1..BackupJsonCodec.MAX_BYTES.toLong() &&
                 destination.canonicalFile == expected.canonicalFile
+
+        internal fun exceedsQuota(size: Long, quota: Long): Boolean =
+            size > BackupJsonCodec.MAX_BYTES || quota >= 0 && size > quota
+
+        internal fun readRestoreEntry(input: InputStream, size: Long, accepted: Boolean): ByteArray? {
+            if (size < 0 || size > BackupJsonCodec.MAX_BYTES) throw IOException("invalid backup artifact size")
+            if (!accepted) {
+                if (size > 0) input.skipNBytes(size)
+                return null
+            }
+            val bytes = input.readNBytes(size.toInt())
+            if (bytes.size.toLong() != size) throw IOException("truncated backup artifact")
+            return bytes
+        }
 
         fun stageRestoredArtifact(context: android.content.Context, database: CenixDatabase): Boolean {
             val file = restoredArtifact(context)

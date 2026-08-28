@@ -130,9 +130,8 @@ class WidgetHostController(
             val operations = dao.pendingWidgetOperations()
             val committed = dao.workspaceWidgets()
             val knownIds = (committed.mapNotNull { it.appWidgetId } + operations.mapNotNull { it.appWidgetId }).toSet()
-            if (dao.pendingRestore()?.phase != RestorePhase.PLATFORM_RECONCILE) {
-                host.appWidgetIds.filter { it !in knownIds }.forEach(host::deleteAppWidgetId)
-            }
+            val restore = dao.pendingRestore()
+            host.appWidgetIds.filter { it !in knownIds }.forEach(host::deleteAppWidgetId)
             operations.forEach { operation ->
                 val row = committed.firstOrNull { it.itemId == operation.itemId }
                 when {
@@ -140,6 +139,9 @@ class WidgetHostController(
                     operation.phase == WidgetOperationPhase.COMMITTING && validBinding(operation) -> commit(operation)
                     else -> rollback(operation, false)
                 }
+            }
+            if (restore?.phase == RestorePhase.PLATFORM_RECONCILE) {
+                restore.committedGeneration?.let(dao::completeRestore)
             }
         }
     }

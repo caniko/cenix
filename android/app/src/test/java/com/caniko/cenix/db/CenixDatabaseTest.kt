@@ -413,35 +413,10 @@ class CenixDatabaseTest {
     fun backupRepositoryAppliesPlanAndPreservesWidgetMetadataOnCommit() {
         val db = openDb()
         val repo = BackupRepository(db)
-        repo.stage(RestoreSource.LOCAL, "{\"ok\":true}", 0, 5)
-        repo.confirmLocal()
         repo.applyLocalPlan(
-            BackupImportPlan(
-                workspace = WorkspaceSnapshot(
-                    generation = 1UL,
-                    grid = GridSpec(4, 5, 4),
-                    pages = listOf(WorkspacePage(1UL, 0)),
-                    items = listOf(
-                        WorkspaceItem(
-                            1UL,
-                            ItemPayload.Widget(WidgetProviderId("widgets", "Clock", 0UL)),
-                            ContainerRef.Workspace(1UL),
-                            CellRect(0, 0, 2, 1),
-                        ),
-                    ),
-                    folders = emptyList(),
-                ),
-                settings = BackupSettings("4_by_5", true, false, true),
-                profiles = emptyList(),
-                widgets = listOf(BackupWidgetMetadata(1UL, 2, 1, 4, 2)),
-                nextItemId = 2UL,
-                nextPageId = 2UL,
-                unresolvedApplications = emptyList(),
-                unresolvedShortcuts = emptyList(),
-                unresolvedWidgets = emptyList(),
-                warnings = emptyList(),
-            ),
+            widgetRestorePlan(),
             "{\"ok\":true}",
+            5,
         )
         val widget = db.dao().workspaceWidgets().single()
         assertNull(repo.pending())
@@ -459,6 +434,62 @@ class CenixDatabaseTest {
         assertEquals(4, db.dao().workspaceWidgets().single().resizeX)
         db.close()
     }
+
+    @Test
+    fun localRestoreFailureRollsBackWorkspaceAndJournal() {
+        val db = openDb()
+        val plan = widgetRestorePlan().also { it.widgets = emptyList() }
+
+        assertThrows(IllegalStateException::class.java) {
+            BackupRepository(db).applyLocalPlan(plan, "{\"ok\":true}", 5)
+        }
+        assertEquals(0L, db.dao().workspaceMetadata()!!.generation)
+        assertNull(db.dao().pendingRestore())
+        db.close()
+    }
+
+    @Test
+    fun systemRestoreWaitsForWidgetHostReconcile() {
+        val db = openDb()
+        val repo = BackupRepository(db)
+        val payload = "{\"ok\":true}"
+        repo.stage(RestoreSource.SYSTEM, payload, 0, 5)
+        repo.queueSystem()
+
+        repo.applySystemPlan(widgetRestorePlan(), payload)
+
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        assertEquals(RestorePhase.PLATFORM_RECONCILE, repo.pending()!!.phase)
+        assertTrue(repo.complete(1))
+        assertNull(repo.pending())
+        db.close()
+    }
+
+    private fun widgetRestorePlan() = BackupImportPlan(
+        workspace = WorkspaceSnapshot(
+            generation = 1UL,
+            grid = GridSpec(4, 5, 4),
+            pages = listOf(WorkspacePage(1UL, 0)),
+            items = listOf(
+                WorkspaceItem(
+                    1UL,
+                    ItemPayload.Widget(WidgetProviderId("widgets", "Clock", 0UL)),
+                    ContainerRef.Workspace(1UL),
+                    CellRect(0, 0, 2, 1),
+                ),
+            ),
+            folders = emptyList(),
+        ),
+        settings = BackupSettings("4_by_5", true, false, true),
+        profiles = emptyList(),
+        widgets = listOf(BackupWidgetMetadata(1UL, 2, 1, 4, 2)),
+        nextItemId = 2UL,
+        nextPageId = 2UL,
+        unresolvedApplications = emptyList(),
+        unresolvedShortcuts = emptyList(),
+        unresolvedWidgets = emptyList(),
+        warnings = emptyList(),
+    )
 
     private fun openDb(): CenixDatabase {
         val context = ApplicationProvider.getApplicationContext<Application>()

@@ -23,7 +23,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.LauncherSettingsEntity
-import com.caniko.cenix.db.RestoreSource
 import com.caniko.cenix.uniffi.BackupImportPlan
 import com.caniko.cenix.uniffi.BackupImportTarget
 import com.caniko.cenix.uniffi.BackupProfileRef
@@ -356,10 +355,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                 if (app.emergency) false else {
                     val database = app.database ?: throw IllegalStateException("database unavailable")
                     val repository = BackupRepository(database)
-                    val expectedGeneration = plan.workspace.generation.toLong() - 1
-                    repository.stage(RestoreSource.LOCAL, payload, expectedGeneration, System.currentTimeMillis())
-                    repository.confirmLocal()
-                    repository.applyLocalPlan(plan, payload)
+                    repository.applyLocalPlan(plan, payload, System.currentTimeMillis())
                     try {
                         AppWidgetHost(this, WidgetHostController.HOST_ID).deleteHost()
                     } catch (_: RuntimeException) {

@@ -6,16 +6,21 @@ if [[ "${1:-}" == "--suite" ]]; then
   suite="${2:-}"
   shift 2
 fi
-[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|full]" >&2; exit 2; }
-case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
+[[ $# == 0 ]] || { echo "usage: $0 [--suite core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|backup|full]" >&2; exit 2; }
+case "$suite" in core|workspace|folders|shortcuts|widgets|profiles|settings|packages|notifications|appearance|backup|full) ;; *) echo "unknown suite: $suite" >&2; exit 2 ;; esac
 sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb="${ADB:-adb}"
 run_id="${CENIX_RUN_ID:-$$-$(date +%s)}"
+started_at="$(date +%s)"
 art="${CENIX_ARTIFACTS:-$(mktemp -d /tmp/cenix-conformance.XXXXXX)}"
 workspace_rtl=0
 work_profile_id=""
 private_profile_id=""
 private_profile_status="not-attempted"
+target_avd=""
+target_serial=""
+target_started=0
+target_created_avd=0
 mkdir -p "$art"
 export CENIX_GIT_COMMIT="${CENIX_GIT_COMMIT:-$(git -C "$root" rev-parse HEAD)}"
 avd="${CENIX_AVD:-cenix-ci-$run_id}"
@@ -25,12 +30,10 @@ if [[ "$avd" == "cenix-api35" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
 fi
 default_image="$sdk/system-images/android-35/default/x86_64"
 compat_image="$sdk/system-images/android-35/google_apis/x86_64"
-if [[ -d "$default_image" ]]; then
-  default_sysdir="$default_image"
-else
-  default_sysdir="$compat_image"
+sysdir="${CENIX_SYSTEM_IMAGE:-$default_image}"
+if [[ ! -d "$sysdir" && "${CENIX_ALLOW_GOOGLE_APIS:-0}" == "1" ]]; then
+  sysdir="$compat_image"
 fi
-sysdir="${CENIX_SYSTEM_IMAGE:-$default_sysdir}"
 image_kind="google_apis"
 if [[ "$sysdir" == *"/default/"* || "$sysdir" == *"/aosp"* ]]; then
   image_kind="aosp"
@@ -48,7 +51,11 @@ if [[ -z "$sdk" ]]; then
 fi
 if [[ ! -d "$sysdir" ]]; then
   echo "missing $sysdir" >&2
-  echo "emulator suite must run through: nix develop .#emulator" >&2
+  echo "emulator suite must run through: nix develop .#emulator-aosp" >&2
+  exit 1
+fi
+if [[ "$image_kind" != "aosp" && "${CENIX_ALLOW_GOOGLE_APIS:-0}" != "1" ]]; then
+  echo "refusing non-AOSP image $sysdir; set CENIX_ALLOW_GOOGLE_APIS=1 for compatibility-only evidence" >&2
   exit 1
 fi
 emulator_bin="${EMULATOR:-$sdk/emulator/emulator}"
@@ -92,11 +99,11 @@ if [[ -f "$cfg" ]]; then
 fi
 
 avd_serial() {
-  local serial name
+  local wanted="${1:-$avd}" serial name
   while read -r serial _; do
     [[ -z "${serial:-}" ]] && continue
     name="$("$adb" -s "$serial" emu avd name 2>/dev/null | tr -d '\r' | head -n1 || true)"
-    if [[ "$name" == "$avd" ]]; then
+    if [[ "$name" == "$wanted" ]]; then
       printf '%s\n' "$serial"
       return 0
     fi
@@ -117,10 +124,15 @@ cleanup() {
     kill "$started" 2>/dev/null || true
     wait "$started" 2>/dev/null || true
   fi
+  if [[ "$target_started" != "0" ]]; then
+    kill "$target_started" 2>/dev/null || true
+    wait "$target_started" 2>/dev/null || true
+  fi
+  [[ "$target_created_avd" == "1" ]] && "$avdmanager" delete avd -n "$target_avd" >/dev/null 2>&1 || true
   [[ -z "${CENIX_AVD:-}" && "$created_avd" == "1" ]] && "$avdmanager" delete avd -n "$avd" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-emu_port="${CENIX_EMU_PORT:-$((5570 + RANDOM % 20 * 2))}"
+emu_port="${CENIX_EMU_PORT:-$((5554 + RANDOM % 15 * 2))}"
 rtl_boot=()
 if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
   rtl_boot=(-prop debug.force_rtl=true)
@@ -153,25 +165,30 @@ if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -
   echo "emulator $serial booted but sys.boot_completed never became 1" >&2
   exit 1
 fi
-"$adb" -s "$serial" shell svc power stayon true >/dev/null
-"$adb" -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null
-"$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
-"$adb" -s "$serial" shell settings put system accelerometer_rotation 0
-"$adb" -s "$serial" shell settings put system user_rotation 0
-"$adb" -s "$serial" shell settings put system font_scale "${CENIX_FONT_SCALE:-1.0}"
-"$adb" -s "$serial" shell settings put system system_locales "${CENIX_LOCALE:-en-US}"
-"$adb" -s "$serial" shell setprop debug.force_rtl "${CENIX_FORCE_RTL:-false}"
-"$adb" -s "$serial" shell settings put global window_animation_scale 0
-"$adb" -s "$serial" shell settings put global transition_animation_scale 0
-"$adb" -s "$serial" shell settings put global animator_duration_scale 0
-"$adb" -s "$serial" shell cmd uimode night "${CENIX_NIGHT_MODE:-no}" >/dev/null
-"$adb" -s "$serial" shell wm size 320x640
-"$adb" -s "$serial" shell wm density 160
-sleep 1
+configure_device() {
+  "$adb" -s "$serial" shell svc power stayon true >/dev/null
+  "$adb" -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null
+  "$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
+  "$adb" -s "$serial" shell settings put system accelerometer_rotation 0
+  "$adb" -s "$serial" shell settings put system user_rotation 0
+  "$adb" -s "$serial" shell settings put system font_scale "${CENIX_FONT_SCALE:-1.0}"
+  "$adb" -s "$serial" shell settings put system system_locales "${CENIX_LOCALE:-en-US}"
+  "$adb" -s "$serial" shell setprop debug.force_rtl "${CENIX_FORCE_RTL:-false}"
+  "$adb" -s "$serial" shell settings put global window_animation_scale 0
+  "$adb" -s "$serial" shell settings put global transition_animation_scale 0
+  "$adb" -s "$serial" shell settings put global animator_duration_scale 0
+  "$adb" -s "$serial" shell cmd uimode night "${CENIX_NIGHT_MODE:-no}" >/dev/null
+  "$adb" -s "$serial" shell wm size 320x640
+  "$adb" -s "$serial" shell wm density 160
+  sleep 1
+}
+
+configure_device
 
 pass() { echo "PASS: $1"; }
 fail() {
   echo "FAIL: $1" >&2
+  printf 'outcome=failed\nduration_seconds=%s\n' "$(( $(date +%s) - started_at ))" >>"$art/metadata.txt"
   "$adb" -s "$serial" logcat -d >"$art/logcat.txt" 2>/dev/null || true
   "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
   "$adb" -s "$serial" pull /sdcard/cenix-ui.xml "$art/ui.xml" >/dev/null 2>&1 || true
@@ -187,13 +204,44 @@ fail() {
   exit 1
 }
 
+snapshot_restore_state() {
+  local label="$1" expected_generation="$2" expected_phase="$3" stop_mode="${4:-force}" suffix
+  local db="$art/$label.db"
+  if [[ "$stop_mode" == "kill" ]]; then
+    "$adb" -s "$serial" shell am kill com.caniko.cenix
+  else
+    "$adb" -s "$serial" shell am force-stop com.caniko.cenix
+  fi
+  for suffix in "" -wal -shm; do
+    if "$adb" -s "$serial" shell run-as com.caniko.cenix test -f "databases/cenix.db$suffix"; then
+      "$adb" -s "$serial" exec-out run-as com.caniko.cenix cat "databases/cenix.db$suffix" >"$db$suffix"
+    fi
+  done
+  [[ -s "$db" ]] || fail "$label Room database was unavailable"
+  python3 - "$db" "$expected_generation" "$expected_phase" >"$art/$label.txt" <<'PY' || fail "$label Room restore state was unexpected"
+import sqlite3, sys
+path, expected_generation, expected_phase = sys.argv[1:]
+db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+generation = db.execute("select generation from workspace_metadata where singletonId=1").fetchone()[0]
+row = db.execute("select phase from pending_restore_operations where singletonId=1").fetchone()
+phase = row[0] if row else "none"
+print(f"generation={generation}\nphase={phase}")
+assert (
+    expected_generation == "*"
+    or expected_generation == "positive" and generation > 0
+    or generation == int(expected_generation)
+), (generation, expected_generation)
+assert phase == expected_phase, (phase, expected_phase)
+PY
+}
+
 resumed() {
   "$adb" -s "$serial" shell dumpsys activity activities | tr -d '\r' | grep 'topResumedActivity' || true
 }
 
 wait_resumed() {
-  local component="$1" i
-  for i in $(seq 1 30); do
+  local component="$1"
+  for _ in $(seq 1 30); do
     if resumed | grep -q "$component"; then
       return 0
     fi
@@ -203,9 +251,9 @@ wait_resumed() {
 }
 
 dump_ui() {
-  local i xml keep_ime=0
+  local xml keep_ime=0
   [[ "${1:-}" == "ime" ]] && keep_ime=1
-  for i in $(seq 1 15); do
+  for _ in $(seq 1 15); do
     "$adb" -s "$serial" shell rm -f /sdcard/cenix-ui.xml
     "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-ui.xml >/dev/null 2>&1 || true
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-ui.xml; then
@@ -222,8 +270,8 @@ dump_ui() {
 }
 
 dump_any_ui() {
-  local i xml
-  for i in $(seq 1 15); do
+  local xml
+  for _ in $(seq 1 15); do
     "$adb" -s "$serial" shell rm -f /sdcard/cenix-any-ui.xml
     "$adb" -s "$serial" shell uiautomator dump /sdcard/cenix-any-ui.xml >/dev/null 2>&1 || true
     if "$adb" -s "$serial" shell test -s /sdcard/cenix-any-ui.xml; then
@@ -239,8 +287,8 @@ dump_any_ui() {
 }
 
 wait_ui() {
-  local needle="$1" want="${2:-1}" i xml
-  for i in $(seq 1 20); do
+  local needle="$1" want="${2:-1}" xml
+  for _ in $(seq 1 20); do
     xml="$(dump_ui)"
     if grep -q "$needle" <<<"$xml"; then
       [[ "$want" == "1" ]] && return 0
@@ -405,8 +453,8 @@ swipe_surface() {
 }
 
 open_all_apps() {
-  local ui attempt
-  for attempt in 1 2 3; do
+  local ui
+  for _ in 1 2 3; do
     ui="$(dump_ui)"
     grep -q 'resource-id="com.caniko.cenix:id/searchField"' <<<"$ui" && return 0
     if ! grep -q 'resource-id="com.caniko.cenix:id/launcherRoot"' <<<"$ui"; then
@@ -428,10 +476,9 @@ close_all_apps() {
 }
 
 clear_search() {
-  local i
   focus_search
   "$adb" -s "$serial" shell input keyevent KEYCODE_MOVE_END
-  for i in $(seq 1 80); do
+  for _ in $(seq 1 80); do
     "$adb" -s "$serial" shell input keyevent KEYCODE_DEL
   done
   hide_keyboard
@@ -461,8 +508,8 @@ filter_widgets() {
 }
 
 accept_widget_bind() {
-  local ui i x1 y1 x2 y2
-  for i in $(seq 1 20); do
+  local ui x1 y1 x2 y2
+  for _ in $(seq 1 20); do
     ui="$(dump_any_ui)"
     if grep -q 'package="com.android.settings"' <<<"$ui"; then
       read -r x1 y1 x2 y2 < <(read_bounds "$ui" 'resource-id="android:id/button1"')
@@ -478,8 +525,15 @@ accept_widget_bind() {
 }
 
 go_home() {
-  "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
-  wait_resumed 'com.caniko.cenix/.HomeActivity'
+  for _ in $(seq 1 30); do
+    "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
+    resumed | grep -q 'com.caniko.cenix/.HomeActivity' && return
+    if role_holders | grep -q 'com.caniko.cenix' && resumed | grep -q 'com.android.launcher3/'; then
+      "$adb" -s "$serial" shell am force-stop com.android.launcher3
+    fi
+    sleep 1
+  done
+  fail 'not resumed: com.caniko.cenix/.HomeActivity'
 }
 
 open_fixture_control() {
@@ -497,18 +551,23 @@ open_launcher_settings() {
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
 }
 
 capture_settings_appearance() {
   local name="$1" want="$2"
   "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-$name.png"
-  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-$name-activity.txt"
+  "$adb" -s "$serial" shell dumpsys activity top >"$art/wallpaper-$name-activity.txt"
   [[ -s "$art/wallpaper-$name.png" ]] || fail "empty $name appearance screenshot"
   if [[ "$want" == "night" ]]; then
     grep -q 'mLastConfigurationFromResources=.* notnight ' "$art/wallpaper-$name-activity.txt" && fail "$name wallpaper still reported notnight"
     grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-$name-activity.txt" || fail "$name wallpaper did not produce a night settings configuration"
   else
-    grep -q "mLastConfigurationFromResources=.* $want " "$art/wallpaper-$name-activity.txt" || fail "$name wallpaper did not produce a $want settings configuration"
+    grep -q 'mLastConfigurationFromResources=' "$art/wallpaper-$name-activity.txt" || fail "$name wallpaper settings configuration was unavailable"
+    if grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-$name-activity.txt"; then
+      fail "$name wallpaper still reported night"
+    fi
   fi
 }
 
@@ -520,15 +579,7 @@ apply_fixture_wallpaper_appearance() {
   capture_settings_appearance "$1" "$2"
 }
 
-# ponytail: adb reboot races boot/serial/HOME; opt-in with CENIX_APPEARANCE_REBOOT=1
-probe_appearance_reboot() {
-  local holders
-  holders="$(role_holders)"
-  echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing before reboot"
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
-  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-prereboot-activity.txt"
-  grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-prereboot-activity.txt" || fail "reboot probe: expected night settings before reboot"
-  "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-prereboot.png"
+reboot_emulator() {
   "$adb" -s "$serial" reboot
   for _ in $(seq 1 60); do
     if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
@@ -539,14 +590,24 @@ probe_appearance_reboot() {
   if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; then
     fail "reboot probe: emulator did not come back"
   fi
-  "$adb" -s "$serial" shell svc power stayon true >/dev/null
-  "$adb" -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null
-  "$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
+  configure_device
+}
+
+# ponytail: adb reboot races boot/serial/HOME; opt-in with CENIX_APPEARANCE_REBOOT=1
+probe_appearance_reboot() {
+  local holders
+  holders="$(role_holders)"
+  echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing before reboot"
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  "$adb" -s "$serial" shell dumpsys activity top >"$art/wallpaper-prereboot-activity.txt"
+  grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-prereboot-activity.txt" || fail "reboot probe: expected night settings before reboot"
+  "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-prereboot.png"
+  reboot_emulator
   holders="$(role_holders)"
   echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing after reboot"
   go_home
   open_launcher_settings
-  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-postreboot-activity.txt"
+  "$adb" -s "$serial" shell dumpsys activity top >"$art/wallpaper-postreboot-activity.txt"
   grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-postreboot-activity.txt" || fail "reboot probe: dark appearance did not survive reboot"
   "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-postreboot.png"
   dump_ui | grep -q "$CENIX_GIT_COMMIT" || fail "reboot probe: settings build identity missing"
@@ -698,6 +759,7 @@ pass "automatic placement: confirmed new install is placed without a duplicate c
 open_all_apps
 tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
 wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+"$adb" -s "$serial" shell input swipe 160 560 160 180 400
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
 sleep 1
@@ -1450,6 +1512,233 @@ if [[ -n "$private_profile_id" ]]; then
 fi
 fi
 
+if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
+  open_launcher_settings
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
+  tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
+  sleep 1
+  tap_any_pattern 'resource-id="android:id/button1"'
+  wait_ui 'text="Local state reset"' 1
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  ui="$(dump_ui)"
+  if grep -q 'resource-id="com.caniko.cenix:id/autoAddApps"[^>]*checked="true"' <<<"$ui"; then
+    tap_pattern 'resource-id="com.caniko.cenix:id/autoAddApps"'
+  fi
+  go_home
+  "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk" >/dev/null
+  "$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk" >/dev/null
+  go_home
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  set_search "Fixture"
+  drag_pattern_to_bounds 'text="Cenix Fixture".*resource-id="com.caniko.cenix:id/appLabel"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+  wait_ui 'content-desc="Cenix Fixture, page 1' 1
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  set_search "Two"
+  drag_pattern_to_bounds 'text="Cenix Fixture Two".*resource-id="com.caniko.cenix:id/appLabel"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+  wait_ui 'content-desc="Cenix Fixture Two, page 1' 1
+  drag_from_to 'content-desc="Cenix Fixture Two, page 1' 'content-desc="Empty, hotseat'
+  wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  set_search "Three"
+  drag_pattern_to_bounds 'text="Cenix Fixture Three".*resource-id="com.caniko.cenix:id/appLabel"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+  wait_ui 'content-desc="Cenix Fixture Three, page 1' 1
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  set_search "Four"
+  drag_pattern_to_bounds 'text="Cenix Fixture Four".*resource-id="com.caniko.cenix:id/appLabel"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+  wait_ui 'content-desc="Cenix Fixture Four, page 1' 1
+  drag_from_to 'content-desc="Cenix Fixture Four, page 1' 'content-desc="Cenix Fixture Three, page 1'
+  wait_ui 'folder, .* applications' 1
+  long_press_pattern 'content-desc="Cenix Fixture, page 1'
+  wait_ui 'text="Manifest action"' 1
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  drag_pattern_to_bounds 'text="Manifest action"' $(((px1 + px2) / 2)) $(((py1 + py2) / 2))
+  wait_ui 'content-desc="Manifest action, page 1' 1
+  ui="$(dump_ui)"
+  read -r px1 py1 px2 py2 < <(read_bounds "$ui" 'content-desc="Empty, page 1')
+  "$adb" -s "$serial" shell input swipe $(((px1 + px2) / 2)) $(((py1 + py2) / 2)) $(((px1 + px2) / 2)) $(((py1 + py2) / 2)) 800
+  filter_widgets
+  tap_pattern 'text="Fixture collection widget"'
+  accept_widget_bind
+  wait_ui 'text="Widget update 0"' 1
+  drag_to_workspace_edge 'folder, .* applications' next
+  wait_ui 'content-desc="Page 2 of 2"' 1
+  wait_ui 'folder, .* applications.*page 2' 1
+  pass "backup: representative pages, hotseat, folder, shortcut, widget, and preferences are committed"
+  "$adb" -s "$serial" shell cmd role remove-role-holder android.app.role.HOME com.caniko.cenix >/dev/null 2>&1 || true
+  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.android.launcher3 >/dev/null
+  "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
+  wait_resumed 'com.android.launcher3/'
+  snapshot_restore_state backup-source "*" none kill
+  source_generation="$(awk -F= '$1 == "generation" {print $2}' "$art/backup-source.txt")"
+  [[ "$source_generation" =~ ^[0-9]+$ ]] || fail "source workspace generation was unavailable"
+
+  "$adb" -s "$serial" shell bmgr enable true >"$art/backup-enable.txt"
+  "$adb" -s "$serial" shell bmgr transport com.android.localtransport/.LocalTransport >"$art/backup-transport.txt"
+  "$adb" -s "$serial" shell bmgr wipe com.android.localtransport/.LocalTransport com.caniko.cenix >"$art/backup-wipe.txt"
+  "$adb" -s "$serial" shell bmgr backupnow --monitor com.caniko.cenix >"$art/backup-run.txt" 2>&1 || fail "transport backup command failed"
+  grep -q 'Package com.caniko.cenix with result: Success' "$art/backup-run.txt" || fail "transport backup did not succeed"
+  "$adb" -s "$serial" shell bmgr list sets >"$art/backup-sets.txt"
+  restore_token="$(awk '$1 ~ /^[[:xdigit:]]+:?$/ {sub(/:$/, "", $1); print $1; exit}' "$art/backup-sets.txt")"
+  [[ -n "$restore_token" ]] || fail "local transport returned no restore token"
+  pass "backup: local transport accepted the canonical full-backup artifact"
+
+  "$adb" -s "$serial" shell pm clear com.caniko.cenix >/dev/null || fail "clear before transport restore failed"
+  "$adb" -s "$serial" logcat -c
+  "$adb" -s "$serial" shell bmgr restore "$restore_token" com.caniko.cenix --monitor >"$art/backup-restore.txt" 2>&1 || fail "transport restore command failed"
+  grep -q 'PACKAGE_RESTORE_FINISHED.*com.caniko.cenix' "$art/backup-restore.txt" || fail "transport restore did not finish"
+  snapshot_restore_state backup-before-home 0 SYSTEM_RESTORE_PENDING
+  pass "backup: agent callback stages only and leaves workspace generation unchanged"
+  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+  go_home
+  wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
+  "$adb" -s "$serial" logcat -d -s cenix >"$art/backup-logcat.txt"
+  grep -q 'BACKUP_RESTORE result=staged' "$art/backup-logcat.txt" || fail "transport restore was not staged"
+  grep -q 'BACKUP_RESTORE result=applied' "$art/backup-logcat.txt" || fail "transport restore was not applied"
+  sleep 2
+  snapshot_restore_state backup-after-home positive none
+  go_home
+  pass "backup: clean-data restore stages and transactionally applies workspace state"
+
+  reboot_emulator
+  go_home
+  wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
+  wait_ui 'content-desc="Page 1 of 2"' 1
+  pass "backup: restored workspace and HOME role survive reboot"
+
+  open_launcher_settings
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
+  tap_pattern 'resource-id="com.caniko.cenix:id/exportBackup"'
+  for _ in $(seq 1 20); do
+    ui="$(dump_any_ui)"
+    grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" && break
+    sleep 1
+  done
+  grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" || fail "SAF export did not open the save surface"
+  tap_any_pattern 'resource-id="android:id/button1"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_ui 'text="Launcher backup exported"' 1
+  "$adb" -s "$serial" pull /sdcard/Download/cenix-backup.json "$art/cenix-backup.json" >/dev/null || fail "SAF backup pull failed"
+  [[ -s "$art/cenix-backup.json" ]] || fail "SAF export was empty"
+  "$adb" -s "$serial" shell rm -f /sdcard/Download/cenix-backup.json
+  tap_pattern 'resource-id="com.caniko.cenix:id/exportBackup"'
+  for _ in $(seq 1 20); do
+    ui="$(dump_any_ui)"
+    grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" && break
+    sleep 1
+  done
+  grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" || fail "second SAF export did not open the save surface"
+  tap_any_pattern 'resource-id="android:id/button1"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_ui 'text="Launcher backup exported"' 1
+  "$adb" -s "$serial" pull /sdcard/Download/cenix-backup.json "$art/cenix-backup-repeat.json" >/dev/null || fail "second SAF backup pull failed"
+  cmp -s "$art/cenix-backup.json" "$art/cenix-backup-repeat.json" || fail "repeat SAF exports were not byte-identical"
+  sha256sum "$art/cenix-backup.json" "$art/cenix-backup-repeat.json" >"$art/backup-artifacts.sha256"
+  python3 - "$art/cenix-backup.json" >"$art/backup-counts.txt" <<'PY' || fail "SAF backup was not representative"
+import json, sys
+document = json.load(open(sys.argv[1], encoding="utf-8"))
+payload = document["payload"]
+workspace = payload["workspace"]
+items = workspace["items"]
+kinds = [item["payload"]["kind"] for item in items]
+containers = [item["container"]["kind"] for item in items]
+counts = {
+    "pages": len(workspace["pages"]),
+    "items": len(items),
+    "folders": len(workspace["folders"]),
+    "folderMembers": sum(len(folder["members"]) for folder in workspace["folders"]),
+    "widgets": len(payload["widgets"]),
+}
+print("\n".join(f"{key}={value}" for key, value in counts.items()))
+assert counts["pages"] >= 2
+assert counts["folders"] >= 1 and counts["folderMembers"] >= 2
+assert "shortcut" in kinds and "widget" in kinds and "hotseat" in containers
+assert counts["widgets"] >= 1
+assert payload["settings"]["autoAddApps"] is False
+PY
+  pass "backup: repeat canonical exports are byte-identical and representative"
+
+  target_avd="${avd}-restore"
+  echo no | "$avdmanager" create avd -f -n "$target_avd" -k "$image_pkg" >/dev/null
+  target_created_avd=1
+  "$emulator_bin" -avd "$target_avd" -port $((emu_port + 2)) -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/target-emulator.log" 2>&1 &
+  target_started=$!
+  for _ in $(seq 1 90); do
+    target_serial="$(avd_serial "$target_avd" || true)"
+    [[ -n "$target_serial" ]] && break
+    sleep 2
+  done
+  [[ -n "$target_serial" ]] || fail "target AVD never appeared"
+  for _ in $(seq 1 60); do
+    [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
+    sleep 5
+  done
+  [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] || fail "target AVD did not boot"
+  source_serial="$serial"
+  {
+    echo "source_avd=$avd"
+    echo "source_serial=$source_serial"
+    echo "target_avd=$target_avd"
+    echo "target_serial=$target_serial"
+    echo "profile_mapping=personal:personal"
+  } >>"$art/metadata.txt"
+  serial="$target_serial"
+  configure_device
+  "$adb" -s "$target_serial" install -r -t "$apk" >/dev/null
+  "$adb" -s "$target_serial" push "$art/cenix-backup.json" /sdcard/Download/cenix-backup.json >/dev/null
+  "$adb" -s "$serial" shell cmd role add-role-holder android.app.role.HOME com.caniko.cenix >/dev/null
+  go_home
+  open_launcher_settings
+  tap_pattern 'resource-id="com.caniko.cenix:id/autoAddApps"'
+  ui="$(dump_ui)"
+  grep -q 'resource-id="com.caniko.cenix:id/autoAddApps"[^>]*checked="false"' <<<"$ui" || fail "target automatic placement preference did not disable"
+  go_home
+  wait_ui 'content-desc="Cenix Fixture, page 1' 0
+  open_launcher_settings
+  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
+  tap_pattern 'resource-id="com.caniko.cenix:id/importBackup"'
+  tap_any_pattern 'content-desc="Show roots"'
+  tap_any_pattern 'text="Downloads"'
+  for _ in $(seq 1 20); do
+    ui="$(dump_any_ui)"
+    grep -q 'text="cenix-backup.json"' <<<"$ui" && break
+    sleep 1
+  done
+  grep -q 'text="cenix-backup.json"' <<<"$ui" || fail "SAF import did not show the transferred backup"
+  tap_any_pattern 'text="cenix-backup.json"'
+  wait_ui 'text="Replace the current Home screen with' 1
+  tap_pattern 'resource-id="android:id/button1"'
+  wait_ui 'text="Launcher backup imported"' 1
+  go_home
+  wait_ui 'content-desc="com.caniko.cenix.fixture, Temporarily unavailable' 1
+  wait_ui 'text="Shortcut unavailable"' 1
+  wait_ui 'text="Widget unavailable"' 1
+  wait_ui 'content-desc="Page 1 of 2"' 1
+  pass "backup: missing applications, shortcuts, and widgets import as placeholders"
+  "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk" >/dev/null
+  wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
+  wait_ui 'content-desc="Manifest action, page 1' 1
+  wait_ui 'text="Widget unavailable"' 1
+  tap_pattern 'text="REBIND WIDGET"'
+  accept_widget_bind
+  wait_ui 'text="Widget update 0"' 1
+  pass "backup: package callbacks resolve app and shortcut identities; widget rebind is explicit"
+  reboot_emulator
+  go_home
+  wait_ui 'content-desc="Cenix Fixture Two, hotseat' 1
+  wait_ui 'content-desc="Manifest action, page 1' 1
+  wait_ui 'text="Widget update 0"' 1
+  wait_ui 'content-desc="Page 1 of 2"' 1
+  pass "backup: SAF export imports on a fresh AVD and survives reboot"
+  serial="$source_serial"
+fi
+
 "$adb" -s "$serial" shell am start -n com.caniko.cenix/.HomeActivity --ez com.caniko.cenix.FORCE_NATIVE_FAILURE true >/dev/null
 wait_ui 'Emergency mode' 1
 pass "debug extra forces emergency chrome"
@@ -1514,5 +1803,7 @@ tap_pattern 'resource-id="com.caniko.cenix:id/retryNative"'
 sleep 1
 wait_ui 'Emergency mode' 1
 pass "retry-native does not report success while libcenix_ffi.so is absent"
+
+printf 'outcome=passed\nduration_seconds=%s\n' "$(( $(date +%s) - started_at ))" >>"$art/metadata.txt"
 
 echo "emulator conformance suite $suite passed on $serial (Android API 35 $image_kind x86_64, not GrapheneOS/mustang)"
