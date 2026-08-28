@@ -2,7 +2,7 @@
 
 Clean-room behavioral inventory. Reference pin: GrapheneOS `platform_packages_apps_Launcher3` commit `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Public names from Android 35 `android.jar`. Cenix does not copy Launcher3 database, agent, or restore-task code.
 
-This document is a P5C contract. It is not implementation or emulator evidence.
+This document is the P5C contract. The source implementation exists, but it is not emulator or device evidence.
 
 ## P5C scope
 
@@ -43,7 +43,7 @@ Exclude:
 | Work serial | `BackupManager.getUserForAncestralSerialNumber` | Manual import requires an explicit logical `work` → available managed-profile mapping; transport backup excludes work identities by default | `TRANSPORT_CONTROLLED` | `SRC`, `API` |
 | Unrestored profiles | delete rows whose `profileId` is not mapped | Block confirmation or explicitly omit the work subset; never map it to personal | `INSTALLABLE_PUBLIC` | `SRC` |
 | Private Space | no restore mapping in `RestoreDbTask`; Cenix already rejects private workspace rows | Reject any private serial or `USER_TYPE_PROFILE_PRIVATE` payload | `ROLE_HOME_GATED` | `SRC`, `API` |
-| Widget host restore | `AppWidgetsRestoredReceiver.java`; `ACTION_APPWIDGET_HOST_RESTORED` | Accept only Cenix host ID, equal old/new arrays; journal remap | `USER_AUTHORIZED` | `SRC`, `API` |
+| Widget host restore | `AppWidgetsRestoredReceiver.java`; `ACTION_APPWIDGET_HOST_RESTORED` | Accept only Cenix host ID and equal arrays; canonical transport has no trusted old IDs, so unmatched instances remain placeholders and host recovery reclaims their IDs | `USER_AUTHORIZED` | `SRC`, `API` |
 | Widget flags | `LauncherAppWidgetInfo.FLAG_ID_NOT_VALID`, `FLAG_PROVIDER_NOT_READY`, `FLAG_UI_NOT_READY` | Removable placeholder until bind/setup; no fabricated `RemoteViews` | `USER_AUTHORIZED` | `SRC`, `API` |
 | File items | `WorkspaceItemProcessor.processFileSystemItem` deletes restored file items | Never encode file URIs | `INTENTIONALLY_OMITTED` | `SRC` |
 | Grid copy table | `src/com/android/launcher3/model/GridBackupTable.java` | Not used; JSON + Room v9 journal replace in-DB table copies | `INTENTIONALLY_OMITTED` | `SRC` |
@@ -63,7 +63,7 @@ UniFFI stays typed (`WorkspaceSnapshot`, `WorkspaceCommand`, `WorkspaceTransitio
 
 ## Room v9
 
-Current durable schema in this tree is Room v8. P5C requires v9:
+Current durable schema in this tree is Room v9:
 
 - existing workspace tables remain the only committed authority
 - one bounded restore journal records `PARSED`, `USER_CONFIRMED`, `SYSTEM_RESTORE_PENDING`, `APPLYING`, `PLATFORM_RECONCILE`, or `FAILED`

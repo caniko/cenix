@@ -1,6 +1,6 @@
 # Backup import security boundary
 
-P5C contract only. Evidence: `SRC`, `API`. No implementation, `AOSP_EMU`, or `GOS_DEV` claim.
+Evidence: `SRC`, `API`. The implementation is not `AOSP_EMU` or `GOS_DEV` evidence.
 
 ## Trust boundary
 

@@ -48,4 +48,4 @@ Any installable app may declare a `BackupAgent`. Whether a payload moves is the 
 - Widget IDs rebind only through the public host-restored broadcast and the existing Room widget journal.
 - Emergency and native-absent HOME never parse restore input.
 
-The P5C implementation must replace the current `android:allowBackup="false"` baseline with the custom safe agent and extraction rules before claiming this slice complete.
+The manifest now declares the custom full-backup agent and extraction rules for only `files/transport/cenix-backup.json`. This is source/build evidence only; transport behavior remains unclaimed until emulator and device execution.

@@ -309,6 +309,7 @@ class HomeActivity : AppCompatActivity() {
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
             if (!app.awaitReady()) return@io
+            if (!app.emergency) app.recoverSystemRestore()
             val database = app.database ?: return@io
             val workspace = WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {

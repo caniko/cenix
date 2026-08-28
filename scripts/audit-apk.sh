@@ -2,6 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 manifest="$root/android/app/src/main/AndroidManifest.xml"
+backup_rules="$root/android/app/src/main/res/xml/backup_rules.xml"
 if grep -q 'android.permission.INTERNET' "$manifest"; then
   echo "INTERNET permission is forbidden" >&2
   exit 1
@@ -12,6 +13,16 @@ if grep -q 'QUERY_ALL_PACKAGES' "$manifest"; then
 fi
 if ! grep -q 'android.intent.category.HOME' "$manifest"; then
   echo "HOME category is required" >&2
+  exit 1
+fi
+if ! grep -q 'android:allowBackup="true"' "$manifest" ||
+  ! grep -q 'android:backupAgent=".CenixBackupAgent"' "$manifest" ||
+  ! grep -q 'android:dataExtractionRules="@xml/backup_rules"' "$manifest" ||
+  ! grep -q 'android:fullBackupOnly="true"' "$manifest" ||
+  ! grep -q 'android:killAfterRestore="true"' "$manifest" ||
+  [[ "$(grep -c 'domain="file" path="transport/cenix-backup.json"' "$backup_rules")" -ne 2 ]] ||
+  grep -qE 'domain="(database|sharedpref|root|external|device_)"' "$backup_rules"; then
+  echo "backup must expose only the canonical transport artifact" >&2
   exit 1
 fi
 exported="$(grep -c 'android:exported="true"' "$manifest" || true)"
@@ -80,6 +91,7 @@ grep -q 'android.appwidget.action.APPWIDGET_HOST_RESTORED' <<<"$xmltree" || { ec
 grep -q 'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE' <<<"$xmltree" || { echo "bound notification listener missing from merged manifest" >&2; exit 1; }
 grep -q 'android.service.notification.NotificationListenerService' <<<"$xmltree" || { echo "notification listener action missing from merged manifest" >&2; exit 1; }
 grep -q 'android.permission.ACCESS_NOTIFICATION_POLICY' <<<"$xmltree" && { echo "notification policy access is forbidden" >&2; exit 1; }
+grep -q 'com.caniko.cenix.CenixBackupAgent' <<<"$xmltree" || { echo "backup agent missing from merged manifest" >&2; exit 1; }
 grep -qiE 'cuscon|harbor-js|cenix_jni' <<<"$badging" && { echo "forbidden string in badging" >&2; exit 1; }
 python3 - "$apk" <<'PY' || { echo "Play Services reference in APK" >&2; exit 1; }
 import sys, zipfile

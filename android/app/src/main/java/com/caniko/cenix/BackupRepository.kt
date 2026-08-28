@@ -1,5 +1,8 @@
 package com.caniko.cenix
 
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
+import android.content.Context
 import com.caniko.cenix.db.ApplicationItemEntity
 import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.FolderEntity
@@ -14,6 +17,7 @@ import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.WorkspaceMetadataEntity
 import com.caniko.cenix.db.WorkspacePageEntity
 import com.caniko.cenix.uniffi.BackupImportPlan
+import com.caniko.cenix.uniffi.BackupImportTarget
 import com.caniko.cenix.uniffi.BackupDocument
 import com.caniko.cenix.uniffi.BackupExportOptions
 import com.caniko.cenix.uniffi.BackupProfileRef
@@ -22,9 +26,15 @@ import com.caniko.cenix.uniffi.BackupWidgetMetadata
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.ItemPayload
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileKind
+import com.caniko.cenix.uniffi.ProfileMapping
 import com.caniko.cenix.uniffi.ShortcutId
+import com.caniko.cenix.uniffi.WidgetProviderId
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.buildBackupDocument
+import com.caniko.cenix.uniffi.planBackupImport
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 
 class BackupRepository(private val db: CenixDatabase) {
@@ -45,6 +55,53 @@ class BackupRepository(private val db: CenixDatabase) {
             BackupExportOptions(includeWork, sourceVersion, sourceCommit, profiles),
             launcher.nextItemId(),
             launcher.nextPageId(),
+        )
+    }
+
+    fun planPersonalImport(context: Context, document: BackupDocument): BackupImportPlan {
+        if (document.profiles.any { it.kind != ProfileKind.PERSONAL }) throw BackupJsonException("work")
+        val profiles = ProfileController(context).also { it.refresh() }
+        val personal = profiles.profiles().singleOrNull {
+            it.descriptor.kind == ProfileKind.PERSONAL && it.descriptor.access == ProfileAccess.AVAILABLE
+        } ?: throw BackupJsonException("profile")
+        val profileId = personal.descriptor.profileId
+        val catalog = AppCatalog(context, profiles)
+        val applications = catalog.load(listOf(personal)).map {
+            ComponentId(it.packageName, it.className, profileId)
+        }
+        val requestedShortcuts = (
+            document.workspace.items.map { it.payload } +
+                document.workspace.folders.flatMap { folder -> folder.members.map { it.payload } }
+            ).mapNotNull { (it as? ItemPayload.Shortcut)?.shortcut }
+            .map { ShortcutId(it.`package`, it.shortcutId, profileId) }
+        val shortcuts = ShortcutCatalog(context, catalog, profiles).resolve(requestedShortcuts).keys.toList()
+        val widgets = try {
+            context.getSystemService(AppWidgetManager::class.java).getInstalledProvidersForProfile(personal.user).mapNotNull { info ->
+                val home = info.widgetCategory == 0 ||
+                    info.widgetCategory and AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN != 0
+                if (home) WidgetProviderId(info.provider.packageName, info.provider.className, profileId) else null
+            }
+        } catch (_: RuntimeException) {
+            emptyList()
+        }
+        val generation = LauncherRepository(db).snapshot().generation
+        val metrics = context.resources.displayMetrics
+        val grids = PhoneGrid.compatible(
+            minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+            maxOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+        ).map { it.name }
+        return planBackupImport(
+            document,
+            BackupImportTarget(
+                generation,
+                generation,
+                listOf(BackupProfileRef(profileId, ProfileKind.PERSONAL)),
+                grids,
+                applications,
+                shortcuts,
+                widgets,
+            ),
+            listOf(ProfileMapping(0uL, profileId)),
         )
     }
 
@@ -79,6 +136,34 @@ class BackupRepository(private val db: CenixDatabase) {
     fun applyPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
 
     fun applyLocalPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = true)
+
+    fun recoverSystem(context: Context): Boolean {
+        var operation = pending() ?: return false
+        if (operation.source != RestoreSource.SYSTEM) return false
+        if (operation.phase == RestorePhase.PARSED) {
+            queueSystem()
+            operation = checkNotNull(pending())
+        }
+        if (operation.phase == RestorePhase.FAILED) operation = retry() ?: return false
+        if (operation.phase == RestorePhase.PLATFORM_RECONCILE) {
+            return operation.committedGeneration?.let(::complete) == true
+        }
+        if (operation.phase != RestorePhase.SYSTEM_RESTORE_PENDING) return false
+        val document = try {
+            BackupJsonCodec.read(ByteArrayInputStream(operation.payload.toByteArray(Charsets.UTF_8)))
+        } catch (error: Exception) {
+            db.dao().recordRestoreFailure(operation.payloadSha256)
+            throw error
+        }
+        val plan = try {
+            planPersonalImport(context, document)
+        } catch (error: Exception) {
+            db.dao().recordRestoreFailure(operation.payloadSha256)
+            throw error
+        }
+        applyPlan(plan, operation.payload, complete = true)
+        return true
+    }
 
     private fun applyPlan(plan: BackupImportPlan, payload: String, complete: Boolean) {
         val workspace = plan.workspace

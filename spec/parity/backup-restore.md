@@ -1,7 +1,7 @@
 # Backup and restore parity contract
 
 Evidence labels: `SRC`, `API`, `AOSP_EMU`, `GOS_DEV`, `SYSTEM`, `UNKNOWN`.
-This contract has `SRC` + `API` only. Do not treat it as implemented, `AOSP_EMU`, or `GOS_DEV`.
+The source implementation has `SRC` + `API` evidence only. Do not treat it as `AOSP_EMU` or `GOS_DEV`.
 
 ## Domain
 
@@ -17,7 +17,7 @@ This contract has `SRC` + `API` only. Do not treat it as implemented, `AOSP_EMU`
 2. Transport success or failure is `TRANSPORT_CONTROLLED`. Quota is `FullBackupDataOutput.getQuota()`. Overflow calls `BackupAgent.onQuotaExceeded`; export then fails closed.
 3. Import journals a bounded `PARSED` artifact. Validation, explicit profile mapping, and reducer planning run before any workspace mutation.
 4. A single Room transaction applies the typed `WorkspaceTransition` at the expected generation and advances generation by one. Failure rolls back workspace and journal.
-5. Widget rows commit as placeholders. `ACTION_APPWIDGET_HOST_RESTORED` with Cenix host ID and equal ID arrays journals remap and writes new IDs. Missing providers stay placeholders.
+5. Widget rows commit as placeholders. `ACTION_APPWIDGET_HOST_RESTORED` is accepted only for the Cenix host with equal ID arrays. Because the canonical artifact contains no trusted old IDs, unmatched transport instances stay placeholders and are reclaimed by host recovery.
 6. Missing applications and shortcuts stay removable placeholders until package callbacks reconcile or the user removes them. Temporary unavailability is not deletion.
 7. `BackupAgent.onRestoreFinished` only marks the journal pending. Application happens on the next healthy, non-emergency start.
 
@@ -25,7 +25,7 @@ This contract has `SRC` + `API` only. Do not treat it as implemented, `AOSP_EMU`
 
 - Placeholder policy matches existing widget restore: no `RemoteViews` until `AppWidgetManager.getAppWidgetInfo` is valid and the profile is available.
 - Host mismatch, null arrays, or unequal old/new lengths discard the broadcast.
-- After remap, providers that need configuration stay in a setup-required placeholder (`FLAG_UI_NOT_READY` pattern). Unbound new IDs are deleted with `AppWidgetHost.deleteAppWidgetId`.
+- Providers that need configuration stay in a setup-required placeholder (`FLAG_UI_NOT_READY` pattern). Unbound host IDs are reclaimed without treating artifact data as an `appWidgetId` mapping.
 
 ## Emergency
 
@@ -56,6 +56,6 @@ Incremental key/value backup, raw database restore, file-system items, custom wi
 | Launcher3 agent/restore/widget-restore behavior | `SRC` |
 | Public backup and widget restore APIs | `API` |
 | Quickstep restore logger is SystemApi | `SRC`, `SYSTEM` |
-| Cenix P5C implemented | not claimed |
+| Cenix P5C source/build implementation | `SRC`, `API` |
 | Isolated emulator restore | no `AOSP_EMU` |
 | GrapheneOS mustang / Seedvault | no `GOS_DEV`; transport is `UNKNOWN` |

@@ -37,6 +37,8 @@ enum class EventId {
     MIGRATION,
     EMERGENCY,
     RESET,
+    BACKUP_EXPORT,
+    BACKUP_RESTORE,
     BUILD_IDENTITY,
 }
 
