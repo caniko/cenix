@@ -529,6 +529,18 @@ wait_launcher_settings() {
   wait_ui 'resource-id="android:id/content"' 1
 }
 
+scroll_settings_to() {
+  local pattern="$1" direction="${2:-up}" ui from=560 to=180 x1 y1 x2 y2
+  [[ "$direction" == "down" ]] && { from=180; to=560; }
+  for _ in $(seq 1 6); do
+    ui="$(dump_ui)"
+    read -r x1 y1 x2 y2 < <(bounds_of "$ui" "$pattern") || true
+    [[ -n "${y1:-}" && "$y1" -ge 24 && "$y2" -le 620 ]] && return 0
+    "$adb" -s "$serial" shell input swipe 160 "$from" 160 "$to" 400
+  done
+  fail "settings control never appeared: $pattern"
+}
+
 open_launcher_settings() {
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
@@ -782,19 +794,18 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
-  ui="$(dump_ui)"
   for control in wallpaper themedIcons notificationDots autoAddApps; do
-    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
+    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$control\""
   done
-  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
-  ui="$(dump_ui)"
   for grid in grid_2_by_2 grid_3_by_3 grid_4_by_4; do
-    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$grid\"" || fail "compatible setting missing: $grid"
+    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$grid\""
   done
+  ui="$(dump_ui)"
   echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
-  echo "$ui" | grep -q "$CENIX_GIT_COMMIT" || fail "settings build identity missing exact source commit"
+  scroll_settings_to "$CENIX_GIT_COMMIT"
   pass "settings: finite compatible phone grids and build identity are visible"
 
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"' down
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   wait_ui 'text="Grid applied"' 1
   device_settings_ui="$(dump_ui)"
@@ -805,11 +816,12 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_launcher_settings
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
   pass "settings: selected grid survives process recreation"
 
-  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/resetLauncher"'
   tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
   sleep 1
   ui="$(dump_any_ui)"
@@ -819,6 +831,7 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'Remove all local pages' && fail "reset confirmation did not close"
   pass "settings: reset requires confirmation and cancellation preserves state"
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_4_by_4"' down
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_4_by_4"'
   wait_ui 'text="Grid applied"' 1
   go_home
