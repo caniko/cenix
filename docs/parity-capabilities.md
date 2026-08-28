@@ -2,7 +2,9 @@
 
 Classifications use public Android 35 APIs plus GrapheneOS Launcher3 `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Source presence is not user-visible proof.
 
-Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolated AOSP emulator, `GOS_DEV` = mustang (none), `SYSTEM` = privileged.
+Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolated AOSP emulator, `GOS_DEV` = mustang (none), `SYSTEM` = privileged, `UNKNOWN` = unmeasured.
+
+Classes include `TRANSPORT_CONTROLLED` for destinations Cenix does not own (Android backup transport, copies after SAF).
 
 | Feature | Class | Slice | Evidence |
 | --- | --- | --- | --- |
@@ -29,7 +31,9 @@ Evidence keys: `SRC` = Launcher3 source, `API` = public SDK, `AOSP_EMU` = isolat
 | Wallpaper / dynamic colors | `USER_AUTHORIZED` | P5B implemented | `ACTION_SET_WALLPAPER`, `WallpaperColors`, system dynamic resources; emulator evidence pending final matrix |
 | Themed icons | `INSTALLABLE_PUBLIC` | P5B implemented | public adaptive monochrome layer with original-icon fallback |
 | Grid migration | `INSTALLABLE_PUBLIC` | done | Room/Rust transaction and emulator evidence |
-| Launcher backup | `INSTALLABLE_PUBLIC` | omitted for now | `src` backup agent; Cenix `allowBackup=false` |
+| Android backup / `BackupAgent` | `TRANSPORT_CONTROLLED` | P5C contract | public agent carries the bounded personal-only artifact; transport execution remains unproven |
+| Launcher layout export/import | `USER_AUTHORIZED` | P5C contract | SAF JSON artifact; typed UniFFI; Room v9 journal/replace |
+| Backup file destination after SAF | `TRANSPORT_CONTROLLED` | P5C contract | user/OS owned; no Cenix upload |
 | Accessibility | `INSTALLABLE_PUBLIC` | partial | content descriptions; no TalkBack pass |
 | Secondary display | `INSTALLABLE_PUBLIC` | omitted | `SECONDARY_HOME`; not phone v1 |
 | Recents / Quickstep | `SIGNATURE_OR_SYSTEM` | omitted | overlay / privileged; do not claim |

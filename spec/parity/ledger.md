@@ -2,8 +2,8 @@
 
 Machine-oriented copy of `docs/parity-capabilities.md`.
 
-Evidence: `SRC` | `API` | `AOSP_EMU` | `GOS_DEV` | `SYSTEM`
-Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATURE_OR_SYSTEM` | `INTENTIONALLY_OMITTED` | `UNKNOWN_REQUIRES_SPIKE`
+Evidence: `SRC` | `API` | `AOSP_EMU` | `GOS_DEV` | `SYSTEM` | `UNKNOWN`
+Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `TRANSPORT_CONTROLLED` | `SIGNATURE_OR_SYSTEM` | `INTENTIONALLY_OMITTED` | `UNKNOWN_REQUIRES_SPIKE`
 `GOS_DEV` is empty until a mustang is attached.
 
 | id | class | slice | evidence |
@@ -30,7 +30,9 @@ Classes: `INSTALLABLE_PUBLIC` | `ROLE_HOME_GATED` | `USER_AUTHORIZED` | `SIGNATU
 | wallpaper | USER_AUTHORIZED | implemented-p5b | SRC,API |
 | themed-icons | INSTALLABLE_PUBLIC | implemented-p5b | SRC,API |
 | grid-migration | INSTALLABLE_PUBLIC | done-p5a | SRC,API,AOSP_EMU |
-| backup | INSTALLABLE_PUBLIC | omitted | SRC |
+| backup-auto | TRANSPORT_CONTROLLED | contract-p5c | SRC,API |
+| backup-layout | USER_AUTHORIZED | contract-p5c | SRC,API |
+| backup-transport | TRANSPORT_CONTROLLED | execution-unproven | UNKNOWN |
 | a11y | INSTALLABLE_PUBLIC | keyboard-and-semantics-p2b; TalkBack-unverified | API,AOSP_EMU |
 | secondary-display | INSTALLABLE_PUBLIC | omitted | API |
 | recents-quickstep | SIGNATURE_OR_SYSTEM | omitted | SYSTEM |
