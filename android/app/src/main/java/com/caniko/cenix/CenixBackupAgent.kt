@@ -13,7 +13,6 @@ import com.caniko.cenix.uniffi.ProfileKind
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
-import java.io.OutputStream
 
 class CenixBackupAgent : BackupAgent() {
     override fun onBackup(oldState: ParcelFileDescriptor?, data: BackupDataOutput?, newState: ParcelFileDescriptor?) = Unit
@@ -83,10 +82,10 @@ class CenixBackupAgent : BackupAgent() {
     ) {
         ParcelFileDescriptor.AutoCloseInputStream(data).use { input ->
             if (!acceptsRestore(artifact(this), destination, type, size)) {
-                input.transferTo(OutputStream.nullOutputStream())
+                if (size > 0) input.skipNBytes(size)
                 return
             }
-            val bytes = input.readNBytes(BackupJsonCodec.MAX_BYTES + 1)
+            val bytes = input.readNBytes(size.toInt())
             if (bytes.size.toLong() != size) throw IOException("truncated backup artifact")
             val atomic = AtomicFile(restoredArtifact(this))
             atomic.baseFile.parentFile?.mkdirs()
