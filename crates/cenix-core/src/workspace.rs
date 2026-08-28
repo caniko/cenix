@@ -1467,10 +1467,19 @@ fn occupied(
 }
 
 fn overlaps(a: CellRect, b: CellRect) -> bool {
-    a.cell_x < b.cell_x + b.span_x
-        && b.cell_x < a.cell_x + a.span_x
-        && a.cell_y < b.cell_y + b.span_y
-        && b.cell_y < a.cell_y + a.span_y
+    let (ax, ay, aw, ah) = (
+        i64::from(a.cell_x),
+        i64::from(a.cell_y),
+        i64::from(a.span_x),
+        i64::from(a.span_y),
+    );
+    let (bx, by, bw, bh) = (
+        i64::from(b.cell_x),
+        i64::from(b.cell_y),
+        i64::from(b.span_x),
+        i64::from(b.span_y),
+    );
+    ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
 }
 
 fn dimensions(grid: GridSpec, container: &ContainerRef) -> (i32, i32) {
@@ -1491,12 +1500,14 @@ fn validate_destination(
         return Err(WorkspaceError::MissingPage);
     }
     let (cols, rows) = dimensions(snapshot.grid, container);
+    let right = i64::from(cell.cell_x) + i64::from(cell.span_x);
+    let bottom = i64::from(cell.cell_y) + i64::from(cell.span_y);
     if cell.cell_x < 0
         || cell.cell_y < 0
         || cell.span_x <= 0
         || cell.span_y <= 0
-        || cell.cell_x + cell.span_x > cols
-        || cell.cell_y + cell.span_y > rows
+        || right > i64::from(cols)
+        || bottom > i64::from(rows)
     {
         return Err(WorkspaceError::OutOfBounds);
     }
@@ -1507,7 +1518,13 @@ fn validate_component(component: &ComponentId) -> Result<(), WorkspaceError> {
     if component.profile_id > i64::MAX as u64 {
         return Err(WorkspaceError::InvalidProfile);
     }
-    if component.package.is_empty() || component.class.is_empty() {
+    if component.package.is_empty()
+        || component.class.is_empty()
+        || component.package.chars().count() > 255
+        || component.class.chars().count() > 255
+        || component.package.chars().any(char::is_control)
+        || component.class.chars().any(char::is_control)
+    {
         return Err(WorkspaceError::InvariantViolation);
     }
     Ok(())
@@ -1765,7 +1782,9 @@ fn sort_snapshot(snapshot: &mut WorkspaceSnapshot) {
     snapshot.items.sort_by_key(|item| {
         let (kind, rank) = match item.container {
             ContainerRef::Hotseat => (0, 0),
-            ContainerRef::Workspace { page_id } => (1, ranks[&page_id]),
+            ContainerRef::Workspace { page_id } => {
+                (1, ranks.get(&page_id).copied().unwrap_or(i32::MAX))
+            }
         };
         (kind, rank, item.cell.cell_y, item.cell.cell_x, item.item_id)
     });

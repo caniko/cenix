@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::workspace::{
-    CellRect, ComponentId, ItemPayload, ShortcutId, WidgetProviderId, WorkspaceError,
+    CellRect, ComponentId, GridSpec, ItemPayload, ShortcutId, WidgetProviderId, WorkspaceError,
     WorkspaceSnapshot, prepare_snapshot,
 };
-use crate::{MAX_IDENT_CHARS, ProfileKind};
+use crate::{MAX_APPLICATIONS, MAX_IDENT_CHARS, ProfileKind};
 
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
 pub const LOGICAL_PERSONAL_PROFILE_ID: u64 = 0;
@@ -238,7 +238,11 @@ fn canonicalize(mut document: BackupDocument) -> Result<BackupDocument, BackupEr
     }
     validate_source_meta(&document.source_version)?;
     validate_source_meta(&document.source_commit)?;
+    validate_document_bounds(&document)?;
     validate_settings(&document.settings)?;
+    if phone_grid(&document.settings.grid_name) != Some(document.workspace.grid) {
+        return Err(BackupError::UnsupportedGrid);
+    }
     validate_canonical_profiles(&document.profiles)?;
     document.profiles.sort_by_key(|profile| profile.profile_id);
     reject_mixed_folders(&document.workspace)?;
@@ -268,8 +272,53 @@ fn validate_source_meta(value: &str) -> Result<(), BackupError> {
 }
 
 fn validate_settings(settings: &BackupSettings) -> Result<(), BackupError> {
-    if settings.grid_name.is_empty() || settings.grid_name.chars().any(char::is_control) {
+    if settings.grid_name.is_empty()
+        || settings.grid_name.chars().count() > MAX_IDENT_CHARS
+        || settings.grid_name.chars().any(char::is_control)
+    {
         return Err(BackupError::InvalidGrid);
+    }
+    Ok(())
+}
+
+fn phone_grid(name: &str) -> Option<GridSpec> {
+    let (cols, rows) = match name {
+        "2_by_2" => (2, 2),
+        "3_by_3" => (3, 3),
+        "4_by_4" => (4, 4),
+        "4_by_5" => (4, 5),
+        "5_by_5" => (5, 5),
+        _ => return None,
+    };
+    Some(GridSpec {
+        cols,
+        rows,
+        hotseat_cols: cols,
+    })
+}
+
+fn validate_document_bounds(document: &BackupDocument) -> Result<(), BackupError> {
+    let members = document
+        .workspace
+        .folders
+        .iter()
+        .try_fold(0_usize, |count, folder| {
+            count.checked_add(folder.members.len())
+        })
+        .ok_or(BackupError::InvariantViolation)?;
+    let items = document
+        .workspace
+        .items
+        .len()
+        .checked_add(members)
+        .ok_or(BackupError::InvariantViolation)?;
+    if items > MAX_APPLICATIONS
+        || document.workspace.pages.len() > 64
+        || document.workspace.folders.len() > MAX_APPLICATIONS
+        || document.widgets.len() > MAX_APPLICATIONS
+        || document.profiles.len() > 2
+    {
+        return Err(BackupError::InvariantViolation);
     }
     Ok(())
 }
@@ -532,10 +581,19 @@ fn record_payload(
 }
 
 fn cells_overlap(a: CellRect, b: CellRect) -> bool {
-    a.cell_x < b.cell_x + b.span_x
-        && b.cell_x < a.cell_x + a.span_x
-        && a.cell_y < b.cell_y + b.span_y
-        && b.cell_y < a.cell_y + a.span_y
+    let (ax, ay, aw, ah) = (
+        i64::from(a.cell_x),
+        i64::from(a.cell_y),
+        i64::from(a.span_x),
+        i64::from(a.span_y),
+    );
+    let (bx, by, bw, bh) = (
+        i64::from(b.cell_x),
+        i64::from(b.cell_y),
+        i64::from(b.span_x),
+        i64::from(b.span_y),
+    );
+    ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
 }
 
 fn filter_widget_metadata(
@@ -708,9 +766,9 @@ mod tests {
 
     fn grid() -> GridSpec {
         GridSpec {
-            cols: 2,
-            rows: 2,
-            hotseat_cols: 2,
+            cols: 4,
+            rows: 5,
+            hotseat_cols: 4,
         }
     }
 
@@ -1474,7 +1532,7 @@ mod tests {
         span.items[0].cell = CellRect {
             cell_x: 0,
             cell_y: 0,
-            span_x: 3,
+            span_x: 5,
             span_y: 1,
         };
         assert_eq!(
@@ -1519,6 +1577,56 @@ mod tests {
                 11,
             ),
             Err(BackupError::InvalidAllocator)
+        );
+    }
+
+    #[test]
+    fn malformed_documents_fail_without_panicking() {
+        let mut missing_page = document();
+        missing_page.workspace.items[0].container = ContainerRef::Workspace { page_id: 999 };
+        assert_eq!(
+            validate_backup_document(missing_page),
+            Err(BackupError::MissingPage)
+        );
+
+        let mut extreme_cell = document();
+        extreme_cell.workspace.items[0].cell.cell_x = i32::MAX;
+        assert_eq!(
+            validate_backup_document(extreme_cell),
+            Err(BackupError::OutOfBounds)
+        );
+
+        let mut oversized = document();
+        oversized.workspace.pages = (1..=65)
+            .map(|page_id| WorkspacePage {
+                page_id,
+                rank: page_id as i32,
+            })
+            .collect();
+        assert_eq!(
+            validate_backup_document(oversized),
+            Err(BackupError::InvariantViolation)
+        );
+    }
+
+    #[test]
+    fn artifact_grid_and_component_identifiers_are_bounded() {
+        let mut mismatched_grid = document();
+        mismatched_grid.settings.grid_name = "5_by_5".into();
+        assert_eq!(
+            validate_backup_document(mismatched_grid),
+            Err(BackupError::UnsupportedGrid)
+        );
+
+        let mut invalid_component = document();
+        let ItemPayload::Application(component) = &mut invalid_component.workspace.items[0].payload
+        else {
+            unreachable!()
+        };
+        component.package = "x".repeat(256);
+        assert_eq!(
+            validate_backup_document(invalid_component),
+            Err(BackupError::InvariantViolation)
         );
     }
 }
