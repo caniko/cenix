@@ -671,7 +671,7 @@ pass "shell: initial state is full-screen HOME"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
-"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+"$adb" -s "$serial" shell am start -W -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
 (cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
 pass "instrumentation: HomeConformanceTest"
@@ -711,7 +711,7 @@ echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/appLabel"' || fail "catal
 pass "discovery: nonempty catalog, Cenix hidden"
 
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
-"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+"$adb" -s "$serial" shell am start -W -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 go_home
 wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "automatic placement: confirmed new install is placed without a duplicate callback path"
@@ -893,7 +893,7 @@ pass "package callback: fixture disappeared without restart"
 
 if [[ "$suite" == "workspace" || "$suite" == "folders" || "$suite" == "full" ]]; then
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
-"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+"$adb" -s "$serial" shell am start -W -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 go_home
 set_search "Fixture"
 wait_ui 'text="Cenix Fixture"' 1
@@ -1117,7 +1117,7 @@ fi
 if [[ "$suite" == "shortcuts" ]]; then
   "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
   "$adb" -s "$serial" install -r -t "$root/android/fixture-secondary/build/outputs/apk/debug/fixture-secondary-debug.apk"
-  "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+  "$adb" -s "$serial" shell am start -W -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
   go_home
   for label in "Cenix Fixture" "Cenix Fixture Two"; do
     ui="$(dump_ui)"
@@ -1218,7 +1218,7 @@ fi
 
 if [[ "$suite" == "widgets" || "$suite" == "full" ]]; then
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
-"$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
+"$adb" -s "$serial" shell am start -W -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 go_home
 
 ui="$(dump_ui)"
