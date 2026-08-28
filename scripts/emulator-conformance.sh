@@ -129,7 +129,23 @@ cleanup() {
   [[ -z "${CENIX_AVD:-}" && "$created_avd" == "1" ]] && "$avdmanager" delete avd -n "$avd" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-emu_port="${CENIX_EMU_PORT:-$((5554 + RANDOM % 15 * 2))}"
+if [[ -n "$serial" ]]; then
+  emu_port="${serial#emulator-}"
+elif [[ -n "${CENIX_EMU_PORT:-}" ]]; then
+  emu_port="$CENIX_EMU_PORT"
+else
+  devices="$("$adb" devices)"
+  port_start=$((RANDOM % 8))
+  emu_port=""
+  for offset in $(seq 0 7); do
+    candidate=$((5554 + ((port_start + offset) % 8) * 4))
+    if ! grep -Eq "^emulator-($((candidate - 2))|$candidate|$((candidate + 2)))[[:space:]]" <<<"$devices"; then
+      emu_port="$candidate"
+      break
+    fi
+  done
+  [[ -n "$emu_port" ]] || { echo "no free emulator source/target port pair" >&2; exit 1; }
+fi
 rtl_boot=()
 if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
   rtl_boot=(-prop debug.force_rtl=true)
@@ -137,15 +153,17 @@ fi
 if [[ -z "$serial" ]]; then
   "$emulator_bin" -avd "$avd" -port "$emu_port" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect "${rtl_boot[@]}" >"$art/emulator.log" 2>&1 &
   started=$!
+  serial="emulator-$emu_port"
   for _ in $(seq 1 90); do
-    serial="$(avd_serial || true)"
-    if [[ -n "$serial" ]]; then
-      break
-    fi
+    [[ "$("$adb" -s "$serial" get-state 2>/dev/null || true)" == "device" ]] && break
     sleep 2
   done
-  if [[ -z "$serial" ]]; then
+  if [[ "$("$adb" -s "$serial" get-state 2>/dev/null || true)" != "device" ]]; then
     echo "AVD $avd never appeared; see $art/emulator.log" >&2
+    exit 1
+  fi
+  if [[ "$("$adb" -s "$serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')" != "$avd" ]]; then
+    echo "AVD identity mismatch for $serial" >&2
     exit 1
   fi
 fi
