@@ -35,6 +35,14 @@
     <string name="close_all_apps">Close All Apps</string>
     <string name="open_launcher_settings">Open launcher settings</string>
     <string name="export_diagnostics">Export diagnostics</string>
+    <string name="backup_restore">Backup and restore</string>
+    <string name="backup_export">Export launcher backup</string>
+    <string name="backup_import">Import launcher backup</string>
+    <string name="backup_replace">Replace Home screen</string>
+    <string name="backup_import_confirmation">Replace the current Home screen with %1$d restored items? %2$d items are unavailable and will remain as placeholders.</string>
+    <string name="backup_exported">Launcher backup exported</string>
+    <string name="backup_imported">Launcher backup imported</string>
+    <string name="backup_failed">Backup operation failed</string>
     <string name="folder">Folder</string>
     <string name="folder_description">%1$s, folder, %2$d applications</string>
     <string name="close_folder">Close folder</string>
@@ -51,6 +59,7 @@
     <string name="pin_shortcut">Pin shortcut</string>
     <string name="remove_shortcut">Remove shortcut</string>
     <string name="shortcut_unavailable">Shortcut unavailable</string>
+    <string name="application_unavailable">Application unavailable</string>
     <string name="pin_shortcut_title">Add shortcut to Home?</string>
     <string name="pin_widget_title">Add widget to Home?</string>
     <string name="add">Add</string>

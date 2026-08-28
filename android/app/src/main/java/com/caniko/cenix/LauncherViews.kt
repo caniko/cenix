@@ -474,6 +474,7 @@ class FolderPopup(context: Context) : FrameLayout(context) {
     var onDirectDrag: ((View, FolderEntry) -> Unit)? = null
     var onMove: ((FolderMember, UInt) -> Unit)? = null
     var onRemove: ((FolderMember) -> Unit)? = null
+    var onDelete: ((FolderMember) -> Unit)? = null
 
     init {
         id = R.id.folder_popup
@@ -527,19 +528,31 @@ class FolderPopup(context: Context) : FrameLayout(context) {
                     maxLines = 1
                 }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
                 setOnClickListener { onLaunch?.invoke(entry) }
-                setOnLongClickListener { onDirectDrag?.invoke(this, entry); true }
+                setOnLongClickListener {
+                    if (entry.app == null && entry.shortcut == null) onDelete?.invoke(member)
+                    else onDirectDrag?.invoke(this, entry)
+                    true
+                }
                 accessibilityDelegate = object : View.AccessibilityDelegate() {
                     override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                         super.onInitializeAccessibilityNodeInfo(host, info)
                         if (index > 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_left, context.getString(R.string.move_earlier)))
                         if (index + 1 < entries.size) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_right, context.getString(R.string.move_later)))
-                        info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_remove_from_folder, context.getString(R.string.remove_from_folder)))
+                        info.addAction(
+                            AccessibilityNodeInfo.AccessibilityAction(
+                                R.id.action_remove_from_folder,
+                                context.getString(if (entry.app == null && entry.shortcut == null) R.string.remove else R.string.remove_from_folder),
+                            ),
+                        )
                     }
 
                     override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean = when (action) {
                         R.id.action_move_left -> { onMove?.invoke(member, (index - 1).coerceAtLeast(0).toUInt()); true }
                         R.id.action_move_right -> { onMove?.invoke(member, (index + 1).coerceAtMost(entries.lastIndex).toUInt()); true }
-                        R.id.action_remove_from_folder -> { onRemove?.invoke(member); true }
+                        R.id.action_remove_from_folder -> {
+                            if (entry.app == null && entry.shortcut == null) onDelete?.invoke(member) else onRemove?.invoke(member)
+                            true
+                        }
                         else -> super.performAccessibilityAction(host, action, args)
                     }
                 }

@@ -109,6 +109,8 @@ class HomeConformanceTest {
         assertTrue(device.hasObject(By.res(PKG, "selectHomeRole")))
         device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 4, 20)
         assertTrue(device.hasObject(By.res(PKG, "exportDiagnostics")))
+        assertTrue(device.hasObject(By.res(PKG, "exportBackup")))
+        assertTrue(device.hasObject(By.res(PKG, "importBackup")))
         assertTrue(device.hasObject(By.res(PKG, "resetLauncher")))
         device.pressBack()
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))

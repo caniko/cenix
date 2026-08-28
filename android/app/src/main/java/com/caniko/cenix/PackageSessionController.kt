@@ -140,7 +140,7 @@ class PackageSessionController(
                 null
             }
             val state = overrides[key] ?: when {
-                info == null -> return@mapNotNull null
+                info == null -> PackageState.TEMPORARILY_UNAVAILABLE
                 info.isArchived -> PackageState.ARCHIVED
                 !info.enabled -> PackageState.DISABLED
                 info.flags and ApplicationInfo.FLAG_SUSPENDED != 0 -> PackageState.SUSPENDED

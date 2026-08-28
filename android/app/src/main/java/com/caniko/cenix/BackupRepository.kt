@@ -14,14 +14,40 @@ import com.caniko.cenix.db.WorkspaceItemEntity
 import com.caniko.cenix.db.WorkspaceMetadataEntity
 import com.caniko.cenix.db.WorkspacePageEntity
 import com.caniko.cenix.uniffi.BackupImportPlan
+import com.caniko.cenix.uniffi.BackupDocument
+import com.caniko.cenix.uniffi.BackupExportOptions
+import com.caniko.cenix.uniffi.BackupProfileRef
+import com.caniko.cenix.uniffi.BackupSettings
+import com.caniko.cenix.uniffi.BackupWidgetMetadata
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.ItemPayload
 import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceItem
+import com.caniko.cenix.uniffi.buildBackupDocument
 import java.security.MessageDigest
 
 class BackupRepository(private val db: CenixDatabase) {
+    fun buildDocument(
+        profiles: List<BackupProfileRef>,
+        includeWork: Boolean,
+        sourceVersion: String,
+        sourceCommit: String,
+    ): BackupDocument {
+        val launcher = LauncherRepository(db)
+        val settings = checkNotNull(db.dao().launcherSettings())
+        return buildBackupDocument(
+            launcher.snapshot(),
+            BackupSettings(settings.gridName, settings.notificationDots, settings.themedIcons, settings.autoAddApps),
+            db.dao().workspaceWidgets().map {
+                BackupWidgetMetadata(it.itemId.toULong(), it.minSpanX, it.minSpanY, it.resizeX, it.resizeY)
+            },
+            BackupExportOptions(includeWork, sourceVersion, sourceCommit, profiles),
+            launcher.nextItemId(),
+            launcher.nextPageId(),
+        )
+    }
+
     fun pending(): PendingRestoreOperationEntity? = db.dao().pendingRestore()
 
     fun confirmLocal() {
@@ -50,13 +76,17 @@ class BackupRepository(private val db: CenixDatabase) {
         )
     }
 
-    fun applyPlan(plan: BackupImportPlan, payload: String) {
+    fun applyPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
+
+    fun applyLocalPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = true)
+
+    private fun applyPlan(plan: BackupImportPlan, payload: String, complete: Boolean) {
         val workspace = plan.workspace
         val payloadSha256 = sha256(payload)
         val widgetMeta = plan.widgets.associateBy { it.itemId }
         val payloads = workspace.items.map { it.itemId to it.payload } +
             workspace.folders.flatMap { folder -> folder.members.map { it.itemId to it.payload } }
-        try {
+        val apply = {
             db.dao().replaceWorkspaceFromRestore(
                 expectedGeneration = workspace.generation.toLong() - 1,
                 payloadSha256 = payloadSha256,
@@ -103,6 +133,10 @@ class BackupRepository(private val db: CenixDatabase) {
                     autoAddApps = plan.settings.autoAddApps,
                 ),
             )
+            if (complete) check(db.dao().completeRestore(workspace.generation.toLong()))
+        }
+        try {
+            if (complete) db.runInTransaction { apply() } else apply()
         } catch (error: RuntimeException) {
             db.dao().recordRestoreFailure(payloadSha256)
             throw error

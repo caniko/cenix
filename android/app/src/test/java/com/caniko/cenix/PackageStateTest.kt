@@ -22,9 +22,9 @@ class PackageStateTest {
     @Test
     fun temporaryPackageStatesRetainShortcutsUntilDefinitiveRemoval() {
         val shortcut = ShortcutId("pkg", "dynamic", 0UL)
-        assertEquals(listOf(shortcut), retainedShortcutIds(listOf(shortcut), listOf(app(PackageState.SUSPENDED))))
-        assertTrue(retainedShortcutIds(listOf(shortcut), listOf(app(PackageState.READY))).isEmpty())
-        assertTrue(retainedShortcutIds(listOf(shortcut), emptyList()).isEmpty())
+        assertEquals(listOf(shortcut), retainedShortcutIds(listOf(shortcut), null))
+        assertTrue(retainedShortcutIds(listOf(shortcut), PackageKey("pkg", 0)).isEmpty())
+        assertEquals(listOf(shortcut), retainedShortcutIds(listOf(shortcut), PackageKey("other", 0)))
     }
 
     private fun app(state: PackageState) = LaunchableApp(

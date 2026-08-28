@@ -415,7 +415,7 @@ class CenixDatabaseTest {
         val repo = BackupRepository(db)
         repo.stage(RestoreSource.LOCAL, "{\"ok\":true}", 0, 5)
         repo.confirmLocal()
-        repo.applyPlan(
+        repo.applyLocalPlan(
             BackupImportPlan(
                 workspace = WorkspaceSnapshot(
                     generation = 1UL,
@@ -444,6 +444,7 @@ class CenixDatabaseTest {
             "{\"ok\":true}",
         )
         val widget = db.dao().workspaceWidgets().single()
+        assertNull(repo.pending())
         assertNull(widget.appWidgetId)
         assertEquals(2, widget.minSpanX)
         assertEquals(4, widget.resizeX)

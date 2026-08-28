@@ -151,6 +151,7 @@ class WidgetHostController(
         }
         val info = binding?.appWidgetId?.let(manager::getAppWidgetInfo)
         if (binding == null || info == null || (activity.application as CenixApplication).emergency) {
+            views.remove(itemId.toLong())?.let { (it.parent as? ViewGroup)?.removeView(it) }
             return placeholder(itemId, binding, pageId, cell, onRemove)
         }
         val view = views.getOrPut(itemId.toLong()) {

@@ -2,6 +2,8 @@ package com.caniko.cenix
 
 import android.app.role.RoleManager
 import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -21,9 +23,24 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import com.caniko.cenix.db.CenixDatabase
 import com.caniko.cenix.db.LauncherSettingsEntity
+import com.caniko.cenix.db.RestoreSource
+import com.caniko.cenix.uniffi.BackupImportPlan
+import com.caniko.cenix.uniffi.BackupImportTarget
+import com.caniko.cenix.uniffi.BackupProfileRef
+import com.caniko.cenix.uniffi.ComponentId
+import com.caniko.cenix.uniffi.ItemPayload
+import com.caniko.cenix.uniffi.ProfileAccess
+import com.caniko.cenix.uniffi.ProfileKind
+import com.caniko.cenix.uniffi.ProfileMapping
+import com.caniko.cenix.uniffi.ShortcutId
+import com.caniko.cenix.uniffi.WidgetProviderId
 import com.caniko.cenix.uniffi.WorkspaceException
+import com.caniko.cenix.uniffi.planBackupImport
+import java.io.ByteArrayInputStream
 
 class LauncherSettingsActivity : AppCompatActivity() {
+    private data class PendingImport(val payload: String, val plan: BackupImportPlan)
+
     private lateinit var app: CenixApplication
     private lateinit var options: RadioGroup
     private lateinit var progress: ProgressBar
@@ -50,6 +67,14 @@ class LauncherSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private val exportBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        uri?.let(::writeBackup)
+    }
+
+    private val importBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri?.let(::readBackup)
+    }
+
     private val requestHomeRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         updateHomeRole()
     }
@@ -72,6 +97,12 @@ class LauncherSettingsActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.exportDiagnostics).setOnClickListener {
             exportDiagnostics.launch("cenix-diagnostics.txt")
+        }
+        findViewById<Button>(R.id.exportBackup).setOnClickListener {
+            exportBackup.launch("cenix-backup.json")
+        }
+        findViewById<Button>(R.id.importBackup).setOnClickListener {
+            importBackup.launch(arrayOf("application/json", "text/json", "application/octet-stream"))
         }
         findViewById<Button>(R.id.resetLauncher).setOnClickListener { confirmReset() }
         findViewById<TextView>(R.id.buildIdentity).text = getString(
@@ -168,6 +199,143 @@ class LauncherSettingsActivity : AppCompatActivity() {
         CenixExecutors.io {
             val dao = app.database?.dao() ?: return@io
             dao.launcherSettings()?.let(transform)?.let(dao::upsertLauncherSettings)
+        }
+    }
+
+    private fun writeBackup(uri: Uri) {
+        CenixExecutors.io {
+            val success = try {
+                if (!app.awaitReady() || app.emergency) false else {
+                    val database = app.database ?: throw IllegalStateException("database unavailable")
+                    val profiles = ProfileController(this).also { it.refresh() }.profiles()
+                        .filter { it.descriptor.kind == ProfileKind.PERSONAL || it.descriptor.kind == ProfileKind.WORK }
+                        .map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
+                    val document = BackupRepository(database).buildDocument(
+                        profiles,
+                        includeWork = false,
+                        sourceVersion = BuildConfig.VERSION_NAME,
+                        sourceCommit = BuildConfig.GIT_COMMIT,
+                    )
+                    contentResolver.openOutputStream(uri, "wt")?.use { BackupJsonCodec.write(document, it) } != null
+                }
+            } catch (_: Throwable) {
+                false
+            }
+            runOnUiThread { status.setText(if (success) R.string.backup_exported else R.string.backup_failed) }
+        }
+    }
+
+    private fun readBackup(uri: Uri) {
+        CenixExecutors.io {
+            val pending = try {
+                if (!app.awaitReady() || app.emergency) null else prepareImport(uri)
+            } catch (_: Throwable) {
+                null
+            }
+            runOnUiThread {
+                if (pending == null) status.setText(R.string.backup_failed) else confirmImport(pending)
+            }
+        }
+    }
+
+    private fun prepareImport(uri: Uri): PendingImport {
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readNBytes(BackupJsonCodec.MAX_BYTES + 1) }
+            ?: throw IllegalStateException("backup unavailable")
+        if (bytes.size > BackupJsonCodec.MAX_BYTES) throw BackupJsonException("oversized")
+        val document = BackupJsonCodec.read(ByteArrayInputStream(bytes))
+        if (document.profiles.any { it.kind != ProfileKind.PERSONAL }) throw BackupJsonException("work")
+        val database = app.database ?: throw IllegalStateException("database unavailable")
+        val repository = LauncherRepository(database)
+        val profiles = ProfileController(this).also { it.refresh() }
+        val liveProfiles = profiles.profiles().filter {
+            it.descriptor.access == ProfileAccess.AVAILABLE &&
+                (it.descriptor.kind == ProfileKind.PERSONAL || it.descriptor.kind == ProfileKind.WORK)
+        }
+        val personal = liveProfiles.singleOrNull { it.descriptor.kind == ProfileKind.PERSONAL }
+            ?: throw BackupJsonException("profile")
+        val profileRefs = liveProfiles.map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
+        val profileIds = profileRefs.mapTo(HashSet()) { it.profileId }
+        val catalog = AppCatalog(this, profiles)
+        val applications = catalog.load(liveProfiles).filter { it.profileId.toULong() in profileIds }.map {
+            ComponentId(it.packageName, it.className, it.profileId.toULong())
+        }
+        val requestedShortcuts = (
+            document.workspace.items.map { it.payload } +
+                document.workspace.folders.flatMap { folder -> folder.members.map { it.payload } }
+            ).mapNotNull { (it as? ItemPayload.Shortcut)?.shortcut }
+            .map { ShortcutId(it.`package`, it.shortcutId, personal.descriptor.profileId) }
+        val shortcuts = ShortcutCatalog(this, catalog, profiles).resolve(requestedShortcuts).keys.toList()
+        val widgetManager = getSystemService(AppWidgetManager::class.java)
+        val widgets = liveProfiles.flatMap { profile ->
+            try {
+                widgetManager.getInstalledProvidersForProfile(profile.user).mapNotNull { info ->
+                    val home = info.widgetCategory == 0 ||
+                        info.widgetCategory and AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN != 0
+                    if (!home) null else WidgetProviderId(
+                        info.provider.packageName,
+                        info.provider.className,
+                        profile.descriptor.profileId,
+                    )
+                }
+            } catch (_: RuntimeException) {
+                emptyList()
+            }
+        }
+        val generation = repository.snapshot().generation
+        val metrics = resources.displayMetrics
+        val grids = PhoneGrid.compatible(
+            minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+            maxOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
+        ).map { it.name }
+        val plan = planBackupImport(
+            document,
+            BackupImportTarget(generation, generation, profileRefs, grids, applications, shortcuts, widgets),
+            listOf(ProfileMapping(0uL, personal.descriptor.profileId)),
+        )
+        return PendingImport(String(bytes, Charsets.UTF_8), plan)
+    }
+
+    private fun confirmImport(pending: PendingImport) {
+        val itemCount = pending.plan.workspace.items.size + pending.plan.workspace.folders.sumOf { it.members.size }
+        val unresolved = pending.plan.unresolvedApplications.size + pending.plan.unresolvedShortcuts.size +
+            pending.plan.unresolvedWidgets.size
+        AlertDialog.Builder(this)
+            .setTitle(R.string.backup_import)
+            .setMessage(getString(R.string.backup_import_confirmation, itemCount, unresolved))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.backup_replace) { _, _ -> applyImport(pending) }
+            .show()
+    }
+
+    private fun applyImport(pending: PendingImport) {
+        progress.visibility = View.VISIBLE
+        CenixExecutors.io {
+            val success = try {
+                if (app.emergency) false else {
+                    val database = app.database ?: throw IllegalStateException("database unavailable")
+                    val repository = BackupRepository(database)
+                    val expectedGeneration = pending.plan.workspace.generation.toLong() - 1
+                    repository.stage(RestoreSource.LOCAL, pending.payload, expectedGeneration, System.currentTimeMillis())
+                    repository.confirmLocal()
+                    repository.applyLocalPlan(pending.plan, pending.payload)
+                    try {
+                        AppWidgetHost(this, WidgetHostController.HOST_ID).deleteHost()
+                    } catch (_: RuntimeException) {
+                        Unit
+                    }
+                    true
+                }
+            } catch (_: Throwable) {
+                false
+            }
+            runOnUiThread {
+                progress.visibility = View.GONE
+                status.setText(if (success) R.string.backup_imported else R.string.backup_failed)
+                if (success) {
+                    bindGridOptions()
+                    bindPreferences()
+                }
+            }
         }
     }
 

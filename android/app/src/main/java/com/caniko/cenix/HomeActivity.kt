@@ -324,6 +324,10 @@ class HomeActivity : AppCompatActivity() {
                     catalog.load(profileChange.profiles),
                     database.dao().workspaceApplications(),
                 ).map { item -> item.copy(icon = themedIcons.icon(item, settings.themedIcons, appearance.generation)) }
+                    .filterNot {
+                        reason == "remove" && packageKey != null &&
+                            it.packageName == packageKey.packageName && it.profileId == packageKey.profileId
+                    }
                 val inaccessible = profileChange.newlyInaccessibleProfileIds + profileChange.removedProfileIds
                 NotificationDotStore.removeProfiles(inaccessible)
                 themedIcons.invalidateProfiles(inaccessible)
@@ -341,8 +345,10 @@ class HomeActivity : AppCompatActivity() {
                 workspace.removeProfiles(profileChange.removedProfileIds)
                 workspace.dropMissing(loaded, availableProfileIds)
                 var state = workspace.snapshot()
+                if (reason !in setOf("remove", "shortcuts")) shortcutCatalog.pin(state.shortcutIds())
                 val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
-                val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), loaded)
+                val authoritativePackage = packageKey?.takeIf { reason == "remove" || reason == "shortcuts" }
+                val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), authoritativePackage)
                 state = workspace.reconcileShortcuts(liveShortcuts, availableProfileIds)?.asSnapshot()?.also {
                     CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
                 } ?: state
@@ -509,9 +515,14 @@ class HomeActivity : AppCompatActivity() {
         val appItem = (item?.payload as? ItemPayload.Application)?.component?.let { byComponent[it.key()] }
         val shortcutItem = (item?.payload as? ItemPayload.Shortcut)?.shortcut?.let(shortcuts::get)
         val view = LayoutInflater.from(this).inflate(R.layout.workspace_cell, null, false)
+        val unavailableLabel = when (item?.payload) {
+            is ItemPayload.Application -> getString(R.string.application_unavailable)
+            is ItemPayload.Shortcut -> getString(R.string.shortcut_unavailable)
+            else -> null
+        }.takeIf { appItem == null && shortcutItem == null }
         view.findViewById<ImageView>(R.id.cellIcon).setImageDrawable(appItem?.displayIcon() ?: shortcutItem?.displayIcon())
-        view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label ?: shortcutItem?.label.orEmpty()
-        val label = appItem?.label ?: shortcutItem?.label
+        view.findViewById<TextView>(R.id.cellLabel).text = appItem?.label ?: shortcutItem?.label ?: unavailableLabel.orEmpty()
+        val label = appItem?.label ?: shortcutItem?.label ?: unavailableLabel
         val packageStatus = appItem?.let(::packageStatus)
         view.contentDescription = if (label == null) "Empty, $location, row ${y + 1}, column ${x + 1}"
         else listOfNotNull(
@@ -550,6 +561,8 @@ class HomeActivity : AppCompatActivity() {
                     onPopup = { openContext(view, appItem, item.itemId, null) },
                     onDrag = { dragLayer.beginDrag(view, LauncherDrag(appItem, item.itemId)) },
                 )
+            } else {
+                view.setOnLongClickListener { openContext(view, appItem, item.itemId, null) }
             }
             addAccessibilityMoves(
                 view,
@@ -567,6 +580,11 @@ class HomeActivity : AppCompatActivity() {
                 onDrag = { dragLayer.beginDrag(view, LauncherDrag(null, item.itemId, shortcut = shortcutItem)) },
             )
             addAccessibilityMoves(view, item, x, y, onContext = { openShortcutContext(view, shortcutItem, item.itemId, null) })
+        } else if (item != null && unavailableLabel != null) {
+            view.tag = CellTarget(item.itemId)
+            val remove = { mutate { it.remove(item.itemId) } }
+            view.setOnLongClickListener { remove(); true }
+            addAccessibilityMoves(view, item, x, y, onRemove = remove)
         }
         return view
     }
@@ -724,6 +742,7 @@ class HomeActivity : AppCompatActivity() {
             }
             onMove = { member, rank -> mutate { it.moveFolderMember(folderId, member.itemId, rank) } }
             onRemove = { member -> removeMemberFromFolder(folderId, member) }
+            onDelete = { member -> mutate { it.remove(member.itemId) } }
         }
         folderPopup = popup
         dragLayer.folderPopup = popup
@@ -752,10 +771,10 @@ class HomeActivity : AppCompatActivity() {
     ): FolderEntry? = when (val memberPayload = payload) {
         is ItemPayload.Application -> byComponent[memberPayload.component.key()]?.let {
             FolderEntry(this, it.label, it.displayIcon(), app = it)
-        }
+        } ?: FolderEntry(this, getString(R.string.application_unavailable), null)
         is ItemPayload.Shortcut -> shortcuts[memberPayload.shortcut]?.let {
             FolderEntry(this, it.label, it.displayIcon(), shortcut = it)
-        }
+        } ?: FolderEntry(this, getString(R.string.shortcut_unavailable), null)
         is ItemPayload.Folder, is ItemPayload.Widget -> null
     }
 
@@ -1426,9 +1445,5 @@ private fun ItemPayload.profileId(): Long? = when (this) {
     is ItemPayload.Folder -> null
 }
 
-internal fun retainedShortcutIds(current: List<ShortcutId>, apps: List<LaunchableApp>): List<ShortcutId> {
-    val retained = apps.filter { it.packageState != PackageState.READY }
-        .map { PackageKey(it.packageName, it.profileId) }
-        .toSet()
-    return current.filter { PackageKey(it.`package`, it.profileId.toLong()) in retained }
-}
+internal fun retainedShortcutIds(current: List<ShortcutId>, authoritativePackage: PackageKey?): List<ShortcutId> =
+    current.filter { PackageKey(it.`package`, it.profileId.toLong()) != authoritativePackage }
