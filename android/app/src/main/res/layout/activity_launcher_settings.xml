@@ -100,6 +100,12 @@
             android:text="@string/backup_restore"
             android:textAppearance="?android:attr/textAppearanceMedium" />
 
+        <Switch
+            android:id="@+id/includeWorkBackup"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/backup_include_work" />
+
         <Button
             android:id="@+id/exportBackup"
             android:layout_width="match_parent"

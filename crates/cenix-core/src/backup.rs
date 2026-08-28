@@ -197,6 +197,22 @@ pub fn plan_backup_import(
     }
     validate_live_profiles(&target.profiles)?;
     let map = mapping_table(&document.profiles, &target.profiles, &mappings)?;
+    let omitted_work: Vec<_> = document
+        .profiles
+        .iter()
+        .filter(|profile| {
+            profile.kind == ProfileKind::Work && !map.contains_key(&profile.profile_id)
+        })
+        .map(|profile| profile.profile_id)
+        .collect();
+    for profile_id in omitted_work {
+        drop_profile(&mut document.workspace, profile_id)?;
+    }
+    document
+        .profiles
+        .retain(|profile| map.contains_key(&profile.profile_id));
+    let widgets = std::mem::take(&mut document.widgets);
+    document.widgets = filter_widget_metadata(&document.workspace, widgets)?;
     document.workspace.generation = target
         .generation
         .checked_add(1)
@@ -665,10 +681,9 @@ fn mapping_table(
             return Err(BackupError::InvalidProfile);
         }
     }
-    if source
-        .iter()
-        .any(|profile| !map.contains_key(&profile.profile_id))
-    {
+    if source.iter().any(|profile| {
+        profile.kind == ProfileKind::Personal && !map.contains_key(&profile.profile_id)
+    }) {
         return Err(BackupError::UnmappedProfile);
     }
     Ok(map)
@@ -1396,6 +1411,48 @@ mod tests {
             vec![BackupImportWarning::UnresolvedApplication { item_id: 1 }]
         );
         assert_eq!(plan.workspace.generation, 4);
+    }
+
+    #[test]
+    fn unmapped_work_is_omitted() {
+        let snapshot = workspace(
+            vec![
+                item(1, "personal", 0, 0),
+                WorkspaceItem {
+                    item_id: 2,
+                    payload: ItemPayload::Widget(WidgetProviderId {
+                        package: "work".into(),
+                        class: "Widget".into(),
+                        profile_id: 99,
+                    }),
+                    container: ContainerRef::Workspace { page_id: 10 },
+                    cell: CellRect::single(1, 0),
+                },
+            ],
+            default_pages(),
+        );
+        let document = build(
+            snapshot,
+            vec![BackupWidgetMetadata {
+                item_id: 2,
+                min_span_x: 1,
+                min_span_y: 1,
+                resize_x: 1,
+                resize_y: 1,
+            }],
+            true,
+            vec![live_personal(), live_work()],
+            3,
+            11,
+        )
+        .unwrap();
+
+        let plan = plan_backup_import(document, target(3, 3), map_personal()).unwrap();
+
+        assert_eq!(plan.workspace.items.len(), 1);
+        assert_eq!(plan.workspace.items[0].payload.profile_id(), Some(50));
+        assert!(plan.widgets.is_empty());
+        assert_eq!(plan.profiles, target(3, 3).profiles);
     }
 
     #[test]

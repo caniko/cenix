@@ -38,8 +38,13 @@
     <string name="backup_restore">Backup and restore</string>
     <string name="backup_export">Export launcher backup</string>
     <string name="backup_import">Import launcher backup</string>
+    <string name="backup_include_work">Include work profile in export</string>
     <string name="backup_replace">Replace Home screen</string>
     <string name="backup_import_confirmation">Replace the current Home screen with %1$d restored items? %2$d items are unavailable and will remain as placeholders.</string>
+    <string name="backup_import_work_confirmation">Replace the current Home screen with %1$d restored items and map work items to this device\'s work profile? %2$d items are unavailable and will remain as placeholders.</string>
+    <string name="backup_import_omit_work_confirmation">No available work profile was found. Replace the current Home screen with %1$d personal items and omit all work items? %2$d items are unavailable and will remain as placeholders.</string>
+    <string name="backup_replace_with_work">Replace and include work</string>
+    <string name="backup_replace_personal">Personal only</string>
     <string name="backup_exported">Launcher backup exported</string>
     <string name="backup_imported">Launcher backup imported</string>
     <string name="backup_failed">Backup operation failed</string>

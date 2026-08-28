@@ -39,7 +39,12 @@ import com.caniko.cenix.uniffi.planBackupImport
 import java.io.ByteArrayInputStream
 
 class LauncherSettingsActivity : AppCompatActivity() {
-    private data class PendingImport(val payload: String, val plan: BackupImportPlan)
+    private data class PendingImport(
+        val payload: String,
+        val personalPlan: BackupImportPlan,
+        val workPlan: BackupImportPlan?,
+        val hasWork: Boolean,
+    )
 
     private lateinit var app: CenixApplication
     private lateinit var options: RadioGroup
@@ -49,8 +54,10 @@ class LauncherSettingsActivity : AppCompatActivity() {
     private lateinit var notificationDots: Switch
     private lateinit var themedIcons: Switch
     private lateinit var autoAddApps: Switch
+    private lateinit var includeWorkBackup: Switch
     private lateinit var appearance: WallpaperAppearanceController
     private var binding = false
+    private var exportWork = false
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
         uri ?: return@registerForActivityResult
@@ -92,6 +99,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
         notificationDots = findViewById(R.id.notificationDots)
         themedIcons = findViewById(R.id.themedIcons)
         autoAddApps = findViewById(R.id.autoAddApps)
+        includeWorkBackup = findViewById(R.id.includeWorkBackup)
         findViewById<Button>(R.id.wallpaper).setOnClickListener {
             if (!SystemWallpaperPicker.open(this)) status.setText(R.string.wallpaper_unavailable)
         }
@@ -99,6 +107,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
             exportDiagnostics.launch("cenix-diagnostics.txt")
         }
         findViewById<Button>(R.id.exportBackup).setOnClickListener {
+            exportWork = includeWorkBackup.isChecked
             exportBackup.launch("cenix-backup.json")
         }
         findViewById<Button>(R.id.importBackup).setOnClickListener {
@@ -136,6 +145,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
         super.onResume()
         updateHomeRole()
         updateNotificationAccess()
+        updateBackupProfiles()
     }
 
     private fun bindGridOptions() {
@@ -202,6 +212,13 @@ class LauncherSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateBackupProfiles() {
+        val hasWork = ProfileController(this).also { it.refresh() }.profiles()
+            .any { it.descriptor.kind == ProfileKind.WORK }
+        includeWorkBackup.isEnabled = hasWork && !app.emergency
+        if (!hasWork) includeWorkBackup.isChecked = false
+    }
+
     private fun writeBackup(uri: Uri) {
         CenixExecutors.io {
             val success = try {
@@ -212,7 +229,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                         .map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
                     val document = BackupRepository(database).buildDocument(
                         profiles,
-                        includeWork = false,
+                        includeWork = exportWork,
                         sourceVersion = BuildConfig.VERSION_NAME,
                         sourceCommit = BuildConfig.GIT_COMMIT,
                     )
@@ -243,7 +260,6 @@ class LauncherSettingsActivity : AppCompatActivity() {
             ?: throw IllegalStateException("backup unavailable")
         if (bytes.size > BackupJsonCodec.MAX_BYTES) throw BackupJsonException("oversized")
         val document = BackupJsonCodec.read(ByteArrayInputStream(bytes))
-        if (document.profiles.any { it.kind != ProfileKind.PERSONAL }) throw BackupJsonException("work")
         val database = app.database ?: throw IllegalStateException("database unavailable")
         val repository = LauncherRepository(database)
         val profiles = ProfileController(this).also { it.refresh() }
@@ -253,17 +269,28 @@ class LauncherSettingsActivity : AppCompatActivity() {
         }
         val personal = liveProfiles.singleOrNull { it.descriptor.kind == ProfileKind.PERSONAL }
             ?: throw BackupJsonException("profile")
+        val work = liveProfiles.singleOrNull { it.descriptor.kind == ProfileKind.WORK }
         val profileRefs = liveProfiles.map { BackupProfileRef(it.descriptor.profileId, it.descriptor.kind) }
         val profileIds = profileRefs.mapTo(HashSet()) { it.profileId }
         val catalog = AppCatalog(this, profiles)
         val applications = catalog.load(liveProfiles).filter { it.profileId.toULong() in profileIds }.map {
             ComponentId(it.packageName, it.className, it.profileId.toULong())
         }
+        val mappings = document.profiles.mapNotNull { source ->
+            when (source.kind) {
+                ProfileKind.PERSONAL -> ProfileMapping(source.profileId, personal.descriptor.profileId)
+                ProfileKind.WORK -> work?.let { ProfileMapping(source.profileId, it.descriptor.profileId) }
+                ProfileKind.PRIVATE, ProfileKind.OTHER -> null
+            }
+        }
+        val profileMap = mappings.associate { it.sourceProfileId to it.targetProfileId }
         val requestedShortcuts = (
             document.workspace.items.map { it.payload } +
                 document.workspace.folders.flatMap { folder -> folder.members.map { it.payload } }
             ).mapNotNull { (it as? ItemPayload.Shortcut)?.shortcut }
-            .map { ShortcutId(it.`package`, it.shortcutId, personal.descriptor.profileId) }
+            .mapNotNull { shortcut ->
+                profileMap[shortcut.profileId]?.let { ShortcutId(shortcut.`package`, shortcut.shortcutId, it) }
+            }
         val shortcuts = ShortcutCatalog(this, catalog, profiles).resolve(requestedShortcuts).keys.toList()
         val widgetManager = getSystemService(AppWidgetManager::class.java)
         val widgets = liveProfiles.flatMap { profile ->
@@ -287,42 +314,58 @@ class LauncherSettingsActivity : AppCompatActivity() {
             minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
             maxOf(metrics.widthPixels, metrics.heightPixels) / metrics.density,
         ).map { it.name }
-        val plan = planBackupImport(
-            document,
-            BackupImportTarget(generation, generation, profileRefs, grids, applications, shortcuts, widgets),
-            listOf(ProfileMapping(0uL, personal.descriptor.profileId)),
-        )
-        return PendingImport(String(bytes, Charsets.UTF_8), plan)
+        val target = BackupImportTarget(generation, generation, profileRefs, grids, applications, shortcuts, widgets)
+        val personalMappings = mappings.filter { mapping ->
+            document.profiles.single { it.profileId == mapping.sourceProfileId }.kind == ProfileKind.PERSONAL
+        }
+        val personalPlan = planBackupImport(document, target, personalMappings)
+        val hasWork = document.profiles.any { it.kind == ProfileKind.WORK }
+        val workPlan = if (hasWork && work != null) planBackupImport(document, target, mappings) else null
+        return PendingImport(String(bytes, Charsets.UTF_8), personalPlan, workPlan, hasWork)
     }
 
     private fun confirmImport(pending: PendingImport) {
-        val itemCount = pending.plan.workspace.items.size + pending.plan.workspace.folders.sumOf { it.members.size }
-        val unresolved = pending.plan.unresolvedApplications.size + pending.plan.unresolvedShortcuts.size +
-            pending.plan.unresolvedWidgets.size
-        AlertDialog.Builder(this)
+        val builder = AlertDialog.Builder(this)
             .setTitle(R.string.backup_import)
-            .setMessage(getString(R.string.backup_import_confirmation, itemCount, unresolved))
             .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.backup_replace) { _, _ -> applyImport(pending) }
-            .show()
+        when {
+            pending.workPlan != null -> builder
+                .setMessage(importMessage(R.string.backup_import_work_confirmation, pending.workPlan))
+                .setPositiveButton(R.string.backup_replace_with_work) { _, _ -> applyImport(pending.payload, pending.workPlan) }
+                .setNeutralButton(R.string.backup_replace_personal) { _, _ -> applyImport(pending.payload, pending.personalPlan) }
+            pending.hasWork -> builder
+                .setMessage(importMessage(R.string.backup_import_omit_work_confirmation, pending.personalPlan))
+                .setPositiveButton(R.string.backup_replace_personal) { _, _ -> applyImport(pending.payload, pending.personalPlan) }
+            else -> builder
+                .setMessage(importMessage(R.string.backup_import_confirmation, pending.personalPlan))
+                .setPositiveButton(R.string.backup_replace) { _, _ -> applyImport(pending.payload, pending.personalPlan) }
+        }
+        builder.show()
     }
 
-    private fun applyImport(pending: PendingImport) {
+    private fun importMessage(message: Int, plan: BackupImportPlan): String {
+        val itemCount = plan.workspace.items.size + plan.workspace.folders.sumOf { it.members.size }
+        val unresolved = plan.unresolvedApplications.size + plan.unresolvedShortcuts.size + plan.unresolvedWidgets.size
+        return getString(message, itemCount, unresolved)
+    }
+
+    private fun applyImport(payload: String, plan: BackupImportPlan) {
         progress.visibility = View.VISIBLE
         CenixExecutors.io {
             val success = try {
                 if (app.emergency) false else {
                     val database = app.database ?: throw IllegalStateException("database unavailable")
                     val repository = BackupRepository(database)
-                    val expectedGeneration = pending.plan.workspace.generation.toLong() - 1
-                    repository.stage(RestoreSource.LOCAL, pending.payload, expectedGeneration, System.currentTimeMillis())
+                    val expectedGeneration = plan.workspace.generation.toLong() - 1
+                    repository.stage(RestoreSource.LOCAL, payload, expectedGeneration, System.currentTimeMillis())
                     repository.confirmLocal()
-                    repository.applyLocalPlan(pending.plan, pending.payload)
+                    repository.applyLocalPlan(plan, payload)
                     try {
                         AppWidgetHost(this, WidgetHostController.HOST_ID).deleteHost()
                     } catch (_: RuntimeException) {
                         Unit
                     }
+                    NotificationDotStore.setEnabled(plan.settings.notificationDots)
                     true
                 }
             } catch (_: Throwable) {
