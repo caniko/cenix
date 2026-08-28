@@ -506,10 +506,15 @@ set_fixture_wallpaper() {
   sleep 2
 }
 
+wait_launcher_settings() {
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_ui 'resource-id="com.caniko.cenix:id/themedIcons"' 1
+}
+
 open_launcher_settings() {
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
 }
@@ -557,7 +562,7 @@ probe_appearance_reboot() {
   local holders
   holders="$(role_holders)"
   echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing before reboot"
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell dumpsys activity top >"$art/wallpaper-prereboot-activity.txt"
   grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-prereboot-activity.txt" || fail "reboot probe: expected night settings before reboot"
   "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-prereboot.png"
@@ -717,7 +722,8 @@ wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "automatic placement: confirmed new install is placed without a duplicate callback path"
 open_all_apps
 tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+wait_launcher_settings
+"$adb" -s "$serial" shell input swipe 160 560 160 180 400
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
 sleep 1
@@ -755,7 +761,7 @@ pass "launch: KEYCODE_HOME returns to Cenix"
 if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notifications" || "$suite" == "full" ]]; then
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   ui="$(dump_ui)"
@@ -780,7 +786,7 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   sleep 2
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
   pass "settings: selected grid survives process recreation"
@@ -1520,7 +1526,7 @@ if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
   done
   grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" || fail "SAF export did not open the save surface"
   tap_any_pattern 'resource-id="android:id/button1"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   wait_ui 'text="Launcher backup exported"' 1
   "$adb" -s "$serial" pull /sdcard/Download/cenix-backup.json "$art/cenix-backup.json" >/dev/null || fail "SAF backup pull failed"
   [[ -s "$art/cenix-backup.json" ]] || fail "SAF export was empty"
