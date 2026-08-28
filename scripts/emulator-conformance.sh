@@ -508,7 +508,7 @@ set_fixture_wallpaper() {
 
 wait_launcher_settings() {
   wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
-  wait_ui 'resource-id="com.caniko.cenix:id/themedIcons"' 1
+  wait_ui 'resource-id="android:id/content"' 1
 }
 
 open_launcher_settings() {
