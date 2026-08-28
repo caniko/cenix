@@ -12,3 +12,5 @@ Reference: GrapheneOS Launcher3 branch `17`, commit `e5fde8f4368539554b07ee136ab
 | Placement | `ItemInstallQueue`; workspace model | Select the first launchable component deterministically, reject an existing package/profile icon, scan pages row-major, and allocate one monotonic page only when full. |
 
 Updates, replacement sessions, active-session placeholders, and package-change callbacks do not initiate placement. The Android layer classifies pre-commit sessions or a newly observed successful package add and selects a public launcher Activity; existing typed Rust commands perform page allocation and placement with generation checks, and Room remains the only durable authority.
+
+Final AOSP emulator and release evidence is recorded in [Notification and appearance conformance](notification-appearance-conformance.md).

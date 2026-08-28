@@ -15,3 +15,5 @@ Reference: GrapheneOS Launcher3 branch `17`, commit `e5fde8f4368539554b07ee136ab
 Notification keys, titles, text, people, package identities, and counts are not logged, exported, or persisted. Cenix retains only a bounded in-memory package/profile count and bounded shortcut-ID set, and clears affected state on authorization loss, profile inaccessibility, package removal, reset, and emergency mode.
 
 The context popup does not show notification content. The pinned source tree has dot projection but no current notification-row view implementation under `src/com/android/launcher3`; source comments and logging constants alone are not parity proof.
+
+Final AOSP emulator and release evidence is recorded in [Notification and appearance conformance](notification-appearance-conformance.md).

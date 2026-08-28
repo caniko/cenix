@@ -14,3 +14,5 @@ Reference: GrapheneOS Launcher3 branch `17`, commit `e5fde8f4368539554b07ee136ab
 Wallpaper URIs, bytes, colors, and palette values never enter Room or diagnostics. The shared icon cache is bounded to 256 entries and invalidated by package/profile, density, preference, and wallpaper appearance generation. Icon loading and theming occur on Cenix's existing background executor.
 
 The pinned launcher settings XML does not contain a wallpaper preference, so Cenix exposes wallpaper in the reference-ordered empty-workspace menu and as an explicit appearance action rather than claiming settings-screen parity.
+
+Final AOSP emulator, light/dark wallpaper, reboot, and release evidence is recorded in [Notification and appearance conformance](notification-appearance-conformance.md).
