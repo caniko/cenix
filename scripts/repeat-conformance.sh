@@ -8,10 +8,11 @@ echo "repeat conformance: $runs runs under $base"
 for i in $(seq 1 "$runs"); do
   start="$(date +%s)"
   art="$base/run-$i"
+  emu_port=$((5554 + (i - 1) * 4))
   mkdir -p "$art"
   echo "=== run $i/$runs ==="
   outcome="failed"
-  if CENIX_RUN_ID="repeat-$i-$$" CENIX_ARTIFACTS="$art" \
+  if CENIX_RUN_ID="repeat-$i-$$" CENIX_ARTIFACTS="$art" CENIX_EMU_PORT="$emu_port" \
     "$root/scripts/emulator-conformance.sh" --suite "${CENIX_SUITE:-full}" 2>&1 | tee "$art/assertions.log"; then
     outcome="passed"
   fi
