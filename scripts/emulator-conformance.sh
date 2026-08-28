@@ -703,6 +703,8 @@ tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
 sleep 1
 tap_any_pattern 'resource-id="android:id/button1"'
 wait_ui 'text="Local state reset"' 1
+"$adb" -s "$serial" shell input swipe 8 180 8 560 400
+"$adb" -s "$serial" shell input swipe 8 180 8 560 400
 tap_pattern 'resource-id="com.caniko.cenix:id/autoAddApps"'
 ui="$(dump_ui)"
 echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/autoAddApps"[^>]*checked="false"' || fail "automatic placement preference did not disable"
