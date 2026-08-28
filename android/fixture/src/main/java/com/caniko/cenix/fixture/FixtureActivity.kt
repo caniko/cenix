@@ -3,6 +3,9 @@ package com.caniko.cenix.fixture
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.WallpaperManager
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
 import android.widget.Button
@@ -19,6 +22,11 @@ class FixtureActivity : AppCompatActivity() {
         val manager = getSystemService(ShortcutManager::class.java)
         intent.getStringExtra(EXTRA_NOTIFICATION_COMMAND)?.let { command ->
             controlNotification(command)
+            finish()
+            return
+        }
+        intent.getStringExtra(EXTRA_WALLPAPER_COMMAND)?.let { command ->
+            setFixtureWallpaper(command)
             finish()
             return
         }
@@ -67,6 +75,18 @@ class FixtureActivity : AppCompatActivity() {
         setOnClickListener { block() }
     }
 
+    private fun setFixtureWallpaper(command: String) {
+        val color = when (command) {
+            "light" -> Color.WHITE
+            "dark" -> Color.BLACK
+            else -> return
+        }
+        val bitmap = Bitmap.createBitmap(320, 640, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        getSystemService(WallpaperManager::class.java).setBitmap(bitmap)
+        bitmap.recycle()
+    }
+
     private fun controlNotification(command: String) {
         val notifications = getSystemService(NotificationManager::class.java)
         notifications.createNotificationChannel(NotificationChannel(CHANNEL, "Fixture", NotificationManager.IMPORTANCE_DEFAULT))
@@ -90,5 +110,6 @@ class FixtureActivity : AppCompatActivity() {
     companion object {
         private const val CHANNEL = "fixture"
         private const val EXTRA_NOTIFICATION_COMMAND = "notification-command"
+        private const val EXTRA_WALLPAPER_COMMAND = "wallpaper-command"
     }
 }

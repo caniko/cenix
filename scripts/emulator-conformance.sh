@@ -488,6 +488,71 @@ open_fixture_control() {
   wait_resumed 'com.caniko.cenix.fixture/.FixtureActivity'
 }
 
+set_fixture_wallpaper() {
+  "$adb" -s "$serial" shell am start -S -n com.caniko.cenix.fixture/.FixtureActivity --es wallpaper-command "$1" >/dev/null
+  sleep 2
+}
+
+open_launcher_settings() {
+  open_all_apps
+  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+}
+
+capture_settings_appearance() {
+  local name="$1" want="$2"
+  "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-$name.png"
+  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-$name-activity.txt"
+  [[ -s "$art/wallpaper-$name.png" ]] || fail "empty $name appearance screenshot"
+  if [[ "$want" == "night" ]]; then
+    grep -q 'mLastConfigurationFromResources=.* notnight ' "$art/wallpaper-$name-activity.txt" && fail "$name wallpaper still reported notnight"
+    grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-$name-activity.txt" || fail "$name wallpaper did not produce a night settings configuration"
+  else
+    grep -q "mLastConfigurationFromResources=.* $want " "$art/wallpaper-$name-activity.txt" || fail "$name wallpaper did not produce a $want settings configuration"
+  fi
+}
+
+apply_fixture_wallpaper_appearance() {
+  set_fixture_wallpaper "$1"
+  "$adb" -s "$serial" shell am force-stop com.caniko.cenix
+  go_home
+  open_launcher_settings
+  capture_settings_appearance "$1" "$2"
+}
+
+# ponytail: adb reboot races boot/serial/HOME; opt-in with CENIX_APPEARANCE_REBOOT=1
+probe_appearance_reboot() {
+  local holders
+  holders="$(role_holders)"
+  echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing before reboot"
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-prereboot-activity.txt"
+  grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-prereboot-activity.txt" || fail "reboot probe: expected night settings before reboot"
+  "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-prereboot.png"
+  "$adb" -s "$serial" reboot
+  for _ in $(seq 1 60); do
+    if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+      break
+    fi
+    sleep 5
+  done
+  if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; then
+    fail "reboot probe: emulator did not come back"
+  fi
+  "$adb" -s "$serial" shell svc power stayon true >/dev/null
+  "$adb" -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null
+  "$adb" -s "$serial" shell wm dismiss-keyguard >/dev/null
+  holders="$(role_holders)"
+  echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing after reboot"
+  go_home
+  open_launcher_settings
+  "$adb" -s "$serial" shell dumpsys activity activities >"$art/wallpaper-postreboot-activity.txt"
+  grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-postreboot-activity.txt" || fail "reboot probe: dark appearance did not survive reboot"
+  "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-postreboot.png"
+  dump_ui | grep -q "$CENIX_GIT_COMMIT" || fail "reboot probe: settings build identity missing"
+  pass "appearance: reboot probe retained HOME, night config, and source commit"
+}
+
 role_holders() {
   "$adb" -s "$serial" shell cmd role get-role-holders android.app.role.HOME | tr -d '\r'
 }
@@ -745,17 +810,13 @@ if [[ "$suite" == "notifications" || "$suite" == "full" ]]; then
 fi
 
 if [[ "$suite" == "appearance" || "$suite" == "full" ]]; then
-  open_all_apps
-  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  open_launcher_settings
   tap_pattern 'resource-id="com.caniko.cenix:id/themedIcons"'
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/themedIcons"[^>]*checked="true"' || fail "themed icon preference did not enable"
   "$adb" -s "$serial" shell am force-stop com.caniko.cenix
   go_home
-  open_all_apps
-  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  open_launcher_settings
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/themedIcons"[^>]*checked="true"' || fail "themed icon preference did not survive recreation"
   tap_pattern 'resource-id="com.caniko.cenix:id/wallpaper"'
@@ -764,6 +825,15 @@ if [[ "$suite" == "appearance" || "$suite" == "full" ]]; then
   pass "appearance: system-owned wallpaper action opens and themed preference survives recreation"
   "$adb" -s "$serial" shell cmd wallpaper help >"$art/wallpaper-shell-capability.txt" 2>&1 || true
   "$adb" -s "$serial" shell input keyevent KEYCODE_BACK
+  go_home
+  apply_fixture_wallpaper_appearance light notnight
+  apply_fixture_wallpaper_appearance dark night
+  cmp -s "$art/wallpaper-light.png" "$art/wallpaper-dark.png" && fail "light and dark appearance screenshots were identical"
+  sha256sum "$art/wallpaper-light.png" "$art/wallpaper-dark.png" >"$art/wallpaper-screenshots.sha256"
+  pass "appearance: committed fixture drives light and dark settings appearance"
+  if [[ "${CENIX_APPEARANCE_REBOOT:-0}" == "1" ]]; then
+    probe_appearance_reboot
+  fi
   go_home
 fi
 

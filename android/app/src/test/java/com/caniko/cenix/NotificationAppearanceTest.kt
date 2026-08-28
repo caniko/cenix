@@ -1,6 +1,8 @@
 package com.caniko.cenix
 
 import android.app.Application
+import android.app.WallpaperColors
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import androidx.test.core.app.ApplicationProvider
@@ -44,6 +46,17 @@ class NotificationAppearanceTest {
         NotificationDotStore.replace(mapOf(PackageKey("pkg", 0) to NotificationDot(1, setOf("chat"))))
         assertEquals(1, NotificationDotStore.dot(shortcut("chat"))?.count)
         assertNull(NotificationDotStore.dot(shortcut("other")))
+    }
+
+    @Test
+    fun solidWallpapersMapToLightAndDarkHints() {
+        val light = Bitmap.createBitmap(320, 640, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val dark = Bitmap.createBitmap(320, 640, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
+        val lightHints = WallpaperColors.fromBitmap(light).colorHints
+        val darkHints = WallpaperColors.fromBitmap(dark).colorHints
+        assertEquals(WallpaperColors.HINT_SUPPORTS_DARK_TEXT, lightHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT)
+        assertEquals(0, lightHints and WallpaperColors.HINT_SUPPORTS_DARK_THEME)
+        assertEquals(WallpaperColors.HINT_SUPPORTS_DARK_THEME, darkHints and WallpaperColors.HINT_SUPPORTS_DARK_THEME)
     }
 
     @Test
