@@ -1528,19 +1528,20 @@ if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
   target_avd="${avd}-restore"
   echo no | "$avdmanager" create avd -f -n "$target_avd" -k "$image_pkg" >/dev/null
   target_created_avd=1
+  target_serial="emulator-$((emu_port + 2))"
   "$emulator_bin" -avd "$target_avd" -port $((emu_port + 2)) -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/target-emulator.log" 2>&1 &
   target_started=$!
   for _ in $(seq 1 90); do
-    target_serial="$(avd_serial "$target_avd" || true)"
-    [[ -n "$target_serial" ]] && break
+    [[ "$("$adb" -s "$target_serial" get-state 2>/dev/null || true)" == "device" ]] && break
     sleep 2
   done
-  [[ -n "$target_serial" ]] || fail "target AVD never appeared"
+  [[ "$("$adb" -s "$target_serial" get-state 2>/dev/null || true)" == "device" ]] || fail "target AVD never appeared"
   for _ in $(seq 1 60); do
     [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
     sleep 5
   done
   [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] || fail "target AVD did not boot"
+  [[ "$("$adb" -s "$target_serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')" == "$target_avd" ]] || fail "target AVD identity mismatch"
   source_serial="$serial"
   serial="$target_serial"
   configure_device
