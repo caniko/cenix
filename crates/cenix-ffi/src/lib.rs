@@ -298,6 +298,88 @@ pub struct WorkspaceTransition {
     pub changed_item_ids: Vec<u64>,
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct BackupSettings {
+    pub grid_name: String,
+    pub notification_dots: bool,
+    pub themed_icons: bool,
+    pub auto_add_apps: bool,
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct BackupProfileRef {
+    pub profile_id: u64,
+    pub kind: ProfileKind,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct BackupExportOptions {
+    pub include_work: bool,
+    pub source_version: String,
+    pub source_commit: String,
+    pub profiles: Vec<BackupProfileRef>,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct BackupWidgetMetadata {
+    pub item_id: u64,
+    pub min_span_x: i32,
+    pub min_span_y: i32,
+    pub resize_x: i32,
+    pub resize_y: i32,
+}
+
+#[derive(uniffi::Record)]
+pub struct BackupDocument {
+    pub format_version: u32,
+    pub source_version: String,
+    pub source_commit: String,
+    pub settings: BackupSettings,
+    pub profiles: Vec<BackupProfileRef>,
+    pub workspace: WorkspaceSnapshot,
+    pub widgets: Vec<BackupWidgetMetadata>,
+    pub next_item_id: u64,
+    pub next_page_id: u64,
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct ProfileMapping {
+    pub source_profile_id: u64,
+    pub target_profile_id: u64,
+}
+
+#[derive(uniffi::Record)]
+pub struct BackupImportTarget {
+    pub generation: u64,
+    pub expected_generation: u64,
+    pub profiles: Vec<BackupProfileRef>,
+    pub supported_grid_names: Vec<String>,
+    pub applications: Vec<ComponentId>,
+    pub shortcuts: Vec<ShortcutId>,
+    pub widget_providers: Vec<WidgetProviderId>,
+}
+
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum BackupImportWarning {
+    UnresolvedApplication { item_id: u64 },
+    UnresolvedShortcut { item_id: u64 },
+    UnresolvedWidget { item_id: u64 },
+}
+
+#[derive(uniffi::Record)]
+pub struct BackupImportPlan {
+    pub workspace: WorkspaceSnapshot,
+    pub settings: BackupSettings,
+    pub profiles: Vec<BackupProfileRef>,
+    pub widgets: Vec<BackupWidgetMetadata>,
+    pub next_item_id: u64,
+    pub next_page_id: u64,
+    pub unresolved_applications: Vec<u64>,
+    pub unresolved_shortcuts: Vec<u64>,
+    pub unresolved_widgets: Vec<u64>,
+    pub warnings: Vec<BackupImportWarning>,
+}
+
 #[derive(uniffi::Record)]
 pub struct DiagnosticsConfig {
     pub level: String,
@@ -330,6 +412,58 @@ pub enum WorkspaceError {
     Full,
     #[error("stale generation")]
     StaleGeneration,
+    #[error("invalid grid")]
+    InvalidGrid,
+    #[error("invalid title")]
+    InvalidTitle,
+    #[error("cross profile")]
+    CrossProfile,
+    #[error("widget is too large for grid")]
+    WidgetTooLarge,
+    #[error("invariant violation")]
+    InvariantViolation,
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum BackupError {
+    #[error("unsupported version")]
+    UnsupportedVersion,
+    #[error("invalid source metadata")]
+    InvalidSourceMetadata,
+    #[error("private profile")]
+    PrivateProfile,
+    #[error("invalid profile")]
+    InvalidProfile,
+    #[error("unmapped profile")]
+    UnmappedProfile,
+    #[error("duplicate mapping")]
+    DuplicateMapping,
+    #[error("duplicate id")]
+    DuplicateId,
+    #[error("duplicate component")]
+    DuplicateComponent,
+    #[error("duplicate shortcut")]
+    DuplicateShortcut,
+    #[error("invalid span")]
+    InvalidSpan,
+    #[error("invalid allocator")]
+    InvalidAllocator,
+    #[error("unsupported grid")]
+    UnsupportedGrid,
+    #[error("stale generation")]
+    StaleGeneration,
+    #[error("occupied")]
+    Occupied,
+    #[error("out of bounds")]
+    OutOfBounds,
+    #[error("missing item")]
+    MissingItem,
+    #[error("missing page")]
+    MissingPage,
+    #[error("missing folder")]
+    MissingFolder,
+    #[error("full")]
+    Full,
     #[error("invalid grid")]
     InvalidGrid,
     #[error("invalid title")]
@@ -430,6 +564,45 @@ pub fn apply_workspace_command(
 ) -> Result<WorkspaceTransition, WorkspaceError> {
     let transition = core::apply_workspace_command(snapshot.into(), command.into())?;
     Ok(transition.into())
+}
+
+#[uniffi::export]
+pub fn build_backup_document(
+    workspace: WorkspaceSnapshot,
+    settings: BackupSettings,
+    widgets: Vec<BackupWidgetMetadata>,
+    options: BackupExportOptions,
+    next_item_id: u64,
+    next_page_id: u64,
+) -> Result<BackupDocument, BackupError> {
+    Ok(core::build_backup_document(
+        workspace.into(),
+        settings.into(),
+        widgets.into_iter().map(Into::into).collect(),
+        options.into(),
+        next_item_id,
+        next_page_id,
+    )?
+    .into())
+}
+
+#[uniffi::export]
+pub fn validate_backup_document(document: BackupDocument) -> Result<(), BackupError> {
+    Ok(core::validate_backup_document(document.into())?)
+}
+
+#[uniffi::export]
+pub fn plan_backup_import(
+    document: BackupDocument,
+    target: BackupImportTarget,
+    mappings: Vec<ProfileMapping>,
+) -> Result<BackupImportPlan, BackupError> {
+    Ok(core::plan_backup_import(
+        document.into(),
+        target.into(),
+        mappings.into_iter().map(Into::into).collect(),
+    )?
+    .into())
 }
 
 impl From<ComponentId> for core::ComponentId {
@@ -724,6 +897,18 @@ impl From<WorkspaceSnapshot> for core::WorkspaceSnapshot {
     }
 }
 
+impl From<core::WorkspaceSnapshot> for WorkspaceSnapshot {
+    fn from(value: core::WorkspaceSnapshot) -> Self {
+        Self {
+            generation: value.generation,
+            grid: value.grid.into(),
+            pages: value.pages.into_iter().map(Into::into).collect(),
+            items: value.items.into_iter().map(Into::into).collect(),
+            folders: value.folders.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<WorkspaceCommand> for core::WorkspaceCommand {
     fn from(value: WorkspaceCommand) -> Self {
         match value {
@@ -975,6 +1160,210 @@ impl From<core::WorkspaceTransition> for WorkspaceTransition {
             created_page_ids: value.created_page_ids,
             removed_page_ids: value.removed_page_ids,
             changed_item_ids: value.changed_item_ids,
+        }
+    }
+}
+
+impl From<core::BackupError> for BackupError {
+    fn from(error: core::BackupError) -> Self {
+        match error {
+            core::BackupError::UnsupportedVersion => Self::UnsupportedVersion,
+            core::BackupError::InvalidSourceMetadata => Self::InvalidSourceMetadata,
+            core::BackupError::PrivateProfile => Self::PrivateProfile,
+            core::BackupError::InvalidProfile => Self::InvalidProfile,
+            core::BackupError::UnmappedProfile => Self::UnmappedProfile,
+            core::BackupError::DuplicateMapping => Self::DuplicateMapping,
+            core::BackupError::DuplicateId => Self::DuplicateId,
+            core::BackupError::DuplicateComponent => Self::DuplicateComponent,
+            core::BackupError::DuplicateShortcut => Self::DuplicateShortcut,
+            core::BackupError::InvalidSpan => Self::InvalidSpan,
+            core::BackupError::InvalidAllocator => Self::InvalidAllocator,
+            core::BackupError::UnsupportedGrid => Self::UnsupportedGrid,
+            core::BackupError::StaleGeneration => Self::StaleGeneration,
+            core::BackupError::Occupied => Self::Occupied,
+            core::BackupError::OutOfBounds => Self::OutOfBounds,
+            core::BackupError::MissingItem => Self::MissingItem,
+            core::BackupError::MissingPage => Self::MissingPage,
+            core::BackupError::MissingFolder => Self::MissingFolder,
+            core::BackupError::Full => Self::Full,
+            core::BackupError::InvalidGrid => Self::InvalidGrid,
+            core::BackupError::InvalidTitle => Self::InvalidTitle,
+            core::BackupError::CrossProfile => Self::CrossProfile,
+            core::BackupError::WidgetTooLarge => Self::WidgetTooLarge,
+            core::BackupError::InvariantViolation => Self::InvariantViolation,
+        }
+    }
+}
+
+impl From<BackupSettings> for core::BackupSettings {
+    fn from(value: BackupSettings) -> Self {
+        Self {
+            grid_name: value.grid_name,
+            notification_dots: value.notification_dots,
+            themed_icons: value.themed_icons,
+            auto_add_apps: value.auto_add_apps,
+        }
+    }
+}
+
+impl From<core::BackupSettings> for BackupSettings {
+    fn from(value: core::BackupSettings) -> Self {
+        Self {
+            grid_name: value.grid_name,
+            notification_dots: value.notification_dots,
+            themed_icons: value.themed_icons,
+            auto_add_apps: value.auto_add_apps,
+        }
+    }
+}
+
+impl From<BackupProfileRef> for core::BackupProfileRef {
+    fn from(value: BackupProfileRef) -> Self {
+        Self {
+            profile_id: value.profile_id,
+            kind: match value.kind {
+                ProfileKind::Personal => core::ProfileKind::Personal,
+                ProfileKind::Work => core::ProfileKind::Work,
+                ProfileKind::Private => core::ProfileKind::Private,
+                ProfileKind::Other => core::ProfileKind::Other,
+            },
+        }
+    }
+}
+
+impl From<core::BackupProfileRef> for BackupProfileRef {
+    fn from(value: core::BackupProfileRef) -> Self {
+        Self {
+            profile_id: value.profile_id,
+            kind: match value.kind {
+                core::ProfileKind::Personal => ProfileKind::Personal,
+                core::ProfileKind::Work => ProfileKind::Work,
+                core::ProfileKind::Private => ProfileKind::Private,
+                core::ProfileKind::Other => ProfileKind::Other,
+            },
+        }
+    }
+}
+
+impl From<BackupExportOptions> for core::BackupExportOptions {
+    fn from(value: BackupExportOptions) -> Self {
+        Self {
+            include_work: value.include_work,
+            source_version: value.source_version,
+            source_commit: value.source_commit,
+            profiles: value.profiles.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<BackupWidgetMetadata> for core::BackupWidgetMetadata {
+    fn from(value: BackupWidgetMetadata) -> Self {
+        Self {
+            item_id: value.item_id,
+            min_span_x: value.min_span_x,
+            min_span_y: value.min_span_y,
+            resize_x: value.resize_x,
+            resize_y: value.resize_y,
+        }
+    }
+}
+
+impl From<core::BackupWidgetMetadata> for BackupWidgetMetadata {
+    fn from(value: core::BackupWidgetMetadata) -> Self {
+        Self {
+            item_id: value.item_id,
+            min_span_x: value.min_span_x,
+            min_span_y: value.min_span_y,
+            resize_x: value.resize_x,
+            resize_y: value.resize_y,
+        }
+    }
+}
+
+impl From<BackupDocument> for core::BackupDocument {
+    fn from(value: BackupDocument) -> Self {
+        Self {
+            format_version: value.format_version,
+            source_version: value.source_version,
+            source_commit: value.source_commit,
+            settings: value.settings.into(),
+            profiles: value.profiles.into_iter().map(Into::into).collect(),
+            workspace: value.workspace.into(),
+            widgets: value.widgets.into_iter().map(Into::into).collect(),
+            next_item_id: value.next_item_id,
+            next_page_id: value.next_page_id,
+        }
+    }
+}
+
+impl From<core::BackupDocument> for BackupDocument {
+    fn from(value: core::BackupDocument) -> Self {
+        Self {
+            format_version: value.format_version,
+            source_version: value.source_version,
+            source_commit: value.source_commit,
+            settings: value.settings.into(),
+            profiles: value.profiles.into_iter().map(Into::into).collect(),
+            workspace: value.workspace.into(),
+            widgets: value.widgets.into_iter().map(Into::into).collect(),
+            next_item_id: value.next_item_id,
+            next_page_id: value.next_page_id,
+        }
+    }
+}
+
+impl From<ProfileMapping> for core::ProfileMapping {
+    fn from(value: ProfileMapping) -> Self {
+        Self {
+            source_profile_id: value.source_profile_id,
+            target_profile_id: value.target_profile_id,
+        }
+    }
+}
+
+impl From<BackupImportTarget> for core::BackupImportTarget {
+    fn from(value: BackupImportTarget) -> Self {
+        Self {
+            generation: value.generation,
+            expected_generation: value.expected_generation,
+            profiles: value.profiles.into_iter().map(Into::into).collect(),
+            supported_grid_names: value.supported_grid_names,
+            applications: value.applications.into_iter().map(Into::into).collect(),
+            shortcuts: value.shortcuts.into_iter().map(Into::into).collect(),
+            widget_providers: value.widget_providers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<core::BackupImportWarning> for BackupImportWarning {
+    fn from(value: core::BackupImportWarning) -> Self {
+        match value {
+            core::BackupImportWarning::UnresolvedApplication { item_id } => {
+                Self::UnresolvedApplication { item_id }
+            }
+            core::BackupImportWarning::UnresolvedShortcut { item_id } => {
+                Self::UnresolvedShortcut { item_id }
+            }
+            core::BackupImportWarning::UnresolvedWidget { item_id } => {
+                Self::UnresolvedWidget { item_id }
+            }
+        }
+    }
+}
+
+impl From<core::BackupImportPlan> for BackupImportPlan {
+    fn from(value: core::BackupImportPlan) -> Self {
+        Self {
+            workspace: value.workspace.into(),
+            settings: value.settings.into(),
+            profiles: value.profiles.into_iter().map(Into::into).collect(),
+            widgets: value.widgets.into_iter().map(Into::into).collect(),
+            next_item_id: value.next_item_id,
+            next_page_id: value.next_page_id,
+            unresolved_applications: value.unresolved_applications,
+            unresolved_shortcuts: value.unresolved_shortcuts,
+            unresolved_widgets: value.unresolved_widgets,
+            warnings: value.warnings.into_iter().map(Into::into).collect(),
         }
     }
 }

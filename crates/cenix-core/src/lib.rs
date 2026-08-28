@@ -1,7 +1,14 @@
 #![forbid(unsafe_code)]
 
+mod backup;
 mod workspace;
 
+pub use backup::{
+    BACKUP_FORMAT_VERSION, BackupDocument, BackupError, BackupExportOptions, BackupImportPlan,
+    BackupImportTarget, BackupImportWarning, BackupProfileRef, BackupSettings,
+    BackupWidgetMetadata, LOGICAL_PERSONAL_PROFILE_ID, LOGICAL_WORK_PROFILE_ID, ProfileMapping,
+    build_backup_document, plan_backup_import, validate_backup_document,
+};
 pub use workspace::{
     CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload, ShortcutId,
     WidgetMinimumSpan, WidgetProviderId, WorkspaceCommand, WorkspaceError, WorkspaceItem,

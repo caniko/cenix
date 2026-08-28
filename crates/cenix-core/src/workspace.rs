@@ -1221,7 +1221,7 @@ fn remove_profiles(
 }
 
 impl ItemPayload {
-    fn profile_id(&self) -> Option<u64> {
+    pub(crate) fn profile_id(&self) -> Option<u64> {
         match self {
             Self::Application(component) => Some(component.profile_id),
             Self::Shortcut(shortcut) => Some(shortcut.profile_id),
@@ -1769,6 +1769,15 @@ fn sort_snapshot(snapshot: &mut WorkspaceSnapshot) {
         };
         (kind, rank, item.cell.cell_y, item.cell.cell_x, item.item_id)
     });
+}
+
+pub(crate) fn prepare_snapshot(snapshot: &mut WorkspaceSnapshot) -> Result<(), WorkspaceError> {
+    normalize_pages(&mut snapshot.pages)?;
+    trim_empty_trailing_pages(snapshot);
+    normalize_pages(&mut snapshot.pages)?;
+    normalize_folders(&mut snapshot.folders);
+    sort_snapshot(snapshot);
+    validate_snapshot(snapshot)
 }
 
 fn changed_items(before: &WorkspaceSnapshot, after: &WorkspaceSnapshot) -> Vec<u64> {
