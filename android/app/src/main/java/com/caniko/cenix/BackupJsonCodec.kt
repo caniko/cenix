@@ -857,18 +857,10 @@ object BackupJsonCodec {
     }
 
     private fun readBounded(input: InputStream): ByteArray {
-        val buf = ByteArrayOutputStream()
-        val tmp = ByteArray(8192)
-        var total = 0
-        while (true) {
-            val n = input.read(tmp)
-            if (n < 0) break
-            if (n > MAX_BYTES - total) throw BackupJsonException("oversized")
-            total += n
-            buf.write(tmp, 0, n)
-        }
-        if (total == 0) throw BackupJsonException("truncated")
-        return buf.toByteArray()
+        val bytes = input.readNBytes(MAX_BYTES + 1)
+        if (bytes.size > MAX_BYTES) throw BackupJsonException("oversized")
+        if (bytes.isEmpty()) throw BackupJsonException("truncated")
+        return bytes
     }
 
     private fun decodeUtf8(bytes: ByteArray): String {
