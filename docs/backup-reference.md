@@ -2,7 +2,7 @@
 
 Clean-room behavioral inventory. Reference pin: GrapheneOS `platform_packages_apps_Launcher3` commit `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Public names from Android 35 `android.jar`. Cenix does not copy Launcher3 database, agent, or restore-task code.
 
-This document is the P5C contract. The source implementation exists, but it is not emulator or device evidence.
+This document is the P5C contract. Local-transport and SAF execution have isolated AOSP emulator evidence; external transport and physical-device behavior remain unproven.
 
 ## P5C scope
 
@@ -51,7 +51,7 @@ Exclude:
 | Organizer layout blobs | `src/com/android/launcher3/util/LayoutImportExportHelper.kt` | Do not call | `INTENTIONALLY_OMITTED` | `SRC` |
 | `BackupManager.requestRestore` | public, `@Deprecated` | Do not call | `INTENTIONALLY_OMITTED` | `API` |
 | Transport / Seedvault / cloud | not in Launcher3 source as a Cenix-owned API | User and OEM transport; GrapheneOS behavior unobserved | `TRANSPORT_CONTROLLED` | `UNKNOWN` |
-| Device proof | — | None until an isolated AOSP run and a mustang run exist | — | no `AOSP_EMU`, no `GOS_DEV` |
+| Device proof | — | Local AOSP transport and fresh-AVD SAF restore passed; no mustang run exists | — | `AOSP_EMU`, no `GOS_DEV` |
 
 ## Artifact and UniFFI
 

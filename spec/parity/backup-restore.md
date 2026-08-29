@@ -1,7 +1,7 @@
 # Backup and restore parity contract
 
 Evidence labels: `SRC`, `API`, `AOSP_EMU`, `GOS_DEV`, `SYSTEM`, `UNKNOWN`.
-The source implementation has `SRC` + `API` evidence only. Do not treat it as `AOSP_EMU` or `GOS_DEV`.
+The source implementation has `SRC` + `API` evidence. AOSP local-transport and fresh-AVD SAF restore have `AOSP_EMU` evidence; do not treat them as external-transport or `GOS_DEV` proof.
 
 ## Domain
 
@@ -57,5 +57,5 @@ Incremental key/value backup, raw database restore, file-system items, custom wi
 | Public backup and widget restore APIs | `API` |
 | Quickstep restore logger is SystemApi | `SRC`, `SYSTEM` |
 | Cenix P5C source/build implementation | `SRC`, `API` |
-| Isolated emulator restore | no `AOSP_EMU` |
+| Isolated emulator local-transport and SAF restore | `AOSP_EMU` |
 | GrapheneOS mustang / Seedvault | no `GOS_DEV`; transport is `UNKNOWN` |
