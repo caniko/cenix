@@ -1,6 +1,6 @@
 # Android backup capability
 
-Public API 35 plus Launcher3 `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Source presence is not user-visible proof. No `AOSP_EMU` or `GOS_DEV` claim is made.
+Public API 35 plus Launcher3 `e5fde8f4368539554b07ee136abd27bc7b4284c1`. Source presence is not user-visible proof. AOSP local-transport execution is proven; no external-transport or `GOS_DEV` claim is made.
 
 ## Public boundary
 
@@ -48,4 +48,4 @@ Any installable app may declare a `BackupAgent`. Whether a payload moves is the 
 - Widget IDs rebind only through the public host-restored broadcast and the existing Room widget journal.
 - Emergency and native-absent HOME never parse restore input.
 
-The manifest now declares the custom full-backup agent and extraction rules for only `files/transport/cenix-backup.json`. This is source/build evidence only; transport behavior remains unclaimed until emulator and device execution.
+The manifest declares the custom full-backup agent and extraction rules for only `files/transport/cenix-backup.json`. AOSP local transport accepted and restored that artifact across clean data and reboot. Cloud, D2D, Seedvault, and GrapheneOS transport behavior remain unclaimed.

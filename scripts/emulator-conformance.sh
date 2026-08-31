@@ -102,7 +102,7 @@ avd_serial() {
   local wanted="${1:-$avd}" serial name
   while read -r serial _; do
     [[ -z "${serial:-}" ]] && continue
-    name="$("$adb" -s "$serial" emu avd name 2>/dev/null | tr -d '\r' | head -n1 || true)"
+    name="$("$adb" -s "$serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
     if [[ "$name" == "$wanted" ]]; then
       printf '%s\n' "$serial"
       return 0
@@ -132,7 +132,23 @@ cleanup() {
   [[ -z "${CENIX_AVD:-}" && "$created_avd" == "1" ]] && "$avdmanager" delete avd -n "$avd" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-emu_port="${CENIX_EMU_PORT:-$((5554 + RANDOM % 15 * 2))}"
+if [[ -n "$serial" ]]; then
+  emu_port="${serial#emulator-}"
+elif [[ -n "${CENIX_EMU_PORT:-}" ]]; then
+  emu_port="$CENIX_EMU_PORT"
+else
+  devices="$("$adb" devices)"
+  port_start=$((RANDOM % 8))
+  emu_port=""
+  for offset in $(seq 0 7); do
+    candidate=$((5554 + ((port_start + offset) % 8) * 4))
+    if ! grep -Eq "^emulator-($((candidate - 2))|$candidate|$((candidate + 2)))[[:space:]]" <<<"$devices"; then
+      emu_port="$candidate"
+      break
+    fi
+  done
+  [[ -n "$emu_port" ]] || { echo "no free emulator source/target port pair" >&2; exit 1; }
+fi
 rtl_boot=()
 if [[ "${CENIX_FORCE_RTL:-false}" == "true" ]]; then
   rtl_boot=(-prop debug.force_rtl=true)
@@ -554,7 +570,7 @@ set_fixture_wallpaper() {
 open_launcher_settings() {
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
 }
@@ -609,7 +625,7 @@ probe_appearance_reboot() {
   local holders
   holders="$(role_holders)"
   echo "$holders" | grep -q 'com.caniko.cenix' || fail "reboot probe: HOME missing before reboot"
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell dumpsys activity top >"$art/wallpaper-prereboot-activity.txt"
   grep -q 'mLastConfigurationFromResources=.* night ' "$art/wallpaper-prereboot-activity.txt" || fail "reboot probe: expected night settings before reboot"
   "$adb" -s "$serial" exec-out screencap -p >"$art/wallpaper-prereboot.png"
@@ -774,7 +790,7 @@ wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "automatic placement: confirmed new install is placed without a duplicate callback path"
 open_all_apps
 tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+wait_launcher_settings
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
@@ -813,24 +829,21 @@ pass "launch: KEYCODE_HOME returns to Cenix"
 if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notifications" || "$suite" == "full" ]]; then
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
-  ui="$(dump_ui)"
   for control in wallpaper themedIcons notificationDots autoAddApps; do
-    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$control\"" || fail "P5B setting missing: $control"
+    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$control\""
   done
   for grid in grid_2_by_2 grid_3_by_3 grid_4_by_4; do
-    echo "$ui" | grep -q "resource-id=\"com.caniko.cenix:id/$grid\"" || fail "compatible setting missing: $grid"
+    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$grid\""
   done
-  echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
-  "$adb" -s "$serial" shell input swipe 160 560 160 180 400
   ui="$(dump_ui)"
-  echo "$ui" | grep -q "$CENIX_GIT_COMMIT" || fail "settings build identity missing exact source commit"
+  echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
+  scroll_settings_to "$CENIX_GIT_COMMIT"
   pass "settings: finite compatible phone grids and build identity are visible"
 
-  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
-  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"' down
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   wait_ui 'text="Grid applied"' 1
   device_settings_ui="$(dump_ui)"
@@ -840,7 +853,8 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   sleep 2
   open_all_apps
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
+  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
   pass "settings: selected grid survives process recreation"
@@ -1640,7 +1654,7 @@ if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
   done
   grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" || fail "SAF export did not open the save surface"
   tap_any_pattern 'resource-id="android:id/button1"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   wait_ui 'text="Launcher backup exported"' 1
   "$adb" -s "$serial" pull /sdcard/Download/cenix-backup.json "$art/cenix-backup.json" >/dev/null || fail "SAF backup pull failed"
   [[ -s "$art/cenix-backup.json" ]] || fail "SAF export was empty"
@@ -1653,7 +1667,7 @@ if [[ "$suite" == "backup" || "$suite" == "full" ]]; then
   done
   grep -q 'resource-id="android:id/button1".*text="SAVE"\|text="SAVE".*resource-id="android:id/button1"' <<<"$ui" || fail "second SAF export did not open the save surface"
   tap_any_pattern 'resource-id="android:id/button1"'
-  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+  wait_launcher_settings
   wait_ui 'text="Launcher backup exported"' 1
   "$adb" -s "$serial" pull /sdcard/Download/cenix-backup.json "$art/cenix-backup-repeat.json" >/dev/null || fail "second SAF backup pull failed"
   cmp -s "$art/cenix-backup.json" "$art/cenix-backup-repeat.json" || fail "repeat SAF exports were not byte-identical"
@@ -1693,6 +1707,7 @@ PY
     sleep 2
   done
   [[ -n "$target_serial" ]] || fail "target AVD never appeared"
+  [[ "$("$adb" -s "$target_serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')" == "$target_avd" ]] || fail "target AVD identity mismatch"
   for _ in $(seq 1 60); do
     [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
     sleep 5

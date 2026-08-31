@@ -42,6 +42,19 @@ That script:
 15. The `profiles` suite creates managed/private profiles, applies a minimal test DPC for work widgets, and verifies profile launch, shortcuts, widgets, quiet/unquiet, package isolation, permanent removal, and private lock leakage
 16. The `settings` suite checks finite compatible grids, build identity, recreation, confirmation, and shrink/repeat/expand migration
 17. The `packages` suite checks suspended, disabled, replacement-update, and removal presentation without durable package state
+18. The `backup` suite checks local-transport clean-data restore, reboot persistence, SAF export/import on a fresh AVD, disabled-auto-add absence before import, and target reboot persistence
+
+Final P5C evidence used clean commit `a01cc8903ba099e3f91ee6bae4f51f9a7acd67e7`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `d7b3afeb3881bd5f2945bd786d23a154ecd10be9c8872eb3057e9d96192cd080`.
+
+| Run | Serial | Duration | Evidence |
+| --- | --- | ---: | --- |
+| 1 | `emulator-5562` | 1679s | `AOSP_EMU` |
+| 2 | `emulator-5566` | 1665s | `AOSP_EMU` |
+| 3 | `emulator-5562` | 1670s | `AOSP_EMU` |
+| 4 | `emulator-5566` | 1664s | `AOSP_EMU` |
+| 5 | `emulator-5566` | 1663s | `AOSP_EMU` |
+
+The same commit passed forced RTL (`emulator-5562`) and font scale 1.3 (`emulator-5582`). Two clean unsigned release builds were byte-identical at SHA-256 `fe65d2258e15251b6fedd8a366b527ca115b04ec3a80f85f9b251024da2e8092`; the linked CycloneDX SBOM validated 326 components. See [Backup and restore conformance](backup-restore-conformance.md). Artifacts are under `/tmp/cenix-repeat-1538162` and `/tmp/cenix-p5c-final-a01cc89/{rtl,font-1.3}`. This is local `AOSP_EMU` evidence, never external-transport or `GOS_DEV` proof.
 
 Final P5A production evidence used clean implementation commit `235a0e5fb6ec453728fbbde076074358cef1e9a3`, AOSP API 35 `default` x86_64 image revision 2, and debug APK SHA-256 `9b0513b3f65e4d4cbbe4be3eea963599c4dac39c4dc8aa7e6f8b2175acb42aa1`.
 

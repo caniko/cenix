@@ -31,8 +31,8 @@ Classes include `TRANSPORT_CONTROLLED` for destinations Cenix does not own (Andr
 | Wallpaper / dynamic colors | `USER_AUTHORIZED` | P5B implemented | `ACTION_SET_WALLPAPER`, `WallpaperColors`, system dynamic resources; emulator evidence pending final matrix |
 | Themed icons | `INSTALLABLE_PUBLIC` | P5B implemented | public adaptive monochrome layer with original-icon fallback |
 | Grid migration | `INSTALLABLE_PUBLIC` | done | Room/Rust transaction and emulator evidence |
-| Android backup / `BackupAgent` | `TRANSPORT_CONTROLLED` | P5C contract | public agent carries the bounded personal-only artifact; transport execution remains unproven |
-| Launcher layout export/import | `USER_AUTHORIZED` | P5C contract | SAF JSON artifact; typed UniFFI; Room v9 journal/replace |
+| Android backup / `BackupAgent` | `TRANSPORT_CONTROLLED` | P5C done | bounded personal-only artifact; local AOSP transport proven, external transports unproven |
+| Launcher layout export/import | `USER_AUTHORIZED` | P5C done | SAF JSON artifact; typed UniFFI; Room v9 journal/replace; fresh-AVD `emu` |
 | Backup file destination after SAF | `TRANSPORT_CONTROLLED` | P5C contract | user/OS owned; no Cenix upload |
 | Accessibility | `INSTALLABLE_PUBLIC` | partial | content descriptions; no TalkBack pass |
 | Secondary display | `INSTALLABLE_PUBLIC` | omitted | `SECONDARY_HOME`; not phone v1 |
