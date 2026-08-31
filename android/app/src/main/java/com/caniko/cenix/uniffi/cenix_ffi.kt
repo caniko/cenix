@@ -713,6 +713,20 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -728,7 +742,21 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
+    fun uniffi_cenix_ffi_checksum_func_apply_workspace_command(
+): Short
+fun uniffi_cenix_ffi_checksum_func_build_backup_document(
+): Short
+fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
+): Short
+fun uniffi_cenix_ffi_checksum_func_init_diagnostics(
+): Short
+fun uniffi_cenix_ffi_checksum_func_native_panicked(
+): Short
+fun uniffi_cenix_ffi_checksum_func_plan_backup_import(
+): Short
+fun uniffi_cenix_ffi_checksum_func_project_profile_item(
+): Short
+fun uniffi_cenix_ffi_checksum_func_validate_backup_document(
 ): Short
 fun ffi_cenix_ffi_uniffi_contract_version(
 ): Int
@@ -775,8 +803,22 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_cenix_ffi_fn_func_apply_workspace_command(`snapshot`: RustBuffer.ByValue,`command`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_build_backup_document(`workspace`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,`widgets`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`nextItemId`: Long,`nextPageId`: Long,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_init_diagnostics(`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Unit
+fun uniffi_cenix_ffi_fn_func_native_panicked(uniffi_out_err: UniffiRustCallStatus,
+): Byte
+fun uniffi_cenix_ffi_fn_func_plan_backup_import(`document`: RustBuffer.ByValue,`target`: RustBuffer.ByValue,`mappings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_project_profile_item(`profile`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_validate_backup_document(`document`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Unit
 fun ffi_cenix_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_cenix_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -903,7 +945,28 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_cenix_ffi_checksum_func_apply_workspace_command() != 56944.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_build_backup_document() != 55615.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cenix_ffi_checksum_func_filter_and_order_apps() != 6283.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_init_diagnostics() != 51253.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_native_panicked() != 51392.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_plan_backup_import() != 11565.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_project_profile_item() != 373.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_validate_backup_document() != 7715.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -988,6 +1051,52 @@ object NoPointer
 /**
  * @suppress
  */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterInt: FfiConverter<Int, Int> {
+    override fun lift(value: Int): Int {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Int {
+        return buf.getInt()
+    }
+
+    override fun lower(value: Int): Int {
+        return value
+    }
+
+    override fun allocationSize(value: Int) = 4UL
+
+    override fun write(value: Int, buf: ByteBuffer) {
+        buf.putInt(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterULong: FfiConverter<ULong, Long> {
     override fun lift(value: Long): ULong {
         return value.toULong()
@@ -1005,6 +1114,29 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
 
     override fun write(value: ULong, buf: ByteBuffer) {
         buf.putLong(value.toLong())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
+    override fun lift(value: Byte): Boolean {
+        return value.toInt() != 0
+    }
+
+    override fun read(buf: ByteBuffer): Boolean {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: Boolean): Byte {
+        return if (value) 1.toByte() else 0.toByte()
+    }
+
+    override fun allocationSize(value: Boolean) = 1UL
+
+    override fun write(value: Boolean, buf: ByteBuffer) {
+        buf.put(lower(value))
     }
 }
 
@@ -1143,6 +1275,1454 @@ public object FfiConverterTypeAppId: FfiConverterRustBuffer<AppId> {
 
 
 
+data class BackupDocument (
+    var `formatVersion`: kotlin.UInt,
+    var `sourceVersion`: kotlin.String,
+    var `sourceCommit`: kotlin.String,
+    var `settings`: BackupSettings,
+    var `profiles`: List<BackupProfileRef>,
+    var `workspace`: WorkspaceSnapshot,
+    var `widgets`: List<BackupWidgetMetadata>,
+    var `nextItemId`: kotlin.ULong,
+    var `nextPageId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupDocument: FfiConverterRustBuffer<BackupDocument> {
+    override fun read(buf: ByteBuffer): BackupDocument {
+        return BackupDocument(
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeBackupSettings.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterTypeWorkspaceSnapshot.read(buf),
+            FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupDocument) = (
+            FfiConverterUInt.allocationSize(value.`formatVersion`) +
+            FfiConverterString.allocationSize(value.`sourceVersion`) +
+            FfiConverterString.allocationSize(value.`sourceCommit`) +
+            FfiConverterTypeBackupSettings.allocationSize(value.`settings`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterTypeWorkspaceSnapshot.allocationSize(value.`workspace`) +
+            FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterULong.allocationSize(value.`nextItemId`) +
+            FfiConverterULong.allocationSize(value.`nextPageId`)
+    )
+
+    override fun write(value: BackupDocument, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`formatVersion`, buf)
+            FfiConverterString.write(value.`sourceVersion`, buf)
+            FfiConverterString.write(value.`sourceCommit`, buf)
+            FfiConverterTypeBackupSettings.write(value.`settings`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterTypeWorkspaceSnapshot.write(value.`workspace`, buf)
+            FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterULong.write(value.`nextItemId`, buf)
+            FfiConverterULong.write(value.`nextPageId`, buf)
+    }
+}
+
+
+
+data class BackupExportOptions (
+    var `includeWork`: kotlin.Boolean,
+    var `sourceVersion`: kotlin.String,
+    var `sourceCommit`: kotlin.String,
+    var `profiles`: List<BackupProfileRef>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupExportOptions: FfiConverterRustBuffer<BackupExportOptions> {
+    override fun read(buf: ByteBuffer): BackupExportOptions {
+        return BackupExportOptions(
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupExportOptions) = (
+            FfiConverterBoolean.allocationSize(value.`includeWork`) +
+            FfiConverterString.allocationSize(value.`sourceVersion`) +
+            FfiConverterString.allocationSize(value.`sourceCommit`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`)
+    )
+
+    override fun write(value: BackupExportOptions, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`includeWork`, buf)
+            FfiConverterString.write(value.`sourceVersion`, buf)
+            FfiConverterString.write(value.`sourceCommit`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+    }
+}
+
+
+
+data class BackupImportPlan (
+    var `workspace`: WorkspaceSnapshot,
+    var `settings`: BackupSettings,
+    var `profiles`: List<BackupProfileRef>,
+    var `widgets`: List<BackupWidgetMetadata>,
+    var `nextItemId`: kotlin.ULong,
+    var `nextPageId`: kotlin.ULong,
+    var `unresolvedApplications`: List<kotlin.ULong>,
+    var `unresolvedShortcuts`: List<kotlin.ULong>,
+    var `unresolvedWidgets`: List<kotlin.ULong>,
+    var `warnings`: List<BackupImportWarning>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportPlan: FfiConverterRustBuffer<BackupImportPlan> {
+    override fun read(buf: ByteBuffer): BackupImportPlan {
+        return BackupImportPlan(
+            FfiConverterTypeWorkspaceSnapshot.read(buf),
+            FfiConverterTypeBackupSettings.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceTypeBackupImportWarning.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupImportPlan) = (
+            FfiConverterTypeWorkspaceSnapshot.allocationSize(value.`workspace`) +
+            FfiConverterTypeBackupSettings.allocationSize(value.`settings`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterULong.allocationSize(value.`nextItemId`) +
+            FfiConverterULong.allocationSize(value.`nextPageId`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedApplications`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedShortcuts`) +
+            FfiConverterSequenceULong.allocationSize(value.`unresolvedWidgets`) +
+            FfiConverterSequenceTypeBackupImportWarning.allocationSize(value.`warnings`)
+    )
+
+    override fun write(value: BackupImportPlan, buf: ByteBuffer) {
+            FfiConverterTypeWorkspaceSnapshot.write(value.`workspace`, buf)
+            FfiConverterTypeBackupSettings.write(value.`settings`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterULong.write(value.`nextItemId`, buf)
+            FfiConverterULong.write(value.`nextPageId`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedApplications`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedShortcuts`, buf)
+            FfiConverterSequenceULong.write(value.`unresolvedWidgets`, buf)
+            FfiConverterSequenceTypeBackupImportWarning.write(value.`warnings`, buf)
+    }
+}
+
+
+
+data class BackupImportTarget (
+    var `generation`: kotlin.ULong,
+    var `expectedGeneration`: kotlin.ULong,
+    var `profiles`: List<BackupProfileRef>,
+    var `supportedGridNames`: List<kotlin.String>,
+    var `applications`: List<ComponentId>,
+    var `shortcuts`: List<ShortcutId>,
+    var `widgetProviders`: List<WidgetProviderId>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportTarget: FfiConverterRustBuffer<BackupImportTarget> {
+    override fun read(buf: ByteBuffer): BackupImportTarget {
+        return BackupImportTarget(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceTypeComponentId.read(buf),
+            FfiConverterSequenceTypeShortcutId.read(buf),
+            FfiConverterSequenceTypeWidgetProviderId.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupImportTarget) = (
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterULong.allocationSize(value.`expectedGeneration`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
+            FfiConverterSequenceString.allocationSize(value.`supportedGridNames`) +
+            FfiConverterSequenceTypeComponentId.allocationSize(value.`applications`) +
+            FfiConverterSequenceTypeShortcutId.allocationSize(value.`shortcuts`) +
+            FfiConverterSequenceTypeWidgetProviderId.allocationSize(value.`widgetProviders`)
+    )
+
+    override fun write(value: BackupImportTarget, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterULong.write(value.`expectedGeneration`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
+            FfiConverterSequenceString.write(value.`supportedGridNames`, buf)
+            FfiConverterSequenceTypeComponentId.write(value.`applications`, buf)
+            FfiConverterSequenceTypeShortcutId.write(value.`shortcuts`, buf)
+            FfiConverterSequenceTypeWidgetProviderId.write(value.`widgetProviders`, buf)
+    }
+}
+
+
+
+data class BackupProfileRef (
+    var `profileId`: kotlin.ULong,
+    var `kind`: ProfileKind
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupProfileRef: FfiConverterRustBuffer<BackupProfileRef> {
+    override fun read(buf: ByteBuffer): BackupProfileRef {
+        return BackupProfileRef(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeProfileKind.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupProfileRef) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterTypeProfileKind.allocationSize(value.`kind`)
+    )
+
+    override fun write(value: BackupProfileRef, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterTypeProfileKind.write(value.`kind`, buf)
+    }
+}
+
+
+
+data class BackupSettings (
+    var `gridName`: kotlin.String,
+    var `notificationDots`: kotlin.Boolean,
+    var `themedIcons`: kotlin.Boolean,
+    var `autoAddApps`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupSettings: FfiConverterRustBuffer<BackupSettings> {
+    override fun read(buf: ByteBuffer): BackupSettings {
+        return BackupSettings(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupSettings) = (
+            FfiConverterString.allocationSize(value.`gridName`) +
+            FfiConverterBoolean.allocationSize(value.`notificationDots`) +
+            FfiConverterBoolean.allocationSize(value.`themedIcons`) +
+            FfiConverterBoolean.allocationSize(value.`autoAddApps`)
+    )
+
+    override fun write(value: BackupSettings, buf: ByteBuffer) {
+            FfiConverterString.write(value.`gridName`, buf)
+            FfiConverterBoolean.write(value.`notificationDots`, buf)
+            FfiConverterBoolean.write(value.`themedIcons`, buf)
+            FfiConverterBoolean.write(value.`autoAddApps`, buf)
+    }
+}
+
+
+
+data class BackupWidgetMetadata (
+    var `itemId`: kotlin.ULong,
+    var `minSpanX`: kotlin.Int,
+    var `minSpanY`: kotlin.Int,
+    var `resizeX`: kotlin.Int,
+    var `resizeY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupWidgetMetadata: FfiConverterRustBuffer<BackupWidgetMetadata> {
+    override fun read(buf: ByteBuffer): BackupWidgetMetadata {
+        return BackupWidgetMetadata(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackupWidgetMetadata) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterInt.allocationSize(value.`minSpanX`) +
+            FfiConverterInt.allocationSize(value.`minSpanY`) +
+            FfiConverterInt.allocationSize(value.`resizeX`) +
+            FfiConverterInt.allocationSize(value.`resizeY`)
+    )
+
+    override fun write(value: BackupWidgetMetadata, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterInt.write(value.`minSpanX`, buf)
+            FfiConverterInt.write(value.`minSpanY`, buf)
+            FfiConverterInt.write(value.`resizeX`, buf)
+            FfiConverterInt.write(value.`resizeY`, buf)
+    }
+}
+
+
+
+data class CellRect (
+    var `cellX`: kotlin.Int,
+    var `cellY`: kotlin.Int,
+    var `spanX`: kotlin.Int,
+    var `spanY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCellRect: FfiConverterRustBuffer<CellRect> {
+    override fun read(buf: ByteBuffer): CellRect {
+        return CellRect(
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CellRect) = (
+            FfiConverterInt.allocationSize(value.`cellX`) +
+            FfiConverterInt.allocationSize(value.`cellY`) +
+            FfiConverterInt.allocationSize(value.`spanX`) +
+            FfiConverterInt.allocationSize(value.`spanY`)
+    )
+
+    override fun write(value: CellRect, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`cellX`, buf)
+            FfiConverterInt.write(value.`cellY`, buf)
+            FfiConverterInt.write(value.`spanX`, buf)
+            FfiConverterInt.write(value.`spanY`, buf)
+    }
+}
+
+
+
+data class ComponentId (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeComponentId: FfiConverterRustBuffer<ComponentId> {
+    override fun read(buf: ByteBuffer): ComponentId {
+        return ComponentId(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ComponentId) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`)
+    )
+
+    override fun write(value: ComponentId, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+    }
+}
+
+
+
+data class DiagnosticsConfig (
+    var `level`: kotlin.String,
+    var `releaseRedaction`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDiagnosticsConfig: FfiConverterRustBuffer<DiagnosticsConfig> {
+    override fun read(buf: ByteBuffer): DiagnosticsConfig {
+        return DiagnosticsConfig(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DiagnosticsConfig) = (
+            FfiConverterString.allocationSize(value.`level`) +
+            FfiConverterBoolean.allocationSize(value.`releaseRedaction`)
+    )
+
+    override fun write(value: DiagnosticsConfig, buf: ByteBuffer) {
+            FfiConverterString.write(value.`level`, buf)
+            FfiConverterBoolean.write(value.`releaseRedaction`, buf)
+    }
+}
+
+
+
+data class Folder (
+    var `folderId`: kotlin.ULong,
+    var `title`: kotlin.String,
+    var `members`: List<FolderMember>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFolder: FfiConverterRustBuffer<Folder> {
+    override fun read(buf: ByteBuffer): Folder {
+        return Folder(
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeFolderMember.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Folder) = (
+            FfiConverterULong.allocationSize(value.`folderId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterSequenceTypeFolderMember.allocationSize(value.`members`)
+    )
+
+    override fun write(value: Folder, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`folderId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterSequenceTypeFolderMember.write(value.`members`, buf)
+    }
+}
+
+
+
+data class FolderMember (
+    var `itemId`: kotlin.ULong,
+    var `payload`: ItemPayload,
+    var `rank`: kotlin.UInt
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFolderMember: FfiConverterRustBuffer<FolderMember> {
+    override fun read(buf: ByteBuffer): FolderMember {
+        return FolderMember(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeItemPayload.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FolderMember) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterTypeItemPayload.allocationSize(value.`payload`) +
+            FfiConverterUInt.allocationSize(value.`rank`)
+    )
+
+    override fun write(value: FolderMember, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterTypeItemPayload.write(value.`payload`, buf)
+            FfiConverterUInt.write(value.`rank`, buf)
+    }
+}
+
+
+
+data class GridSpec (
+    var `cols`: kotlin.Int,
+    var `rows`: kotlin.Int,
+    var `hotseatCols`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGridSpec: FfiConverterRustBuffer<GridSpec> {
+    override fun read(buf: ByteBuffer): GridSpec {
+        return GridSpec(
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GridSpec) = (
+            FfiConverterInt.allocationSize(value.`cols`) +
+            FfiConverterInt.allocationSize(value.`rows`) +
+            FfiConverterInt.allocationSize(value.`hotseatCols`)
+    )
+
+    override fun write(value: GridSpec, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`cols`, buf)
+            FfiConverterInt.write(value.`rows`, buf)
+            FfiConverterInt.write(value.`hotseatCols`, buf)
+    }
+}
+
+
+
+data class ProfileDescriptor (
+    var `profileId`: kotlin.ULong,
+    var `kind`: ProfileKind,
+    var `access`: ProfileAccess
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileDescriptor: FfiConverterRustBuffer<ProfileDescriptor> {
+    override fun read(buf: ByteBuffer): ProfileDescriptor {
+        return ProfileDescriptor(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeProfileKind.read(buf),
+            FfiConverterTypeProfileAccess.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileDescriptor) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterTypeProfileKind.allocationSize(value.`kind`) +
+            FfiConverterTypeProfileAccess.allocationSize(value.`access`)
+    )
+
+    override fun write(value: ProfileDescriptor, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterTypeProfileKind.write(value.`kind`, buf)
+            FfiConverterTypeProfileAccess.write(value.`access`, buf)
+    }
+}
+
+
+
+data class ProfileMapping (
+    var `sourceProfileId`: kotlin.ULong,
+    var `targetProfileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileMapping: FfiConverterRustBuffer<ProfileMapping> {
+    override fun read(buf: ByteBuffer): ProfileMapping {
+        return ProfileMapping(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileMapping) = (
+            FfiConverterULong.allocationSize(value.`sourceProfileId`) +
+            FfiConverterULong.allocationSize(value.`targetProfileId`)
+    )
+
+    override fun write(value: ProfileMapping, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`sourceProfileId`, buf)
+            FfiConverterULong.write(value.`targetProfileId`, buf)
+    }
+}
+
+
+
+data class ShortcutId (
+    var `package`: kotlin.String,
+    var `shortcutId`: kotlin.String,
+    var `profileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeShortcutId: FfiConverterRustBuffer<ShortcutId> {
+    override fun read(buf: ByteBuffer): ShortcutId {
+        return ShortcutId(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ShortcutId) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`shortcutId`) +
+            FfiConverterULong.allocationSize(value.`profileId`)
+    )
+
+    override fun write(value: ShortcutId, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`shortcutId`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+    }
+}
+
+
+
+data class WidgetMinimumSpan (
+    var `itemId`: kotlin.ULong,
+    var `spanX`: kotlin.Int,
+    var `spanY`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetMinimumSpan: FfiConverterRustBuffer<WidgetMinimumSpan> {
+    override fun read(buf: ByteBuffer): WidgetMinimumSpan {
+        return WidgetMinimumSpan(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetMinimumSpan) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterInt.allocationSize(value.`spanX`) +
+            FfiConverterInt.allocationSize(value.`spanY`)
+    )
+
+    override fun write(value: WidgetMinimumSpan, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterInt.write(value.`spanX`, buf)
+            FfiConverterInt.write(value.`spanY`, buf)
+    }
+}
+
+
+
+data class WidgetProviderId (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetProviderId: FfiConverterRustBuffer<WidgetProviderId> {
+    override fun read(buf: ByteBuffer): WidgetProviderId {
+        return WidgetProviderId(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetProviderId) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`)
+    )
+
+    override fun write(value: WidgetProviderId, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+    }
+}
+
+
+
+data class WorkspaceItem (
+    var `itemId`: kotlin.ULong,
+    var `payload`: ItemPayload,
+    var `container`: ContainerRef,
+    var `cell`: CellRect
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceItem: FfiConverterRustBuffer<WorkspaceItem> {
+    override fun read(buf: ByteBuffer): WorkspaceItem {
+        return WorkspaceItem(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeItemPayload.read(buf),
+            FfiConverterTypeContainerRef.read(buf),
+            FfiConverterTypeCellRect.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceItem) = (
+            FfiConverterULong.allocationSize(value.`itemId`) +
+            FfiConverterTypeItemPayload.allocationSize(value.`payload`) +
+            FfiConverterTypeContainerRef.allocationSize(value.`container`) +
+            FfiConverterTypeCellRect.allocationSize(value.`cell`)
+    )
+
+    override fun write(value: WorkspaceItem, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`itemId`, buf)
+            FfiConverterTypeItemPayload.write(value.`payload`, buf)
+            FfiConverterTypeContainerRef.write(value.`container`, buf)
+            FfiConverterTypeCellRect.write(value.`cell`, buf)
+    }
+}
+
+
+
+data class WorkspacePage (
+    var `pageId`: kotlin.ULong,
+    var `rank`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspacePage: FfiConverterRustBuffer<WorkspacePage> {
+    override fun read(buf: ByteBuffer): WorkspacePage {
+        return WorkspacePage(
+            FfiConverterULong.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspacePage) = (
+            FfiConverterULong.allocationSize(value.`pageId`) +
+            FfiConverterInt.allocationSize(value.`rank`)
+    )
+
+    override fun write(value: WorkspacePage, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`pageId`, buf)
+            FfiConverterInt.write(value.`rank`, buf)
+    }
+}
+
+
+
+data class WorkspaceSnapshot (
+    var `generation`: kotlin.ULong,
+    var `grid`: GridSpec,
+    var `pages`: List<WorkspacePage>,
+    var `items`: List<WorkspaceItem>,
+    var `folders`: List<Folder>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceSnapshot: FfiConverterRustBuffer<WorkspaceSnapshot> {
+    override fun read(buf: ByteBuffer): WorkspaceSnapshot {
+        return WorkspaceSnapshot(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeGridSpec.read(buf),
+            FfiConverterSequenceTypeWorkspacePage.read(buf),
+            FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterSequenceTypeFolder.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceSnapshot) = (
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
+            FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterSequenceTypeFolder.allocationSize(value.`folders`)
+    )
+
+    override fun write(value: WorkspaceSnapshot, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterTypeGridSpec.write(value.`grid`, buf)
+            FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
+            FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterSequenceTypeFolder.write(value.`folders`, buf)
+    }
+}
+
+
+
+data class WorkspaceTransition (
+    var `generation`: kotlin.ULong,
+    var `grid`: GridSpec,
+    var `pages`: List<WorkspacePage>,
+    var `items`: List<WorkspaceItem>,
+    var `folders`: List<Folder>,
+    var `createdPageIds`: List<kotlin.ULong>,
+    var `removedPageIds`: List<kotlin.ULong>,
+    var `changedItemIds`: List<kotlin.ULong>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceTransition: FfiConverterRustBuffer<WorkspaceTransition> {
+    override fun read(buf: ByteBuffer): WorkspaceTransition {
+        return WorkspaceTransition(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeGridSpec.read(buf),
+            FfiConverterSequenceTypeWorkspacePage.read(buf),
+            FfiConverterSequenceTypeWorkspaceItem.read(buf),
+            FfiConverterSequenceTypeFolder.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceTransition) = (
+            FfiConverterULong.allocationSize(value.`generation`) +
+            FfiConverterTypeGridSpec.allocationSize(value.`grid`) +
+            FfiConverterSequenceTypeWorkspacePage.allocationSize(value.`pages`) +
+            FfiConverterSequenceTypeWorkspaceItem.allocationSize(value.`items`) +
+            FfiConverterSequenceTypeFolder.allocationSize(value.`folders`) +
+            FfiConverterSequenceULong.allocationSize(value.`createdPageIds`) +
+            FfiConverterSequenceULong.allocationSize(value.`removedPageIds`) +
+            FfiConverterSequenceULong.allocationSize(value.`changedItemIds`)
+    )
+
+    override fun write(value: WorkspaceTransition, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`generation`, buf)
+            FfiConverterTypeGridSpec.write(value.`grid`, buf)
+            FfiConverterSequenceTypeWorkspacePage.write(value.`pages`, buf)
+            FfiConverterSequenceTypeWorkspaceItem.write(value.`items`, buf)
+            FfiConverterSequenceTypeFolder.write(value.`folders`, buf)
+            FfiConverterSequenceULong.write(value.`createdPageIds`, buf)
+            FfiConverterSequenceULong.write(value.`removedPageIds`, buf)
+            FfiConverterSequenceULong.write(value.`changedItemIds`, buf)
+    }
+}
+
+
+
+
+
+sealed class BackupException: kotlin.Exception() {
+
+    class UnsupportedVersion(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidSourceMetadata(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class PrivateProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class UnmappedProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateMapping(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateId(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateComponent(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateShortcut(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidSpan(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidAllocator(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class UnsupportedGrid(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class StaleGeneration(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class Occupied(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class OutOfBounds(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingItem(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingPage(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingFolder(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class Full(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidGrid(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidTitle(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class CrossProfile(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class WidgetTooLarge(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+    class InvariantViolation(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<BackupException> {
+        override fun lift(error_buf: RustBuffer.ByValue): BackupException = FfiConverterTypeBackupError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupError : FfiConverterRustBuffer<BackupException> {
+    override fun read(buf: ByteBuffer): BackupException {
+
+
+        return when(buf.getInt()) {
+            1 -> BackupException.UnsupportedVersion()
+            2 -> BackupException.InvalidSourceMetadata()
+            3 -> BackupException.PrivateProfile()
+            4 -> BackupException.InvalidProfile()
+            5 -> BackupException.UnmappedProfile()
+            6 -> BackupException.DuplicateMapping()
+            7 -> BackupException.DuplicateId()
+            8 -> BackupException.DuplicateComponent()
+            9 -> BackupException.DuplicateShortcut()
+            10 -> BackupException.InvalidSpan()
+            11 -> BackupException.InvalidAllocator()
+            12 -> BackupException.UnsupportedGrid()
+            13 -> BackupException.StaleGeneration()
+            14 -> BackupException.Occupied()
+            15 -> BackupException.OutOfBounds()
+            16 -> BackupException.MissingItem()
+            17 -> BackupException.MissingPage()
+            18 -> BackupException.MissingFolder()
+            19 -> BackupException.Full()
+            20 -> BackupException.InvalidGrid()
+            21 -> BackupException.InvalidTitle()
+            22 -> BackupException.CrossProfile()
+            23 -> BackupException.WidgetTooLarge()
+            24 -> BackupException.InvariantViolation()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BackupException): ULong {
+        return when(value) {
+            is BackupException.UnsupportedVersion -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidSourceMetadata -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.PrivateProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.UnmappedProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateMapping -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateId -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateComponent -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.DuplicateShortcut -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidSpan -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidAllocator -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.UnsupportedGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.StaleGeneration -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.Occupied -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.OutOfBounds -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingItem -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingPage -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.MissingFolder -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.Full -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidTitle -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.CrossProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.WidgetTooLarge -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvariantViolation -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: BackupException, buf: ByteBuffer) {
+        when(value) {
+            is BackupException.UnsupportedVersion -> {
+                buf.putInt(1)
+                Unit
+            }
+            is BackupException.InvalidSourceMetadata -> {
+                buf.putInt(2)
+                Unit
+            }
+            is BackupException.PrivateProfile -> {
+                buf.putInt(3)
+                Unit
+            }
+            is BackupException.InvalidProfile -> {
+                buf.putInt(4)
+                Unit
+            }
+            is BackupException.UnmappedProfile -> {
+                buf.putInt(5)
+                Unit
+            }
+            is BackupException.DuplicateMapping -> {
+                buf.putInt(6)
+                Unit
+            }
+            is BackupException.DuplicateId -> {
+                buf.putInt(7)
+                Unit
+            }
+            is BackupException.DuplicateComponent -> {
+                buf.putInt(8)
+                Unit
+            }
+            is BackupException.DuplicateShortcut -> {
+                buf.putInt(9)
+                Unit
+            }
+            is BackupException.InvalidSpan -> {
+                buf.putInt(10)
+                Unit
+            }
+            is BackupException.InvalidAllocator -> {
+                buf.putInt(11)
+                Unit
+            }
+            is BackupException.UnsupportedGrid -> {
+                buf.putInt(12)
+                Unit
+            }
+            is BackupException.StaleGeneration -> {
+                buf.putInt(13)
+                Unit
+            }
+            is BackupException.Occupied -> {
+                buf.putInt(14)
+                Unit
+            }
+            is BackupException.OutOfBounds -> {
+                buf.putInt(15)
+                Unit
+            }
+            is BackupException.MissingItem -> {
+                buf.putInt(16)
+                Unit
+            }
+            is BackupException.MissingPage -> {
+                buf.putInt(17)
+                Unit
+            }
+            is BackupException.MissingFolder -> {
+                buf.putInt(18)
+                Unit
+            }
+            is BackupException.Full -> {
+                buf.putInt(19)
+                Unit
+            }
+            is BackupException.InvalidGrid -> {
+                buf.putInt(20)
+                Unit
+            }
+            is BackupException.InvalidTitle -> {
+                buf.putInt(21)
+                Unit
+            }
+            is BackupException.CrossProfile -> {
+                buf.putInt(22)
+                Unit
+            }
+            is BackupException.WidgetTooLarge -> {
+                buf.putInt(23)
+                Unit
+            }
+            is BackupException.InvariantViolation -> {
+                buf.putInt(24)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+sealed class BackupImportWarning {
+
+    data class UnresolvedApplication(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+    data class UnresolvedShortcut(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+    data class UnresolvedWidget(
+        val `itemId`: kotlin.ULong) : BackupImportWarning() {
+        companion object
+    }
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackupImportWarning : FfiConverterRustBuffer<BackupImportWarning>{
+    override fun read(buf: ByteBuffer): BackupImportWarning {
+        return when(buf.getInt()) {
+            1 -> BackupImportWarning.UnresolvedApplication(
+                FfiConverterULong.read(buf),
+                )
+            2 -> BackupImportWarning.UnresolvedShortcut(
+                FfiConverterULong.read(buf),
+                )
+            3 -> BackupImportWarning.UnresolvedWidget(
+                FfiConverterULong.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BackupImportWarning) = when(value) {
+        is BackupImportWarning.UnresolvedApplication -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+        is BackupImportWarning.UnresolvedShortcut -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+        is BackupImportWarning.UnresolvedWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+    }
+
+    override fun write(value: BackupImportWarning, buf: ByteBuffer) {
+        when(value) {
+            is BackupImportWarning.UnresolvedApplication -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+            is BackupImportWarning.UnresolvedShortcut -> {
+                buf.putInt(2)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+            is BackupImportWarning.UnresolvedWidget -> {
+                buf.putInt(3)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+sealed class ContainerRef {
+
+    data class Workspace(
+        val `pageId`: kotlin.ULong) : ContainerRef() {
+        companion object
+    }
+
+    object Hotseat : ContainerRef()
+
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeContainerRef : FfiConverterRustBuffer<ContainerRef>{
+    override fun read(buf: ByteBuffer): ContainerRef {
+        return when(buf.getInt()) {
+            1 -> ContainerRef.Workspace(
+                FfiConverterULong.read(buf),
+                )
+            2 -> ContainerRef.Hotseat
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: ContainerRef) = when(value) {
+        is ContainerRef.Workspace -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is ContainerRef.Hotseat -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: ContainerRef, buf: ByteBuffer) {
+        when(value) {
+            is ContainerRef.Workspace -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is ContainerRef.Hotseat -> {
+                buf.putInt(2)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
 
 
 sealed class EngineException: kotlin.Exception() {
@@ -1223,6 +2803,1197 @@ public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineExcepti
 
 
 
+sealed class ItemPayload {
+
+    data class Application(
+        val `component`: ComponentId) : ItemPayload() {
+        companion object
+    }
+
+    object Folder : ItemPayload()
+
+
+    data class Shortcut(
+        val `shortcut`: ShortcutId) : ItemPayload() {
+        companion object
+    }
+
+    data class Widget(
+        val `provider`: WidgetProviderId) : ItemPayload() {
+        companion object
+    }
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeItemPayload : FfiConverterRustBuffer<ItemPayload>{
+    override fun read(buf: ByteBuffer): ItemPayload {
+        return when(buf.getInt()) {
+            1 -> ItemPayload.Application(
+                FfiConverterTypeComponentId.read(buf),
+                )
+            2 -> ItemPayload.Folder
+            3 -> ItemPayload.Shortcut(
+                FfiConverterTypeShortcutId.read(buf),
+                )
+            4 -> ItemPayload.Widget(
+                FfiConverterTypeWidgetProviderId.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: ItemPayload) = when(value) {
+        is ItemPayload.Application -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+            )
+        }
+        is ItemPayload.Folder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is ItemPayload.Shortcut -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeShortcutId.allocationSize(value.`shortcut`)
+            )
+        }
+        is ItemPayload.Widget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeWidgetProviderId.allocationSize(value.`provider`)
+            )
+        }
+    }
+
+    override fun write(value: ItemPayload, buf: ByteBuffer) {
+        when(value) {
+            is ItemPayload.Application -> {
+                buf.putInt(1)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                Unit
+            }
+            is ItemPayload.Folder -> {
+                buf.putInt(2)
+                Unit
+            }
+            is ItemPayload.Shortcut -> {
+                buf.putInt(3)
+                FfiConverterTypeShortcutId.write(value.`shortcut`, buf)
+                Unit
+            }
+            is ItemPayload.Widget -> {
+                buf.putInt(4)
+                FfiConverterTypeWidgetProviderId.write(value.`provider`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+
+enum class ProfileAccess {
+
+    AVAILABLE,
+    QUIET,
+    LOCKED,
+    UNAVAILABLE;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileAccess: FfiConverterRustBuffer<ProfileAccess> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileAccess.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileAccess) = 4UL
+
+    override fun write(value: ProfileAccess, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileItemProjection {
+
+    VISIBLE,
+    PLACEHOLDER,
+    HIDDEN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileItemProjection: FfiConverterRustBuffer<ProfileItemProjection> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileItemProjection.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileItemProjection) = 4UL
+
+    override fun write(value: ProfileItemProjection, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileKind {
+
+    PERSONAL,
+    WORK,
+    PRIVATE,
+    OTHER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileKind: FfiConverterRustBuffer<ProfileKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileKind) = 4UL
+
+    override fun write(value: ProfileKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ProfileSurface {
+
+    ALL_APPS,
+    SEARCH,
+    WORKSPACE,
+    SHORTCUT,
+    WIDGET;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileSurface: FfiConverterRustBuffer<ProfileSurface> {
+    override fun read(buf: ByteBuffer) = try {
+        ProfileSurface.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ProfileSurface) = 4UL
+
+    override fun write(value: ProfileSurface, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+sealed class WorkspaceCommand {
+
+    data class PlaceFromAllApps(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `component`: ComponentId,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class PlaceShortcut(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `shortcut`: ShortcutId,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class PlaceWidget(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `provider`: WidgetProviderId,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class ResizeWidget(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Move(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Remove(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Dock(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `rank`: kotlin.Int) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Undock(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `pageId`: kotlin.ULong,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Reorder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class CreateFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `firstItemId`: kotlin.ULong,
+        val `secondItemId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddFromAllAppsToFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `component`: ComponentId,
+        val `folderId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddShortcutToFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `shortcut`: ShortcutId,
+        val `folderId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddItemToFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class MoveFolderMember(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `rank`: kotlin.UInt) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveItemFromFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `itemId`: kotlin.ULong,
+        val `container`: ContainerRef,
+        val `cell`: CellRect) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RenameFolder(
+        val `expectedGeneration`: kotlin.ULong,
+        val `folderId`: kotlin.ULong,
+        val `title`: kotlin.String) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class AddPage(
+        val `expectedGeneration`: kotlin.ULong,
+        val `pageId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveEmptyPage(
+        val `expectedGeneration`: kotlin.ULong,
+        val `pageId`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class SetGrid(
+        val `expectedGeneration`: kotlin.ULong,
+        val `grid`: GridSpec,
+        val `nextPageId`: kotlin.ULong,
+        val `widgetMinimumSpans`: List<WidgetMinimumSpan>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class DropMissing(
+        val `expectedGeneration`: kotlin.ULong,
+        val `live`: List<ComponentId>,
+        val `authoritativeProfileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class ReconcileShortcuts(
+        val `expectedGeneration`: kotlin.ULong,
+        val `live`: List<ShortcutId>,
+        val `authoritativeProfileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class RemoveProfiles(
+        val `expectedGeneration`: kotlin.ULong,
+        val `profileIds`: List<kotlin.ULong>) : WorkspaceCommand() {
+        companion object
+    }
+
+    data class Cancelled(
+        val `expectedGeneration`: kotlin.ULong) : WorkspaceCommand() {
+        companion object
+    }
+
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceCommand : FfiConverterRustBuffer<WorkspaceCommand>{
+    override fun read(buf: ByteBuffer): WorkspaceCommand {
+        return when(buf.getInt()) {
+            1 -> WorkspaceCommand.PlaceFromAllApps(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeComponentId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            2 -> WorkspaceCommand.PlaceShortcut(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeShortcutId.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            3 -> WorkspaceCommand.PlaceWidget(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeWidgetProviderId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            4 -> WorkspaceCommand.ResizeWidget(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            5 -> WorkspaceCommand.Move(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            6 -> WorkspaceCommand.Remove(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            7 -> WorkspaceCommand.Dock(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterInt.read(buf),
+                )
+            8 -> WorkspaceCommand.Undock(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            9 -> WorkspaceCommand.Reorder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            10 -> WorkspaceCommand.CreateFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            11 -> WorkspaceCommand.AddFromAllAppsToFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeComponentId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            12 -> WorkspaceCommand.AddShortcutToFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeShortcutId.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            13 -> WorkspaceCommand.AddItemToFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            14 -> WorkspaceCommand.MoveFolderMember(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            15 -> WorkspaceCommand.RemoveItemFromFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterTypeContainerRef.read(buf),
+                FfiConverterTypeCellRect.read(buf),
+                )
+            16 -> WorkspaceCommand.RenameFolder(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterString.read(buf),
+                )
+            17 -> WorkspaceCommand.AddPage(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            18 -> WorkspaceCommand.RemoveEmptyPage(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            19 -> WorkspaceCommand.SetGrid(
+                FfiConverterULong.read(buf),
+                FfiConverterTypeGridSpec.read(buf),
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceTypeWidgetMinimumSpan.read(buf),
+                )
+            20 -> WorkspaceCommand.DropMissing(
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceTypeComponentId.read(buf),
+                FfiConverterSequenceULong.read(buf),
+                )
+            21 -> WorkspaceCommand.ReconcileShortcuts(
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceTypeShortcutId.read(buf),
+                FfiConverterSequenceULong.read(buf),
+                )
+            22 -> WorkspaceCommand.RemoveProfiles(
+                FfiConverterULong.read(buf),
+                FfiConverterSequenceULong.read(buf),
+                )
+            23 -> WorkspaceCommand.Cancelled(
+                FfiConverterULong.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: WorkspaceCommand) = when(value) {
+        is WorkspaceCommand.PlaceFromAllApps -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.PlaceShortcut -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeShortcutId.allocationSize(value.`shortcut`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.PlaceWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeWidgetProviderId.allocationSize(value.`provider`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.ResizeWidget -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.Move -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.Remove -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+            )
+        }
+        is WorkspaceCommand.Dock -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.Undock -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.Reorder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.CreateFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`firstItemId`)
+                + FfiConverterULong.allocationSize(value.`secondItemId`)
+            )
+        }
+        is WorkspaceCommand.AddFromAllAppsToFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeComponentId.allocationSize(value.`component`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.AddShortcutToFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeShortcutId.allocationSize(value.`shortcut`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.AddItemToFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.MoveFolderMember -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterUInt.allocationSize(value.`rank`)
+            )
+        }
+        is WorkspaceCommand.RemoveItemFromFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterULong.allocationSize(value.`itemId`)
+                + FfiConverterTypeContainerRef.allocationSize(value.`container`)
+                + FfiConverterTypeCellRect.allocationSize(value.`cell`)
+            )
+        }
+        is WorkspaceCommand.RenameFolder -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`folderId`)
+                + FfiConverterString.allocationSize(value.`title`)
+            )
+        }
+        is WorkspaceCommand.AddPage -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is WorkspaceCommand.RemoveEmptyPage -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterULong.allocationSize(value.`pageId`)
+            )
+        }
+        is WorkspaceCommand.SetGrid -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterTypeGridSpec.allocationSize(value.`grid`)
+                + FfiConverterULong.allocationSize(value.`nextPageId`)
+                + FfiConverterSequenceTypeWidgetMinimumSpan.allocationSize(value.`widgetMinimumSpans`)
+            )
+        }
+        is WorkspaceCommand.DropMissing -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterSequenceTypeComponentId.allocationSize(value.`live`)
+                + FfiConverterSequenceULong.allocationSize(value.`authoritativeProfileIds`)
+            )
+        }
+        is WorkspaceCommand.ReconcileShortcuts -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterSequenceTypeShortcutId.allocationSize(value.`live`)
+                + FfiConverterSequenceULong.allocationSize(value.`authoritativeProfileIds`)
+            )
+        }
+        is WorkspaceCommand.RemoveProfiles -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+                + FfiConverterSequenceULong.allocationSize(value.`profileIds`)
+            )
+        }
+        is WorkspaceCommand.Cancelled -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`expectedGeneration`)
+            )
+        }
+    }
+
+    override fun write(value: WorkspaceCommand, buf: ByteBuffer) {
+        when(value) {
+            is WorkspaceCommand.PlaceFromAllApps -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.PlaceShortcut -> {
+                buf.putInt(2)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeShortcutId.write(value.`shortcut`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.PlaceWidget -> {
+                buf.putInt(3)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeWidgetProviderId.write(value.`provider`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.ResizeWidget -> {
+                buf.putInt(4)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Move -> {
+                buf.putInt(5)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Remove -> {
+                buf.putInt(6)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Dock -> {
+                buf.putInt(7)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Undock -> {
+                buf.putInt(8)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Reorder -> {
+                buf.putInt(9)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.CreateFolder -> {
+                buf.putInt(10)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`firstItemId`, buf)
+                FfiConverterULong.write(value.`secondItemId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddFromAllAppsToFolder -> {
+                buf.putInt(11)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeComponentId.write(value.`component`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddShortcutToFolder -> {
+                buf.putInt(12)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeShortcutId.write(value.`shortcut`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddItemToFolder -> {
+                buf.putInt(13)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.MoveFolderMember -> {
+                buf.putInt(14)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterUInt.write(value.`rank`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveItemFromFolder -> {
+                buf.putInt(15)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterULong.write(value.`itemId`, buf)
+                FfiConverterTypeContainerRef.write(value.`container`, buf)
+                FfiConverterTypeCellRect.write(value.`cell`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RenameFolder -> {
+                buf.putInt(16)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`folderId`, buf)
+                FfiConverterString.write(value.`title`, buf)
+                Unit
+            }
+            is WorkspaceCommand.AddPage -> {
+                buf.putInt(17)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveEmptyPage -> {
+                buf.putInt(18)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterULong.write(value.`pageId`, buf)
+                Unit
+            }
+            is WorkspaceCommand.SetGrid -> {
+                buf.putInt(19)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterTypeGridSpec.write(value.`grid`, buf)
+                FfiConverterULong.write(value.`nextPageId`, buf)
+                FfiConverterSequenceTypeWidgetMinimumSpan.write(value.`widgetMinimumSpans`, buf)
+                Unit
+            }
+            is WorkspaceCommand.DropMissing -> {
+                buf.putInt(20)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterSequenceTypeComponentId.write(value.`live`, buf)
+                FfiConverterSequenceULong.write(value.`authoritativeProfileIds`, buf)
+                Unit
+            }
+            is WorkspaceCommand.ReconcileShortcuts -> {
+                buf.putInt(21)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterSequenceTypeShortcutId.write(value.`live`, buf)
+                FfiConverterSequenceULong.write(value.`authoritativeProfileIds`, buf)
+                Unit
+            }
+            is WorkspaceCommand.RemoveProfiles -> {
+                buf.putInt(22)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                FfiConverterSequenceULong.write(value.`profileIds`, buf)
+                Unit
+            }
+            is WorkspaceCommand.Cancelled -> {
+                buf.putInt(23)
+                FfiConverterULong.write(value.`expectedGeneration`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+
+
+sealed class WorkspaceException: kotlin.Exception() {
+
+    class Occupied(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class OutOfBounds(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingItem(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingPage(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class MissingFolder(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidProfile(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class Full(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class StaleGeneration(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidGrid(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvalidTitle(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class CrossProfile(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class WidgetTooLarge(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+    class InvariantViolation(
+        ) : WorkspaceException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<WorkspaceException> {
+        override fun lift(error_buf: RustBuffer.ByValue): WorkspaceException = FfiConverterTypeWorkspaceError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceException> {
+    override fun read(buf: ByteBuffer): WorkspaceException {
+
+
+        return when(buf.getInt()) {
+            1 -> WorkspaceException.Occupied()
+            2 -> WorkspaceException.OutOfBounds()
+            3 -> WorkspaceException.MissingItem()
+            4 -> WorkspaceException.MissingPage()
+            5 -> WorkspaceException.MissingFolder()
+            6 -> WorkspaceException.InvalidProfile()
+            7 -> WorkspaceException.Full()
+            8 -> WorkspaceException.StaleGeneration()
+            9 -> WorkspaceException.InvalidGrid()
+            10 -> WorkspaceException.InvalidTitle()
+            11 -> WorkspaceException.CrossProfile()
+            12 -> WorkspaceException.WidgetTooLarge()
+            13 -> WorkspaceException.InvariantViolation()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: WorkspaceException): ULong {
+        return when(value) {
+            is WorkspaceException.Occupied -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.OutOfBounds -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.MissingItem -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.MissingPage -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.MissingFolder -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.Full -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.StaleGeneration -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidGrid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvalidTitle -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.CrossProfile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.WidgetTooLarge -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is WorkspaceException.InvariantViolation -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: WorkspaceException, buf: ByteBuffer) {
+        when(value) {
+            is WorkspaceException.Occupied -> {
+                buf.putInt(1)
+                Unit
+            }
+            is WorkspaceException.OutOfBounds -> {
+                buf.putInt(2)
+                Unit
+            }
+            is WorkspaceException.MissingItem -> {
+                buf.putInt(3)
+                Unit
+            }
+            is WorkspaceException.MissingPage -> {
+                buf.putInt(4)
+                Unit
+            }
+            is WorkspaceException.MissingFolder -> {
+                buf.putInt(5)
+                Unit
+            }
+            is WorkspaceException.InvalidProfile -> {
+                buf.putInt(6)
+                Unit
+            }
+            is WorkspaceException.Full -> {
+                buf.putInt(7)
+                Unit
+            }
+            is WorkspaceException.StaleGeneration -> {
+                buf.putInt(8)
+                Unit
+            }
+            is WorkspaceException.InvalidGrid -> {
+                buf.putInt(9)
+                Unit
+            }
+            is WorkspaceException.InvalidTitle -> {
+                buf.putInt(10)
+                Unit
+            }
+            is WorkspaceException.CrossProfile -> {
+                buf.putInt(11)
+                Unit
+            }
+            is WorkspaceException.WidgetTooLarge -> {
+                buf.putInt(12)
+                Unit
+            }
+            is WorkspaceException.InvariantViolation -> {
+                buf.putInt(13)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
 
 /**
  * @suppress
@@ -1245,6 +4016,34 @@ public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<kotlin.ULon
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterULong.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
         }
     }
 }
@@ -1304,6 +4103,362 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupProfileRef: FfiConverterRustBuffer<List<BackupProfileRef>> {
+    override fun read(buf: ByteBuffer): List<BackupProfileRef> {
+        val len = buf.getInt()
+        return List<BackupProfileRef>(len) {
+            FfiConverterTypeBackupProfileRef.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupProfileRef>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupProfileRef.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupProfileRef>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupProfileRef.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupWidgetMetadata: FfiConverterRustBuffer<List<BackupWidgetMetadata>> {
+    override fun read(buf: ByteBuffer): List<BackupWidgetMetadata> {
+        val len = buf.getInt()
+        return List<BackupWidgetMetadata>(len) {
+            FfiConverterTypeBackupWidgetMetadata.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupWidgetMetadata>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupWidgetMetadata.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupWidgetMetadata>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupWidgetMetadata.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeComponentId: FfiConverterRustBuffer<List<ComponentId>> {
+    override fun read(buf: ByteBuffer): List<ComponentId> {
+        val len = buf.getInt()
+        return List<ComponentId>(len) {
+            FfiConverterTypeComponentId.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ComponentId>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeComponentId.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ComponentId>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeComponentId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFolder: FfiConverterRustBuffer<List<Folder>> {
+    override fun read(buf: ByteBuffer): List<Folder> {
+        val len = buf.getInt()
+        return List<Folder>(len) {
+            FfiConverterTypeFolder.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Folder>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFolder.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Folder>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFolder.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFolderMember: FfiConverterRustBuffer<List<FolderMember>> {
+    override fun read(buf: ByteBuffer): List<FolderMember> {
+        val len = buf.getInt()
+        return List<FolderMember>(len) {
+            FfiConverterTypeFolderMember.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FolderMember>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFolderMember.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FolderMember>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFolderMember.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeProfileMapping: FfiConverterRustBuffer<List<ProfileMapping>> {
+    override fun read(buf: ByteBuffer): List<ProfileMapping> {
+        val len = buf.getInt()
+        return List<ProfileMapping>(len) {
+            FfiConverterTypeProfileMapping.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProfileMapping>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeProfileMapping.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProfileMapping>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeProfileMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeShortcutId: FfiConverterRustBuffer<List<ShortcutId>> {
+    override fun read(buf: ByteBuffer): List<ShortcutId> {
+        val len = buf.getInt()
+        return List<ShortcutId>(len) {
+            FfiConverterTypeShortcutId.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ShortcutId>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeShortcutId.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ShortcutId>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeShortcutId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetMinimumSpan: FfiConverterRustBuffer<List<WidgetMinimumSpan>> {
+    override fun read(buf: ByteBuffer): List<WidgetMinimumSpan> {
+        val len = buf.getInt()
+        return List<WidgetMinimumSpan>(len) {
+            FfiConverterTypeWidgetMinimumSpan.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetMinimumSpan>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetMinimumSpan.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetMinimumSpan>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetMinimumSpan.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetProviderId: FfiConverterRustBuffer<List<WidgetProviderId>> {
+    override fun read(buf: ByteBuffer): List<WidgetProviderId> {
+        val len = buf.getInt()
+        return List<WidgetProviderId>(len) {
+            FfiConverterTypeWidgetProviderId.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetProviderId>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetProviderId.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetProviderId>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetProviderId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWorkspaceItem: FfiConverterRustBuffer<List<WorkspaceItem>> {
+    override fun read(buf: ByteBuffer): List<WorkspaceItem> {
+        val len = buf.getInt()
+        return List<WorkspaceItem>(len) {
+            FfiConverterTypeWorkspaceItem.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WorkspaceItem>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWorkspaceItem.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WorkspaceItem>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWorkspaceItem.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWorkspacePage: FfiConverterRustBuffer<List<WorkspacePage>> {
+    override fun read(buf: ByteBuffer): List<WorkspacePage> {
+        val len = buf.getInt()
+        return List<WorkspacePage>(len) {
+            FfiConverterTypeWorkspacePage.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WorkspacePage>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWorkspacePage.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WorkspacePage>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWorkspacePage.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeBackupImportWarning: FfiConverterRustBuffer<List<BackupImportWarning>> {
+    override fun read(buf: ByteBuffer): List<BackupImportWarning> {
+        val len = buf.getInt()
+        return List<BackupImportWarning>(len) {
+            FfiConverterTypeBackupImportWarning.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<BackupImportWarning>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeBackupImportWarning.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<BackupImportWarning>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeBackupImportWarning.write(it, buf)
+        }
+    }
+}
+    @Throws(WorkspaceException::class) fun `applyWorkspaceCommand`(`snapshot`: WorkspaceSnapshot, `command`: WorkspaceCommand): WorkspaceTransition {
+            return FfiConverterTypeWorkspaceTransition.lift(
+    uniffiRustCallWithError(WorkspaceException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_apply_workspace_command(
+        FfiConverterTypeWorkspaceSnapshot.lower(`snapshot`),FfiConverterTypeWorkspaceCommand.lower(`command`),_status)
+}
+    )
+    }
+
+
+    @Throws(BackupException::class) fun `buildBackupDocument`(`workspace`: WorkspaceSnapshot, `settings`: BackupSettings, `widgets`: List<BackupWidgetMetadata>, `options`: BackupExportOptions, `nextItemId`: kotlin.ULong, `nextPageId`: kotlin.ULong): BackupDocument {
+            return FfiConverterTypeBackupDocument.lift(
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_build_backup_document(
+        FfiConverterTypeWorkspaceSnapshot.lower(`workspace`),FfiConverterTypeBackupSettings.lower(`settings`),FfiConverterSequenceTypeBackupWidgetMetadata.lower(`widgets`),FfiConverterTypeBackupExportOptions.lower(`options`),FfiConverterULong.lower(`nextItemId`),FfiConverterULong.lower(`nextPageId`),_status)
+}
+    )
+    }
+
+
     @Throws(EngineException::class) fun `filterAndOrderApps`(`apps`: List<App>, `query`: kotlin.String, `visibleProfileIds`: List<kotlin.ULong>): List<AppId> {
             return FfiConverterSequenceTypeAppId.lift(
     uniffiRustCallWithError(EngineException) { _status ->
@@ -1313,5 +4468,46 @@ public object FfiConverterSequenceTypeAppId: FfiConverterRustBuffer<List<AppId>>
     )
     }
 
+ fun `initDiagnostics`(`config`: DiagnosticsConfig)
+        =
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_init_diagnostics(
+        FfiConverterTypeDiagnosticsConfig.lower(`config`),_status)
+}
 
 
+ fun `nativePanicked`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_native_panicked(
+        _status)
+}
+    )
+    }
+
+
+    @Throws(BackupException::class) fun `planBackupImport`(`document`: BackupDocument, `target`: BackupImportTarget, `mappings`: List<ProfileMapping>): BackupImportPlan {
+            return FfiConverterTypeBackupImportPlan.lift(
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_plan_backup_import(
+        FfiConverterTypeBackupDocument.lower(`document`),FfiConverterTypeBackupImportTarget.lower(`target`),FfiConverterSequenceTypeProfileMapping.lower(`mappings`),_status)
+}
+    )
+    }
+
+ fun `projectProfileItem`(`profile`: ProfileDescriptor, `surface`: ProfileSurface): ProfileItemProjection {
+            return FfiConverterTypeProfileItemProjection.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_project_profile_item(
+        FfiConverterTypeProfileDescriptor.lower(`profile`),FfiConverterTypeProfileSurface.lower(`surface`),_status)
+}
+    )
+    }
+
+
+    @Throws(BackupException::class) fun `validateBackupDocument`(`document`: BackupDocument)
+        =
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_validate_backup_document(
+        FfiConverterTypeBackupDocument.lower(`document`),_status)
+}

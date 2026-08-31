@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Public API 35 permission granted through the HOME role for hidden profile discovery. -->
+    <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -10,9 +14,14 @@
 
     <application
         android:name=".CenixApplication"
-        android:allowBackup="false"
+        android:allowBackup="true"
+        android:backupAgent=".CenixBackupAgent"
+        android:dataExtractionRules="@xml/backup_rules"
+        android:fullBackupOnly="true"
         android:icon="@drawable/ic_launcher"
+        android:killAfterRestore="true"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Cenix">
 
@@ -24,13 +33,67 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:resumeWhilePausing="true"
-            android:stateNotNeeded="true"
-            android:windowSoftInputMode="adjustPan">
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Exported only for Android's validated launcher pin-shortcut confirmation contract. -->
+        <activity
+            android:name=".PinShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/Theme.Cenix">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Exported only for Android's validated launcher pin-widget confirmation contract. -->
+        <activity
+            android:name=".PinWidgetActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/Theme.Cenix">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_APPWIDGET" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".WidgetPickerActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LauncherSettingsActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/launcher_settings"
+            android:taskAffinity="${applicationId}.settings"
+            android:theme="@style/Theme.Cenix.Settings" />
+
+        <service
+            android:name=".CenixNotificationListener"
+            android:exported="true"
+            android:label="@string/notification_dots"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Exported for Android's protected app-widget host restore broadcast. -->
+        <receiver
+            android:name=".WidgetRestoreReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_HOST_RESTORED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

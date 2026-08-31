@@ -1,10 +1,84 @@
 #![forbid(unsafe_code)]
 
+mod backup;
+mod workspace;
+
+pub use backup::{
+    BACKUP_FORMAT_VERSION, BackupDocument, BackupError, BackupExportOptions, BackupImportPlan,
+    BackupImportTarget, BackupImportWarning, BackupProfileRef, BackupSettings,
+    BackupWidgetMetadata, LOGICAL_PERSONAL_PROFILE_ID, LOGICAL_WORK_PROFILE_ID, ProfileMapping,
+    build_backup_document, plan_backup_import, validate_backup_document,
+};
+pub use workspace::{
+    CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload, ShortcutId,
+    WidgetMinimumSpan, WidgetProviderId, WorkspaceCommand, WorkspaceError, WorkspaceItem,
+    WorkspacePage, WorkspaceSnapshot, WorkspaceTransition, apply_workspace_command,
+};
+
 pub const MAX_APPLICATIONS: usize = 10_000;
 pub const MAX_LABEL_CHARS: usize = 256;
 pub const MAX_IDENT_CHARS: usize = 256;
 pub const MAX_QUERY_CHARS: usize = 256;
 pub const MAX_VISIBLE_PROFILES: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileKind {
+    Personal,
+    Work,
+    Private,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileAccess {
+    Available,
+    Quiet,
+    Locked,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProfileDescriptor {
+    pub profile_id: u64,
+    pub kind: ProfileKind,
+    pub access: ProfileAccess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileSurface {
+    AllApps,
+    Search,
+    Workspace,
+    Shortcut,
+    Widget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileItemProjection {
+    Visible,
+    Placeholder,
+    Hidden,
+}
+
+pub fn project_profile_item(
+    profile: ProfileDescriptor,
+    surface: ProfileSurface,
+) -> ProfileItemProjection {
+    if profile.kind == ProfileKind::Private && surface == ProfileSurface::Workspace {
+        return ProfileItemProjection::Hidden;
+    }
+    match profile.access {
+        ProfileAccess::Available => ProfileItemProjection::Visible,
+        ProfileAccess::Quiet | ProfileAccess::Unavailable
+            if profile.kind != ProfileKind::Private && surface == ProfileSurface::Workspace =>
+        {
+            ProfileItemProjection::Placeholder
+        }
+        ProfileAccess::Quiet | ProfileAccess::Locked | ProfileAccess::Unavailable => {
+            ProfileItemProjection::Hidden
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App {
@@ -225,6 +299,36 @@ mod tests {
         assert_eq!(
             err,
             EngineError::Malformed("package and class are required")
+        );
+    }
+
+    #[test]
+    fn profile_projection_hides_locked_identity_and_preserves_work_placeholder() {
+        let private = ProfileDescriptor {
+            profile_id: 2,
+            kind: ProfileKind::Private,
+            access: ProfileAccess::Locked,
+        };
+        let work = ProfileDescriptor {
+            profile_id: 1,
+            kind: ProfileKind::Work,
+            access: ProfileAccess::Quiet,
+        };
+        assert_eq!(
+            project_profile_item(private, ProfileSurface::Search),
+            ProfileItemProjection::Hidden
+        );
+        assert_eq!(
+            project_profile_item(private, ProfileSurface::Workspace),
+            ProfileItemProjection::Hidden
+        );
+        assert_eq!(
+            project_profile_item(work, ProfileSurface::Workspace),
+            ProfileItemProjection::Placeholder
+        );
+        assert_eq!(
+            project_profile_item(work, ProfileSurface::Shortcut),
+            ProfileItemProjection::Hidden
         );
     }
 }

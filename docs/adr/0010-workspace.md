@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by ADRs 0013, 0014, 0015, and 0016.
 
 ## Context
 

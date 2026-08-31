@@ -14,7 +14,7 @@ data class PhoneGrid(
     companion object {
         // GrapheneOS Launcher3 e5fde8f4 device_profiles.xml phone grids.
         // Threshold = smallest non-Stubby display-option, or the only option.
-        // ponytail: not AOSP closest-distance; add if users pick grids.
+        // Prefer established phone profiles over Stubby fallbacks where both exist.
         val PHONE = listOf(
             PhoneGrid("2_by_2", 2, 2, 200f, 200f),
             PhoneGrid("3_by_3", 3, 3, 255f, 300f),
@@ -22,9 +22,15 @@ data class PhoneGrid(
             PhoneGrid("4_by_5", 5, 4, 367f, 838f),
             PhoneGrid("5_by_5", 5, 5, 406f, 694f),
         )
+        val DEFAULT = PHONE.first { it.name == "4_by_5" }
+
+        fun named(name: String): PhoneGrid? = PHONE.firstOrNull { it.name == name }
+
+        fun compatible(widthDp: Float, heightDp: Float): List<PhoneGrid> =
+            PHONE.filter { widthDp >= it.minWidthDp && heightDp >= it.minHeightDp }
 
         fun pick(widthDp: Float, heightDp: Float): PhoneGrid =
-            PHONE.filter { widthDp >= it.minWidthDp && heightDp >= it.minHeightDp }
+            compatible(widthDp, heightDp)
                 .maxWithOrNull(compareBy<PhoneGrid> { it.cells }.thenBy { it.cols })
                 ?: PHONE.first()
     }

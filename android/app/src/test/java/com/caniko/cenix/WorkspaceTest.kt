@@ -4,8 +4,19 @@ import android.app.Application
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.caniko.cenix.db.CenixDatabase
+import com.caniko.cenix.db.ApplicationItemEntity
+import com.caniko.cenix.db.FolderEntity
+import com.caniko.cenix.db.FolderMemberEntity
+import com.caniko.cenix.db.StaleWorkspaceGeneration
+import com.caniko.cenix.db.InvalidWorkspaceTransition
+import com.caniko.cenix.db.WorkspaceMetadataEntity
+import com.caniko.cenix.db.WorkspacePageEntity
+import com.caniko.cenix.db.WorkspaceItemEntity
+import com.caniko.cenix.db.ShortcutItemEntity
+import com.caniko.cenix.db.WidgetItemEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,150 +27,217 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class WorkspaceTest {
     @Test
-    fun pinFillsRowMajorAndSurvivesReopen() {
+    fun committedTransitionAdvancesOneGeneration() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        assertTrue(workspace.pin(app("a"), grid))
-        assertTrue(workspace.pin(app("b"), grid))
-        val first = workspace.items()
-        assertEquals(0, first[0].cellX)
-        assertEquals(0, first[0].cellY)
-        assertEquals(1, first[1].cellX)
-        assertEquals(0, first[1].cellY)
+        db.dao().commitWorkspace(
+            expectedGeneration = 0,
+            metadata = WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4),
+            pages = listOf(WorkspacePageEntity(1, 0)),
+            items = listOf(item(1, "WORKSPACE", 1)),
+            applications = listOf(app(1, "a")),
+        )
+        assertEquals(1, db.dao().workspaceMetadata()!!.generation)
+        assertEquals("a", db.dao().workspaceApplications().single().packageName)
         db.close()
     }
 
     @Test
-    fun overflowGoesToSecondScreen() {
+    fun staleGenerationRejectsBeforeWrites() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        repeat(4) { i -> assertTrue(workspace.pin(app("p$i"), grid)) }
-        assertNull(workspace.firstEmpty(grid, 0))
-        assertTrue(workspace.pin(app("overflow"), grid))
-        assertEquals(1, workspace.items().last().screen)
+        assertThrows(StaleWorkspaceGeneration::class.java) {
+            db.dao().commitWorkspace(
+                expectedGeneration = 9,
+                metadata = WorkspaceMetadataEntity(generation = 10, cols = 4, rows = 4, hotseatCols = 4),
+                pages = listOf(WorkspacePageEntity(1, 0)),
+                items = emptyList(),
+            )
+        }
+        assertEquals(0, db.dao().workspaceMetadata()!!.generation)
         db.close()
     }
 
     @Test
-    fun preferredScreenUsedWhenEmpty() {
+    fun failedRoomWriteRollsBackGeneration() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        assertTrue(workspace.pin(app("second"), grid, preferred = 1))
-        assertEquals(1, workspace.items().single().screen)
+        assertThrows(Exception::class.java) {
+            db.dao().commitWorkspace(
+                expectedGeneration = 0,
+                metadata = WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4),
+                pages = listOf(WorkspacePageEntity(1, 0), WorkspacePageEntity(2, 0)),
+                items = emptyList(),
+            )
+        }
+        assertEquals(0, db.dao().workspaceMetadata()!!.generation)
+        assertEquals(listOf(1L), db.dao().workspacePages().map { it.pageId })
         db.close()
     }
 
     @Test
-    fun fullGridRejectsPin() {
+    fun hotseatAndPageContainersRoundTrip() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        repeat(Workspace.SCREENS * 4) { i -> assertTrue(workspace.pin(app("p$i"), grid)) }
-        assertEquals(false, workspace.pin(app("overflow"), grid))
-        assertNull(workspace.firstEmpty(grid, 0))
-        assertNull(workspace.firstEmpty(grid, 1))
+        db.dao().commitWorkspace(
+            expectedGeneration = 0,
+            metadata = WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4),
+            pages = listOf(WorkspacePageEntity(1, 0)),
+            items = listOf(item(1, "HOTSEAT", 0)),
+            applications = listOf(app(1, "dock")),
+        )
+        assertEquals("HOTSEAT", db.dao().workspaceItems().single().containerKind)
         db.close()
     }
 
     @Test
-    fun dockMovesOffWorkspace() {
+    fun noOpMustMatchEveryPersistedRow() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        val item = app("docked")
-        assertTrue(workspace.pin(item, grid))
-        assertEquals(0, workspace.items().single().screen)
-        assertTrue(workspace.dock(item, grid.cols))
-        assertEquals(Workspace.HOTSEAT, workspace.items().single().screen)
-        assertEquals(0, workspace.items().single().cellX)
+        val metadata = db.dao().workspaceMetadata()!!
+        val pages = db.dao().workspacePages()
+        db.dao().commitWorkspace(0, metadata, pages, emptyList())
+        assertThrows(InvalidWorkspaceTransition::class.java) {
+            db.dao().commitWorkspace(0, metadata, pages, listOf(item(1, "WORKSPACE", 1)))
+        }
+        assertTrue(db.dao().workspaceItems().isEmpty())
         db.close()
     }
 
     @Test
-    fun fullDockRejectsAndLeavesWorkspacePin() {
+    fun allocatedIdsRemainMonotonicAfterRemoval() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        repeat(grid.cols) { i -> assertTrue(workspace.dock(app("d$i"), grid.cols)) }
-        val extra = app("extra")
-        assertTrue(workspace.pin(extra, grid))
-        assertEquals(false, workspace.dock(extra, grid.cols))
-        assertEquals(0, workspace.items().last().screen)
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2, nextPageId = 2),
+            pages,
+            listOf(item(1, "WORKSPACE", 1)),
+            listOf(app(1, "a")),
+        )
+        db.dao().commitWorkspace(
+            1,
+            WorkspaceMetadataEntity(generation = 2, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2, nextPageId = 2),
+            pages,
+            emptyList(),
+        )
+        assertEquals(2L, db.dao().workspaceMetadata()!!.nextItemId)
         db.close()
     }
 
     @Test
-    fun placeMovesAndRejectsOccupied() {
+    fun normalizedFolderRowsCommitAndNoOpAtomically() {
         val db = openDb()
-        val workspace = Workspace(db)
-        val a = app("a")
-        val b = app("b")
-        assertTrue(workspace.place(a, 0, 0, 0))
-        assertTrue(workspace.place(b, 0, 1, 0))
-        assertEquals(false, workspace.place(a, 0, 1, 0))
-        assertTrue(workspace.place(a, 0, 0, 1))
-        val moved = workspace.items().first { it.packageName == "a" }
-        assertEquals(0, moved.cellX)
-        assertEquals(1, moved.cellY)
-        assertEquals(1, workspace.items().first { it.packageName == "b" }.cellX)
+        val metadata = WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 11)
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        val items = listOf(item(10, "WORKSPACE", 1).copy(itemKind = WorkspaceItemEntity.ITEM_FOLDER))
+        val applications = listOf(app(1, "a"), app(2, "b"))
+        val folders = listOf(FolderEntity(10, "Tools"))
+        val members = listOf(FolderMemberEntity(1, 10, 0), FolderMemberEntity(2, 10, 1))
+        db.dao().commitWorkspace(
+            0,
+            metadata,
+            pages,
+            items,
+            applications = applications,
+            folders = folders,
+            folderMembers = members,
+        )
+
+        val rows = db.dao().workspaceState()
+        assertEquals(listOf(1L, 2L), rows.folderMembers.map { it.itemId })
+        db.dao().commitWorkspace(
+            1,
+            metadata,
+            pages,
+            items,
+            applications = applications,
+            folders = folders,
+            folderMembers = members,
+        )
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
         db.close()
     }
 
     @Test
-    fun placeOntoHotseat() {
+    fun shortcutPayloadIsUniqueAndOneOfValidationRollsBack() {
         val db = openDb()
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        val workspace = Workspace(db)
-        val item = app("docked")
-        assertTrue(workspace.pin(item, grid))
-        assertTrue(workspace.place(item, Workspace.HOTSEAT, 1, 0))
-        assertEquals(Workspace.HOTSEAT, workspace.items().single().screen)
-        assertEquals(1, workspace.items().single().cellX)
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        val shortcutItem = item(1, "WORKSPACE", 1).copy(itemKind = WorkspaceItemEntity.ITEM_SHORTCUT)
+        val shortcut = ShortcutItemEntity(1, "pkg", "dynamic", 0)
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2),
+            pages,
+            listOf(shortcutItem),
+            shortcuts = listOf(shortcut),
+        )
+        assertEquals("dynamic", db.dao().workspaceShortcuts().single().shortcutId)
+        assertThrows(InvalidWorkspaceTransition::class.java) {
+            db.dao().commitWorkspace(
+                1,
+                WorkspaceMetadataEntity(generation = 2, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 2),
+                pages,
+                listOf(shortcutItem.copy(itemKind = WorkspaceItemEntity.ITEM_APPLICATION)),
+                applications = listOf(app(1, "pkg")),
+                shortcuts = listOf(shortcut),
+            )
+        }
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        assertEquals("dynamic", db.dao().workspaceShortcuts().single().shortcutId)
         db.close()
     }
 
     @Test
-    fun unpinAndDropMissing() {
+    fun widgetRestoreRemapHandlesIdSwapsAtomically() {
         val db = openDb()
-        val grid = PhoneGrid("3_by_3", 3, 3, 255f, 300f)
-        val workspace = Workspace(db)
-        val keep = app("keep")
-        val gone = app("gone")
-        workspace.pin(keep, grid)
-        workspace.pin(gone, grid)
-        workspace.unpin(gone)
-        assertEquals(1, workspace.items().size)
-        workspace.pin(gone, grid)
-        workspace.dropMissing(setOf(Triple(keep.packageName, keep.className, keep.profileId)))
-        assertEquals(listOf("keep"), workspace.items().map { it.packageName })
-        db.close()
-    }
-
-    @Test
-    fun outOfGridCellsStayStored() {
-        val db = openDb()
-        db.dao().insertWorkspace(
-            com.caniko.cenix.db.WorkspaceItemEntity(
-                screen = 0,
-                cellX = 4,
-                cellY = 4,
-                packageName = "x",
-                className = "Y",
-                profileId = 0,
+        val pages = listOf(WorkspacePageEntity(1, 0))
+        val items = listOf(
+            item(1, "WORKSPACE", 1).copy(itemKind = WorkspaceItemEntity.ITEM_WIDGET),
+            item(2, "WORKSPACE", 1).copy(cellX = 1, itemKind = WorkspaceItemEntity.ITEM_WIDGET),
+        )
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 4, rows = 4, hotseatCols = 4, nextItemId = 3),
+            pages,
+            items,
+            widgets = listOf(
+                WidgetItemEntity(1, "widgets", "One", 0, 10),
+                WidgetItemEntity(2, "widgets", "Two", 0, 20),
             ),
         )
-        val grid = PhoneGrid("2_by_2", 2, 2, 200f, 200f)
-        assertEquals(true, PhoneGrid.PHONE.first().inBounds(0, 0))
-        assertEquals(false, grid.inBounds(4, 4))
-        assertEquals(1, Workspace(db).items().size)
+        db.dao().remapWidgetIds(intArrayOf(10, 20), intArrayOf(20, 10), 100)
+        assertEquals(mapOf(1L to 20, 2L to 10), db.dao().workspaceWidgets().associate { it.itemId to it.appWidgetId })
+        assertTrue(db.dao().pendingWidgetOperations().isEmpty())
         db.close()
     }
 
-    private fun app(pkg: String) =
-        LaunchableApp(pkg, "Main", 0, pkg, pkg, null, null)
+    @Test
+    fun automaticPlacementFindsRowMajorVacancyAndRejectsDuplicatePackageProfile() {
+        val db = openDb()
+        val items = (1L..4L).map { id ->
+            item(id, "WORKSPACE", 1).copy(cellX = ((id - 1) % 2).toInt(), cellY = ((id - 1) / 2).toInt())
+        }
+        db.dao().commitWorkspace(
+            0,
+            WorkspaceMetadataEntity(generation = 1, cols = 2, rows = 2, hotseatCols = 2, nextItemId = 5, nextPageId = 2),
+            listOf(WorkspacePageEntity(1, 0)),
+            items,
+            applications = (1L..4L).map { id -> app(id, "full$id") },
+        )
+        val full = LauncherRepository(db).snapshot()
+        assertNull(full.firstVacantCell())
+        assertTrue(full.containsPackageProfile("full1", 0))
+        assertTrue(!full.containsPackageProfile("full1", 10))
+        val vacancy = full.copy(items = full.items.filter { it.itemId != 2UL }).firstVacantCell()
+        assertEquals(Triple(1UL, 1, 0), vacancy)
+        db.close()
+    }
+
+    private fun item(id: Long, container: String, containerId: Long) = WorkspaceItemEntity(
+        id = id,
+        containerKind = container,
+        containerId = containerId,
+        cellX = 0,
+        cellY = 0,
+    )
+
+    private fun app(id: Long, pkg: String) = ApplicationItemEntity(id, pkg, "Main", 0)
 
     private fun openDb(): CenixDatabase {
         val context = ApplicationProvider.getApplicationContext<Application>()

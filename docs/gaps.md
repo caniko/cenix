@@ -2,7 +2,7 @@
 
 ## Still out
 
-- Folders, widgets, shortcuts, All Apps drag, swap, more than two pages
+- Occupied-cell swap
 - Recents / Quickstep (privileged; do not claim)
 - Private Space chrome, app lock, launcher data provider
 - Icon packs / Cuscon
@@ -12,4 +12,4 @@
 
 ## Next milestone
 
-Folders. Attach a mustang before claiming device grid/fingerprint.
+Attach a mustang before claiming device grid/fingerprint. Product expansion remains deferred.

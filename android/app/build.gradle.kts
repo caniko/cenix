@@ -4,6 +4,17 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val gitCommit: String = System.getenv("CENIX_GIT_COMMIT")
+    ?: providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+        workingDir = rootDir
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().ifBlank { "unknown" }
+val dogfoodStore = System.getenv("CENIX_DOGFOOD_STORE_FILE")
+val dogfoodAlias = System.getenv("CENIX_DOGFOOD_KEY_ALIAS")
+val dogfoodStorePassword = System.getenv("CENIX_DOGFOOD_STORE_PASSWORD")
+val dogfoodKeyPassword = System.getenv("CENIX_DOGFOOD_KEY_PASSWORD")
+
 android {
     namespace = "com.caniko.cenix"
     compileSdk = 35
@@ -15,9 +26,21 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
             arg("room.incremental", "true")
+        }
+    }
+
+    signingConfigs {
+        if (listOf(dogfoodStore, dogfoodAlias, dogfoodStorePassword, dogfoodKeyPassword).all { !it.isNullOrBlank() }) {
+            create("dogfood") {
+                storeFile = file(dogfoodStore!!)
+                keyAlias = dogfoodAlias
+                storePassword = dogfoodStorePassword
+                keyPassword = dogfoodKeyPassword
+            }
         }
     }
 
@@ -25,10 +48,20 @@ android {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = null
+            ndk.abiFilters += "arm64-v8a"
+            buildConfigField("boolean", "REDACT_LOGS", "true")
         }
         debug {
             isDebuggable = true
+            buildConfigField("boolean", "REDACT_LOGS", "false")
+        }
+        create("dogfood") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".dogfood"
+            matchingFallbacks += "release"
+            signingConfig = signingConfigs.findByName("dogfood")
+            buildConfigField("boolean", "REDACT_LOGS", "true")
         }
     }
 
@@ -43,6 +76,7 @@ android {
 
     kotlinOptions {
         jvmTarget = "21"
+        allWarningsAsErrors = true
     }
 
     sourceSets {
@@ -79,5 +113,18 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation("androidx.room:room-testing:$room")
+}
+
+gradle.taskGraph.whenReady {
+    val publishing = gradle.taskGraph.allTasks.any { task ->
+        task.name.contains("Release", ignoreCase = true) || task.name.contains("Dogfood", ignoreCase = true)
+    }
+    if (publishing && project.hasProperty("omitNative")) {
+        throw GradleException("omitNative cannot be packaged into release or dogfood")
+    }
+    if (gradle.taskGraph.allTasks.any { it.name.contains("Dogfood", ignoreCase = true) } && dogfoodStore.isNullOrBlank()) {
+        logger.lifecycle("Dogfood APK is unsigned: configure CENIX_DOGFOOD_* to sign it")
+    }
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_view"
+        android:shortcutId="manifest"
+        android:shortcutLongLabel="@string/manifest_shortcut"
+        android:shortcutShortLabel="@string/manifest_shortcut">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.caniko.cenix.fixture.ManifestShortcutActivity"
+            android:targetPackage="com.caniko.cenix.fixture" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

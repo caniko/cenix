@@ -1,0 +1,29 @@
+Categories:
+  - System
+License: Apache-2.0
+AuthorName: Can
+SourceCode: https://github.com/caniko/cenix
+IssueTracker: https://github.com/caniko/cenix/issues
+
+AutoName: Cenix
+Name: Cenix
+
+RepoType: git
+Repo: https://github.com/caniko/cenix
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: unknown
+    gradle:
+      - yes
+    output: android/app/build/outputs/apk/release/app-release-unsigned.apk
+    srclibs: []
+    prebuild: echo "draft recipe; not submitted"
+
+AllowedAPKSigningKeys: []
+
+AutoUpdateMode: None
+UpdateCheckMode: None
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

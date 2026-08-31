@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="action_move_left" type="id" />
+    <item name="action_move_right" type="id" />
+    <item name="action_move_up" type="id" />
+    <item name="action_move_down" type="id" />
+    <item name="action_move_next_page" type="id" />
+    <item name="action_move_previous_page" type="id" />
+    <item name="action_dock" type="id" />
+    <item name="action_undock" type="id" />
+    <item name="action_open_all_apps" type="id" />
+    <item name="action_close_all_apps" type="id" />
+    <item name="action_open_launcher_settings" type="id" />
+    <item name="action_export_diagnostics" type="id" />
+    <item name="action_open_folder" type="id" />
+    <item name="action_rename_folder" type="id" />
+    <item name="action_remove_from_folder" type="id" />
+    <item name="folder_popup" type="id" />
+    <item name="folder_title" type="id" />
+    <item name="folder_members" type="id" />
+    <item name="context_popup" type="id" />
+    <item name="context_shortcuts" type="id" />
+    <item name="context_drag" type="id" />
+    <item name="context_app_info" type="id" />
+    <item name="context_uninstall" type="id" />
+    <item name="context_remove" type="id" />
+    <item name="shortcut_row" type="id" />
+    <item name="shortcut_pin" type="id" />
+    <item name="action_open_context" type="id" />
+    <item name="action_launch_shortcut" type="id" />
+    <item name="action_pin_shortcut" type="id" />
+    <item name="action_app_info" type="id" />
+    <item name="action_uninstall" type="id" />
+    <item name="pin_confirmation" type="id" />
+    <item name="pin_confirm" type="id" />
+    <item name="pin_cancel" type="id" />
+    <item name="widget_picker" type="id" />
+    <item name="widget_search" type="id" />
+    <item name="action_add_widget" type="id" />
+    <item name="grid_2_by_2" type="id" />
+    <item name="grid_3_by_3" type="id" />
+    <item name="grid_4_by_4" type="id" />
+    <item name="grid_4_by_5" type="id" />
+    <item name="grid_5_by_5" type="id" />
+</resources>

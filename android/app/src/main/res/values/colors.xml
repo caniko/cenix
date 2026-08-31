@@ -1,0 +1,7 @@
+<resources>
+    <color name="launcher_surface">#FFF8F8F8</color>
+    <color name="launcher_accent">#FF6750A4</color>
+    <color name="notification_dot">#FF6750A4</color>
+    <color name="themed_icon_background">#FFEADDFF</color>
+    <color name="themed_icon_foreground">#FF4F378B</color>
+</resources>

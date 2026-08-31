@@ -69,6 +69,7 @@ class EmergencyIsolationTest {
     @Test
     fun resetClearsPersistedEmergency() {
         val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        assertTrue(app.awaitReady())
         app.requestEmergency()
         app.resetLocalState()
         assertFalse(app.emergency)

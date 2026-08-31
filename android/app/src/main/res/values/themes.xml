@@ -2,6 +2,16 @@
     <style name="Theme.Cenix" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="colorAccent">@color/launcher_accent</item>
+    </style>
+
+    <style name="Theme.Cenix.Settings" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/launcher_surface</item>
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:colorBackground">@color/launcher_surface</item>
+        <item name="colorAccent">@color/launcher_accent</item>
     </style>
 </resources>

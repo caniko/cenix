@@ -9,7 +9,7 @@ repository = "https://github.com/caniko/cenix"
 version = "0.1.0"
 
 [workspace.dependencies]
-cenix-core = { path = "crates/cenix-core" }
+cenix-core = { path = "crates/cenix-core", version = "0.1.0" }
 thiserror = "2"
 uniffi = "0.29.5"
 

@@ -62,10 +62,22 @@
         abiVersions = ["x86_64"];
       };
       emulatorSdk = emulatorComposition.androidsdk or emulatorComposition;
+      emulatorAospComposition = harbor-android.lib.mkAndroidSdk {
+        inherit pkgs;
+        platformVersions = [androidPlatform];
+        buildToolsVersions = ["35.0.0"];
+        ndkVersions = [androidNdkVersion];
+        includeNDK = true;
+        includeEmulator = true;
+        includeSystemImages = true;
+        systemImageTypes = ["default"];
+        abiVersions = ["x86_64"];
+      };
+      emulatorAospSdk = emulatorAospComposition.androidsdk or emulatorAospComposition;
       rustShells = harbor-rs.lib.mkDevShells {
         inherit pkgs craneLib cross;
       };
-      apkDebug = harbor-android.lib.mkAndroidApk {
+      apkDebugBase = harbor-android.lib.mkAndroidApk {
         inherit pkgs androidSdk rustToolchain;
         workspaceSrc = ./.;
         cargoPkg = "cenix-ffi";
@@ -76,10 +88,17 @@
         cargoNdkPlatform = 35;
         ndkVersion = androidNdkVersion;
         pname = "cenix-debug";
-        buildCommand = "nix build .#apk-debug";
+        buildCommand = "nix build .#apk-debug-arm64 --option sandbox false";
       };
+      apkDebug = apkDebugBase.overrideAttrs (old: {
+        CENIX_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
+        preBuild = (old.preBuild or "") + ''
+          export ANDROID_USER_HOME="$HOME/.android"
+          mkdir -p "$ANDROID_USER_HOME"
+        '';
+      });
     in {
-      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk rustShells apkDebug;
+      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug;
       checks = {
         fmt = craneLib.cargoFmt {inherit src;};
         clippy = craneLib.cargoClippy {
@@ -97,7 +116,7 @@
       cfg = forSystem system;
     in {
       default = cfg.checks.test;
-      apk-debug = cfg.apkDebug;
+      apk-debug-arm64 = cfg.apkDebug;
     });
 
     checks = nixpkgs.lib.genAttrs systems (system: (forSystem system).checks);
@@ -112,7 +131,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
         };
         emulator = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -120,7 +139,15 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
+        };
+        emulator-aosp = harbor-android.lib.mkAndroidDevShell {
+          inherit (cfg) pkgs;
+          androidSdk = cfg.emulatorAospSdk;
+          ndkVersion = androidNdkVersion;
+          rustToolchain = cfg.rustToolchain;
+          base = cfg.rustShells.default;
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
         };
       }
     );

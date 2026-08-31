@@ -1,0 +1,5 @@
+Cenix is an installable HOME launcher. It lists apps, filters them locally, pins a two-page workspace and hotseat, and keeps working if native code is missing.
+
+No internet permission. No account. Room on-device only.
+
+This description does not claim GrapheneOS device proof. Emulator runs use AOSP images, not GrapheneOS.
