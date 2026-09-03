@@ -18,13 +18,19 @@ work_profile_id=""
 private_profile_id=""
 private_profile_status="not-attempted"
 target_avd=""
-target_serial=""
+target_serial="${CENIX_TARGET_SERIAL:-}"
 target_started=0
 target_created_avd=0
+local_emulator_needed=0
+if [[ -z "${CENIX_SERIAL:-}" ]]; then
+  local_emulator_needed=1
+elif [[ ( "$suite" == "backup" || "$suite" == "full" ) && -z "$target_serial" ]]; then
+  local_emulator_needed=1
+fi
 mkdir -p "$art"
 export CENIX_GIT_COMMIT="${CENIX_GIT_COMMIT:-$(git -C "$root" rev-parse HEAD)}"
 avd="${CENIX_AVD:-cenix-ci-$run_id}"
-if [[ "$avd" == "cenix-api35" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
+if [[ -z "${CENIX_SERIAL:-}" && "$avd" == "cenix-api35" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
   echo "refusing shared AVD cenix-api35; set CENIX_ALLOW_SHARED_AVD=1 to override" >&2
   exit 1
 fi
@@ -42,43 +48,50 @@ echo "conformance artifacts: $art"
 echo "emulator suite must run through the matching Nix emulator shell"
 echo "this Android API 35 $image_kind x86_64 image is not GrapheneOS and not Pixel 10 Pro XL (mustang)"
 echo "git commit: $CENIX_GIT_COMMIT"
-echo "avd: $avd"
+if [[ -n "${CENIX_SERIAL:-}" ]]; then
+  echo "avd: externally managed"
+else
+  echo "avd: $avd"
+fi
 echo "suite: $suite"
 
 if [[ -z "$sdk" ]]; then
   echo "ANDROID_SDK_ROOT is required; use: nix develop .#emulator" >&2
   exit 1
 fi
-if [[ ! -d "$sysdir" ]]; then
+if [[ "$local_emulator_needed" == "1" && ! -d "$sysdir" ]]; then
   echo "missing $sysdir" >&2
   echo "emulator suite must run through: nix develop .#emulator-aosp" >&2
   exit 1
 fi
-if [[ "$image_kind" != "aosp" && "${CENIX_ALLOW_GOOGLE_APIS:-0}" != "1" ]]; then
+if [[ "$local_emulator_needed" == "1" && "$image_kind" != "aosp" && "${CENIX_ALLOW_GOOGLE_APIS:-0}" != "1" ]]; then
   echo "refusing non-AOSP image $sysdir; set CENIX_ALLOW_GOOGLE_APIS=1 for compatibility-only evidence" >&2
   exit 1
 fi
 emulator_bin="${EMULATOR:-$sdk/emulator/emulator}"
-if [[ ! -x "$emulator_bin" ]]; then
+if [[ "$local_emulator_needed" == "1" && ! -x "$emulator_bin" ]]; then
   echo "missing emulator binary $emulator_bin; use: nix develop .#emulator" >&2
   exit 1
 fi
 
-if [[ -z "${CENIX_AVD:-}" ]]; then
-  export ANDROID_AVD_HOME="$art/avd"
-  export ANDROID_EMULATOR_HOME="$art/emu-home"
-else
-  export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$art/avd}"
-  export ANDROID_EMULATOR_HOME="${ANDROID_EMULATOR_HOME:-$art/emu-home}"
+avdmanager=""
+created_avd=0
+if [[ "$local_emulator_needed" == "1" ]]; then
+  if [[ -z "${CENIX_AVD:-}" ]]; then
+    export ANDROID_AVD_HOME="$art/avd"
+    export ANDROID_EMULATOR_HOME="$art/emu-home"
+  else
+    export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$art/avd}"
+    export ANDROID_EMULATOR_HOME="${ANDROID_EMULATOR_HOME:-$art/emu-home}"
+  fi
+  mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_EMULATOR_HOME"
+  avdmanager="$(echo "$sdk"/cmdline-tools/*/bin/avdmanager | awk '{print $1}')"
 fi
-mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_EMULATOR_HOME"
 image_pkg="system-images;android-35;google_apis;x86_64"
 if [[ "$image_kind" == "aosp" ]]; then
   image_pkg="system-images;android-35;default;x86_64"
 fi
-avdmanager="$(echo "$sdk"/cmdline-tools/*/bin/avdmanager | awk '{print $1}')"
-created_avd=0
-if ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
+if [[ -z "${CENIX_SERIAL:-}" ]] && ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
   if [[ ! -x "$avdmanager" ]]; then
     echo "no avdmanager under $sdk/cmdline-tools; use: nix develop .#emulator" >&2
     exit 1
@@ -86,8 +99,11 @@ if ! "$emulator_bin" -list-avds | grep -qx "$avd"; then
   echo no | "$avdmanager" create avd -f -n "$avd" -k "$image_pkg" >/dev/null
   created_avd=1
 fi
-cfg="$ANDROID_AVD_HOME/${avd}.avd/config.ini"
-if [[ -f "$cfg" ]]; then
+cfg=""
+if [[ -z "${CENIX_SERIAL:-}" ]]; then
+  cfg="$ANDROID_AVD_HOME/${avd}.avd/config.ini"
+fi
+if [[ -n "$cfg" && -f "$cfg" ]]; then
   for key in hw.lcd.width=320 hw.lcd.height=640 hw.lcd.density=160; do
     k="${key%%=*}"
     if grep -q "^$k=" "$cfg"; then
@@ -112,8 +128,11 @@ avd_serial() {
 }
 
 started=0
-serial="$(avd_serial || true)"
-if [[ -n "$serial" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
+serial="${CENIX_SERIAL:-}"
+if [[ -z "$serial" ]]; then
+  serial="$(avd_serial || true)"
+fi
+if [[ -z "${CENIX_SERIAL:-}" && -n "$serial" && "${CENIX_ALLOW_SHARED_AVD:-0}" != "1" ]]; then
   echo "AVD $avd already has serial $serial; refuse to reuse" >&2
   exit 1
 fi
@@ -132,10 +151,12 @@ cleanup() {
   [[ -z "${CENIX_AVD:-}" && "$created_avd" == "1" ]] && "$avdmanager" delete avd -n "$avd" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-if [[ -n "$serial" ]]; then
+if [[ "$serial" =~ ^emulator-[0-9]+$ ]]; then
   emu_port="${serial#emulator-}"
 elif [[ -n "${CENIX_EMU_PORT:-}" ]]; then
   emu_port="$CENIX_EMU_PORT"
+elif [[ -n "$serial" && "$local_emulator_needed" == "0" ]]; then
+  emu_port=""
 else
   devices="$("$adb" devices)"
   port_start=$((RANDOM % 8))
@@ -169,17 +190,33 @@ if [[ -z "$serial" ]]; then
   fi
 fi
 export ANDROID_SERIAL="$serial"
-echo "emulator serial: $serial (AVD $avd)"
-
-for _ in $(seq 1 60); do
-  if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
-    break
+check_emulator() {
+  local checked_serial="$1" label="$2" api abi product
+  for _ in $(seq 1 60); do
+    [[ "$("$adb" -s "$checked_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
+    sleep 5
+  done
+  [[ "$("$adb" -s "$checked_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] || { echo "$label emulator $checked_serial did not finish booting" >&2; return 1; }
+  api="$("$adb" -s "$checked_serial" shell getprop ro.build.version.sdk | tr -d '\r')"
+  abi="$("$adb" -s "$checked_serial" shell getprop ro.product.cpu.abi | tr -d '\r')"
+  product="$("$adb" -s "$checked_serial" shell getprop ro.product.name | tr -d '\r')"
+  [[ "$api" == "35" ]] || { echo "$label emulator $checked_serial has API $api, expected 35" >&2; return 1; }
+  [[ "$abi" == "x86_64" ]] || { echo "$label emulator $checked_serial has ABI $abi, expected x86_64" >&2; return 1; }
+  [[ "$("$adb" -s "$checked_serial" shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]] || { echo "$label $checked_serial is not an emulator" >&2; return 1; }
+  [[ -n "$product" ]] || { echo "$label emulator $checked_serial has no image product" >&2; return 1; }
+  if [[ "$image_kind" == "aosp" && "$product" == *gphone* ]]; then
+    echo "$label emulator $checked_serial uses Google APIs image $product, expected AOSP" >&2
+    return 1
   fi
-  sleep 5
-done
-if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; then
-  echo "emulator $serial booted but sys.boot_completed never became 1" >&2
-  exit 1
+}
+
+check_emulator "$serial" primary || exit 1
+if [[ -n "${CENIX_SERIAL:-}" ]]; then
+  avd="$("$adb" -s "$serial" shell getprop ro.boot.qemu.avd_name | tr -d '\r')"
+  [[ -n "$avd" ]] || { echo "primary emulator $serial has no AVD identity" >&2; exit 1; }
+  echo "emulator serial: $serial (externally managed AVD $avd)"
+else
+  echo "emulator serial: $serial (AVD $avd)"
 fi
 configure_device() {
   "$adb" -s "$serial" shell svc power stayon true >/dev/null
@@ -1696,23 +1733,25 @@ assert payload["settings"]["autoAddApps"] is False
 PY
   pass "backup: repeat canonical exports are byte-identical and representative"
 
-  target_avd="${avd}-restore"
-  echo no | "$avdmanager" create avd -f -n "$target_avd" -k "$image_pkg" >/dev/null
-  target_created_avd=1
-  "$emulator_bin" -avd "$target_avd" -port $((emu_port + 2)) -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/target-emulator.log" 2>&1 &
-  target_started=$!
-  for _ in $(seq 1 90); do
-    target_serial="$(avd_serial "$target_avd" || true)"
-    [[ -n "$target_serial" ]] && break
-    sleep 2
-  done
-  [[ -n "$target_serial" ]] || fail "target AVD never appeared"
-  [[ "$("$adb" -s "$target_serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')" == "$target_avd" ]] || fail "target AVD identity mismatch"
-  for _ in $(seq 1 60); do
-    [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
-    sleep 5
-  done
-  [[ "$("$adb" -s "$target_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] || fail "target AVD did not boot"
+  if [[ -n "$target_serial" ]]; then
+    [[ "$target_serial" != "$serial" ]] || fail "restore target must differ from source emulator"
+    target_avd="$("$adb" -s "$target_serial" shell getprop ro.boot.qemu.avd_name | tr -d '\r')"
+    [[ -n "$target_avd" ]] || fail "target emulator $target_serial has no AVD identity"
+  else
+    target_avd="${avd}-restore"
+    echo no | "$avdmanager" create avd -f -n "$target_avd" -k "$image_pkg" >/dev/null
+    target_created_avd=1
+    "$emulator_bin" -avd "$target_avd" -port $((emu_port + 2)) -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect >"$art/target-emulator.log" 2>&1 &
+    target_started=$!
+    for _ in $(seq 1 90); do
+      target_serial="$(avd_serial "$target_avd" || true)"
+      [[ -n "$target_serial" ]] && break
+      sleep 2
+    done
+    [[ -n "$target_serial" ]] || fail "target AVD never appeared"
+    [[ "$("$adb" -s "$target_serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')" == "$target_avd" ]] || fail "target AVD identity mismatch"
+  fi
+  check_emulator "$target_serial" target || fail "target emulator validation failed"
   source_serial="$serial"
   {
     echo "source_avd=$avd"
