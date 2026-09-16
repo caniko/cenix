@@ -16,10 +16,18 @@ object DiagnosticStore {
     fun append(line: String) {
         val root = dir.get() ?: return
         CenixExecutors.io {
-            root.mkdirs()
-            val current = File(root, "events.0.log")
-            current.appendText(line + "\n")
-            if (current.length() > MAX_BYTES) rotate(root)
+            try {
+                // Diagnostics are best-effort: a wedged files dir (seen once
+                // as ENOENT on first launch in a fresh profile) must never
+                // crash the launcher or trip the crash-loop guard.
+                root.mkdirs()
+                val current = File(root, "events.0.log")
+                current.parentFile?.mkdirs()
+                current.appendText(line + "\n")
+                if (current.length() > MAX_BYTES) rotate(root)
+            } catch (_: Exception) {
+                // Drop the line; the logcat path in CenixLog still applies.
+            }
         }
     }
 
