@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test-APK-only visibility: instrumentation runs as com.caniko.cenix.test
+    and must resolve the app under test plus the allowed fixture packages.
+    Merged into the test APK alone; the app and release manifests are
+    untouched. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.caniko.cenix" />
+        <package android:name="com.caniko.cenix.fixture" />
+    </queries>
+</manifest>
