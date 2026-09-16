@@ -10,6 +10,10 @@ Classes include `TRANSPORT_CONTROLLED` for destinations Cenix does not own (Andr
 | --- | --- | --- | --- |
 | HOME registration | `INSTALLABLE_PUBLIC` | done | `src`+`api`+`emu` |
 | HOME role selection | `ROLE_HOME_GATED` | done | `RoleManager` / `cmd role`; `emu` |
+| Launcher entry intents | `INSTALLABLE_PUBLIC` | partial | `ALL_APPS` / `SHOW_WORK_APPS` routing for running and cold-start launches; work section defers to first catalog load; device qualification remains |
+| App drawer grid | `INSTALLABLE_PUBLIC` | implemented, unqualified | icon grid replaces row list; fast-scroll and visual parity need device verification |
+| Drawer categories (Cenix extension) | `INSTALLABLE_PUBLIC` | partial | offline hints, per-profile taxonomy with stable IDs, create/rename/delete/reorder UI, section rendering with focus preservation; grouping, DPAD and persistence unit tests; device qualification remains |
+| Icon packs (Cenix extension) | `INSTALLABLE_PUBLIC` | implemented, unqualified | resource/asset XML parsing, searchable catalog/previews, global pack and per-component overrides; parser tests, no real-pack/device pass |
 | Workspace | `INSTALLABLE_PUBLIC` | done | dynamic pages; internal drag and reorder; `emu` |
 | Hotseat | `INSTALLABLE_PUBLIC` | done | one row, `cols` slots; no QSB; drag |
 | HOME / All Apps shell | `INSTALLABLE_PUBLIC` | done | separate surfaces; swipe, Back, HOME intent; `emu` |
@@ -28,6 +32,7 @@ Classes include `TRANSPORT_CONTROLLED` for destinations Cenix does not own (Andr
 | Work profiles | `INSTALLABLE_PUBLIC` | done | typed discovery, tabs, quiet/unquiet, apps, shortcuts, DPC-allowed widgets, reconciliation; `api`+`emu` |
 | Private Space | `ROLE_HOME_GATED` | public boundary | public API 35 permission/type/access, isolated section and lock-time leakage policy; `api`+`emu` |
 | App locking | `SIGNATURE_OR_SYSTEM` | omitted | `LOCK_APPS` in `src` |
+| Private Space customization | `ROLE_HOME_GATED` | transient only | private/unknown per-app overrides are rejected; legacy rows purged; shared pack presentation only; see `private-customization.md` |
 | Wallpaper / dynamic colors | `USER_AUTHORIZED` | P5B implemented | `ACTION_SET_WALLPAPER`, `WallpaperColors`, system dynamic resources; emulator evidence pending final matrix |
 | Themed icons | `INSTALLABLE_PUBLIC` | P5B implemented | public adaptive monochrome layer with original-icon fallback |
 | Grid migration | `INSTALLABLE_PUBLIC` | done | Room/Rust transaction and emulator evidence |
@@ -40,7 +45,7 @@ Classes include `TRANSPORT_CONTROLLED` for destinations Cenix does not own (Andr
 | Launcher data provider | `SIGNATURE_OR_SYSTEM` | omitted | `ACCESS_LAUNCHER_DATA` |
 | Organizer / folder creator | `INTENTIONALLY_OMITTED` | — | internal `src` activities |
 | App Functions | `UNKNOWN_REQUIRES_SPIKE` | omitted | `src` service |
-| Icon packs / Cuscon | `INTENTIONALLY_OMITTED` | — | themed adaptive icons only; no external icon packs or Cuscon assets |
+| Cuscon assets/runtime | `INTENTIONALLY_OMITTED` | — | installed icon-pack resources are supported without Cuscon code or bundled assets |
 | `QUERY_ALL_PACKAGES` | `INTENTIONALLY_OMITTED` | — | Cenix uses `<queries>` MAIN+LAUNCHER |
 | Internet / WebView / JS runtime | `INTENTIONALLY_OMITTED` | — | forbidden |
 

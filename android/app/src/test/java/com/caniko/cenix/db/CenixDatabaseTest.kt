@@ -29,7 +29,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class CenixDatabaseTest {
     @Test
     fun startupStateRoundTrip() {
@@ -132,6 +132,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_6_7,
                 CenixDatabase.MIGRATION_7_8,
                 CenixDatabase.MIGRATION_8_9,
+                CenixDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
@@ -172,6 +173,7 @@ class CenixDatabaseTest {
                 CenixDatabase.MIGRATION_6_7,
                 CenixDatabase.MIGRATION_7_8,
                 CenixDatabase.MIGRATION_8_9,
+                CenixDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
@@ -229,7 +231,7 @@ class CenixDatabaseTest {
         sqlite.version = 8
         sqlite.close()
         val db = Room.databaseBuilder(context, CenixDatabase::class.java, name)
-            .addMigrations(CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
         val widget = db.dao().workspaceWidgets().single()
@@ -419,8 +421,10 @@ class CenixDatabaseTest {
             5,
         )
         val widget = db.dao().workspaceWidgets().single()
-        assertNull(repo.pending())
+        assertEquals(RestorePhase.PLATFORM_RECONCILE, repo.pending()!!.phase)
         assertNull(widget.appWidgetId)
+        assertTrue(repo.complete(ApplicationProvider.getApplicationContext<Application>(), 1))
+        assertNull(repo.pending())
         assertEquals(2, widget.minSpanX)
         assertEquals(4, widget.resizeX)
         db.dao().commitWorkspace(
@@ -460,9 +464,104 @@ class CenixDatabaseTest {
 
         assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
         assertEquals(RestorePhase.PLATFORM_RECONCILE, repo.pending()!!.phase)
-        assertTrue(repo.complete(1))
+        assertTrue(repo.complete(ApplicationProvider.getApplicationContext<Application>(), 1))
         assertNull(repo.pending())
         db.close()
+    }
+
+    @Test
+    fun drawerWriteFailureKeepsReplayableJournalUntilBothStoresSucceed() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val databaseName = "drawer-recovery.db"
+        context.deleteDatabase(databaseName)
+        context.getSharedPreferences("cenix_drawer", 0).edit().clear().commit()
+        context.getSharedPreferences("cenix_icons", 0).edit().clear().commit()
+        val failing = object : android.content.ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences {
+                val original = super.getSharedPreferences(name, mode)
+                if (name != "cenix_icons") return original
+                return object : android.content.SharedPreferences by original {
+                    override fun edit(): android.content.SharedPreferences.Editor {
+                        val editor = original.edit()
+                        return object : android.content.SharedPreferences.Editor by editor {
+                            override fun commit() = false
+                        }
+                    }
+                }
+            }
+        }
+        val db = Room.databaseBuilder(context, CenixDatabase::class.java, databaseName)
+            .allowMainThreadQueries().build().also { it.ensureSeed() }
+        val repo = BackupRepository(db)
+        val plan = widgetRestorePlan().also {
+            it.drawer = it.drawer.copy(iconPack = "missing.pack", assignments = listOf(
+                com.caniko.cenix.uniffi.CategoryAssignment("app.personal", 0u, "games"),
+            ))
+        }
+        repo.applyLocalPlan(plan, "validated-source-artifact", 5)
+        assertNotNull(repo.pending()!!.drawerPayload)
+        assertThrows(IllegalStateException::class.java) { repo.complete(failing, 1) }
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        assertEquals("games", com.caniko.cenix.CategoryStore(context).overrides()["app.personal|0"])
+        assertEquals(RestorePhase.PLATFORM_RECONCILE, repo.pending()!!.phase)
+        db.close()
+        // Reopen the on-disk database; replay must not rely on the original in-memory plan.
+        val reopened = Room.databaseBuilder(context, CenixDatabase::class.java, databaseName)
+            .allowMainThreadQueries().build()
+        val recovered = BackupRepository(reopened)
+        assertTrue(recovered.complete(context, 1))
+        assertEquals("missing.pack", com.caniko.cenix.IconPackManager(context).selectedPack())
+        assertNull(recovered.pending())
+        assertFalse(recovered.complete(context, 1))
+        reopened.close()
+        context.deleteDatabase(databaseName)
+    }
+
+    @Test
+    fun normalCommitsWaitForRestoreReconciliation() {
+        val db = openDb()
+        val repo = BackupRepository(db)
+        repo.applyLocalPlan(widgetRestorePlan(), "{\"ok\":true}", 5)
+        assertEquals(RestorePhase.PLATFORM_RECONCILE, repo.pending()!!.phase)
+        // A package/profile mutation racing reconciliation must back off, not move the generation.
+        assertThrows(com.caniko.cenix.db.StaleWorkspaceGeneration::class.java) {
+            db.dao().commitWorkspace(
+                1,
+                db.dao().workspaceMetadata()!!,
+                db.dao().workspacePages(),
+                db.dao().workspaceItems(),
+                widgets = db.dao().workspaceWidgets(),
+            )
+        }
+        assertEquals(1L, db.dao().workspaceMetadata()!!.generation)
+        assertTrue(repo.complete(ApplicationProvider.getApplicationContext<Application>(), 1))
+        assertNull(repo.pending())
+        db.close()
+    }
+
+    @Test
+    fun migration9To10PreservesPendingRestoreAndDefaultsDrawerToNull() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val helper = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory().create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(9) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE pending_restore_operations (singletonId INTEGER NOT NULL PRIMARY KEY, source TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL, payloadSha256 TEXT NOT NULL, createdAt INTEGER NOT NULL, attemptCount INTEGER NOT NULL, expectedGeneration INTEGER NOT NULL, committedGeneration INTEGER)")
+                        db.execSQL("INSERT INTO pending_restore_operations VALUES (1,'SYSTEM','PLATFORM_RECONCILE','old','sha',1,1,4,5)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }).build(),
+        )
+        helper.use {
+            val db = it.writableDatabase
+            CenixDatabase.MIGRATION_9_10.migrate(db)
+            db.query("SELECT payload, committedGeneration, drawerPayload FROM pending_restore_operations").use { rows ->
+                assertTrue(rows.moveToFirst())
+                assertEquals("old", rows.getString(0))
+                assertEquals(5L, rows.getLong(1))
+                assertTrue(rows.isNull(2))
+            }
+        }
     }
 
     private fun widgetRestorePlan() = BackupImportPlan(
@@ -481,8 +580,9 @@ class CenixDatabaseTest {
             folders = emptyList(),
         ),
         settings = BackupSettings("4_by_5", true, false, true),
-        profiles = emptyList(),
+        profiles = listOf(com.caniko.cenix.uniffi.BackupProfileRef(0u, com.caniko.cenix.uniffi.ProfileKind.PERSONAL)),
         widgets = listOf(BackupWidgetMetadata(1UL, 2, 1, 4, 2)),
+        drawer = com.caniko.cenix.DrawerBackupExport.empty(),
         nextItemId = 2UL,
         nextPageId = 2UL,
         unresolvedApplications = emptyList(),

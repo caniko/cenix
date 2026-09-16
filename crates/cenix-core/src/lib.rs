@@ -1,13 +1,34 @@
 #![forbid(unsafe_code)]
 
 mod backup;
+pub mod codec;
+pub mod drawer;
+pub mod iconpack;
+pub mod profiles;
 mod workspace;
 
 pub use backup::{
     BACKUP_FORMAT_VERSION, BackupDocument, BackupError, BackupExportOptions, BackupImportPlan,
     BackupImportTarget, BackupImportWarning, BackupProfileRef, BackupSettings,
-    BackupWidgetMetadata, LOGICAL_PERSONAL_PROFILE_ID, LOGICAL_WORK_PROFILE_ID, ProfileMapping,
-    build_backup_document, plan_backup_import, validate_backup_document,
+    BackupWidgetMetadata, CategoryAssignment, DrawerBackup, DrawerCategory, DrawerTaxonomy,
+    IconOverride, LOGICAL_PERSONAL_PROFILE_ID, LOGICAL_WORK_PROFILE_ID, ProfileMapping,
+    build_backup_document, plan_backup_import, scope_drawer_for_targets, validate_backup_document,
+};
+pub use codec::{
+    CodecError, DrawerJournal, MAX_BYTES as CODEC_MAX_BYTES, decode_backup_envelope,
+    decode_drawer_journal, encode_backup_envelope, encode_drawer_journal, validate_decoded_shape,
+};
+pub use drawer::{
+    ALL_CATEGORY as DRAWER_ALL, BUILTIN_CATEGORIES as DRAWER_BUILTINS,
+    MAX_CUSTOM_CATEGORIES as DRAWER_MAX_CUSTOM, MAX_ID_CHARS as DRAWER_MAX_ID_CHARS,
+    MAX_ORDER_ENTRIES as DRAWER_MAX_ORDER, MAX_TITLE_CHARS as DRAWER_MAX_TITLE,
+    UNCATEGORIZED as DRAWER_FALLBACK, assignment_category, is_category_id as is_drawer_id,
+    is_valid_custom_id, order_categories, sanitize_title, section_key,
+};
+pub use iconpack::{IconPackError, IconPackIndex, parse_index, resource_name};
+pub use profiles::{
+    DiscoveryInput, DiscoveryState, ProfileObservation, ReconciledProfiles, UserTypeHint,
+    classify_profile, previous_kind, reconcile_profiles, update_discovery,
 };
 pub use workspace::{
     CellRect, ComponentId, ContainerRef, Folder, FolderMember, GridSpec, ItemPayload, ShortcutId,

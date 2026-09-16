@@ -133,7 +133,14 @@ for holder in ${holders[@]+"${holders[@]}"}; do
   fi
 done
 
-"$root/scripts/check-native-symbols.sh" "$apk"
+# Same convention as audit-apk.sh: the no-debug-sections rule is
+# release-scoped. Debug cdylibs legitimately carry DWARF; ELF validity and
+# dynamic symbols are still audited in both modes.
+if [[ "$apk" == *release* ]]; then
+  "$root/scripts/check-native-symbols.sh" "$apk"
+else
+  "$root/scripts/check-native-symbols.sh" --allow-debug-sections "$apk"
+fi
 
 # Foreground may have changed during the checks above: recheck at the last
 # moment, then perform the single allowed mutation.

@@ -55,6 +55,34 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:accessibilityHeading="true"
+            android:text="@string/drawer_mode"
+            android:textAppearance="?android:attr/textAppearanceMedium" />
+
+        <Button
+            android:id="@+id/drawerModeToggle"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/drawer_sections" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:accessibilityHeading="true"
+            android:text="@string/icon_pack"
+            android:textAppearance="?android:attr/textAppearanceMedium" />
+
+        <Button
+            android:id="@+id/iconPack"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/icon_pack_system" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:accessibilityHeading="true"
             android:text="@string/grid"
             android:textAppearance="?android:attr/textAppearanceMedium" />
 

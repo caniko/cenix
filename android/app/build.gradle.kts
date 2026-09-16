@@ -23,8 +23,8 @@ android {
         applicationId = "com.caniko.cenix"
         minSdk = 35
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         ksp {
@@ -115,6 +115,16 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation("androidx.room:room-testing:$room")
+}
+
+// Unit tests exercise the real UniFFI boundary, not stubs: JNA loads the host
+// cdylib built by `cargo build -p cenix-ffi` (also built by
+// scripts/generate-bindings.sh and by CI before running these tests). Without
+// it every FFI-touching test fails closed instead of silently testing a
+// different code path.
+tasks.withType<Test>().configureEach {
+    val jnaPath = System.getenv("CENIX_JNA_PATH") ?: rootProject.file("../target/debug").absolutePath
+    systemProperty("jna.library.path", jnaPath)
 }
 
 gradle.taskGraph.whenReady {

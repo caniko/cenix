@@ -31,6 +31,8 @@
     <item name="action_pin_shortcut" type="id" />
     <item name="action_app_info" type="id" />
     <item name="action_uninstall" type="id" />
+    <item name="action_move_category" type="id" />
+    <item name="action_customize_icon" type="id" />
     <item name="pin_confirmation" type="id" />
     <item name="pin_confirm" type="id" />
     <item name="pin_cancel" type="id" />

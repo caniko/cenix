@@ -23,6 +23,24 @@ actual="$(sha256sum "$input" | cut -d' ' -f1)"
   echo "unsigned APK digest mismatch: expected $CENIX_UNSIGNED_SHA256, got $actual" >&2
   exit 1
 }
+commit="$(git -C "$root" rev-parse HEAD)"
+if [[ -n "${CENIX_SOURCE_MANIFEST:-}" ]]; then
+  # Bind provenance to verified build evidence instead of the signing
+  # checkout's HEAD: the manifest must vouch for this exact unsigned digest.
+  [[ -f "$CENIX_SOURCE_MANIFEST" ]] || { echo "source manifest not found: $CENIX_SOURCE_MANIFEST" >&2; exit 1; }
+  manifest_commit="$(python3 - "$CENIX_SOURCE_MANIFEST" "$actual" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+actual = sys.argv[2]
+builds = {manifest["buildA"]["sha256"], manifest["buildB"]["sha256"]}
+assert manifest["outcome"] == "identical", "reproducibility outcome is not identical"
+assert manifest["uploadedArtifact"]["sha256"] == actual, "input is not the vouched upload artifact"
+assert actual in builds, "input digest not among compared rebuilds"
+print(manifest["commit"])
+PY
+)"
+  commit="$manifest_commit"
+fi
 build_tools="$sdk/build-tools/35.0.0"
 zipalign="$build_tools/zipalign"
 apksigner="$build_tools/apksigner"
@@ -45,7 +63,12 @@ fi
 "$zipalign" -c -p 4 "$output"
 signed="$(sha256sum "$output" | cut -d' ' -f1)"
 cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$tmp/verify.txt" | head -n1)"
-commit="$(git -C "$root" rev-parse HEAD)"
+if [[ -n "${CENIX_EXPECTED_CERT:-}" ]]; then
+  [[ "$cert" == "$CENIX_EXPECTED_CERT" ]] || {
+    echo "signer certificate mismatch: expected $CENIX_EXPECTED_CERT, got $cert" >&2
+    exit 1
+  }
+fi
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" show -s --format=%ct HEAD)}" \
   python3 - "$manifest" "$input" "$output" "$actual" "$signed" "$cert" "$commit" <<'PY'
 import json, os, pathlib, sys

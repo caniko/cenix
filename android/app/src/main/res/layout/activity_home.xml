@@ -109,12 +109,67 @@
                     android:layout_height="48dp" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/drawerModeRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/drawerSections"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="@string/drawer_sections" />
+
+                <Button
+                    android:id="@+id/drawerAll"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="@string/drawer_all" />
+
+                <Button
+                    android:id="@+id/manageCategories"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="@string/manage_categories" />
+            </LinearLayout>
+
+            <HorizontalScrollView
+                android:id="@+id/categoryBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/categoryChips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
             <com.caniko.cenix.AllAppsView
                 android:id="@+id/appList"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:paddingTop="8dp" />
+
+            <ScrollView
+                android:id="@+id/categorySections"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/categorySectionsBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
 
             <LinearLayout
                 android:id="@+id/privateSpaceContainer"

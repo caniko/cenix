@@ -329,6 +329,45 @@ pub struct BackupWidgetMetadata {
     pub resize_y: i32,
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct DrawerCategory {
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct CategoryAssignment {
+    pub package: String,
+    pub profile_id: u64,
+    pub category_id: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct IconOverride {
+    pub package: String,
+    pub class: String,
+    pub profile_id: u64,
+    pub pack_package: String,
+    pub drawable: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct DrawerTaxonomy {
+    pub selected: String,
+    pub categories: Vec<DrawerCategory>,
+    pub order: Vec<String>,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct DrawerBackup {
+    pub mode: String,
+    pub personal: DrawerTaxonomy,
+    pub work: Option<DrawerTaxonomy>,
+    pub assignments: Vec<CategoryAssignment>,
+    pub icon_pack: String,
+    pub icon_overrides: Vec<IconOverride>,
+}
+
 #[derive(uniffi::Record)]
 pub struct BackupDocument {
     pub format_version: u32,
@@ -338,6 +377,7 @@ pub struct BackupDocument {
     pub profiles: Vec<BackupProfileRef>,
     pub workspace: WorkspaceSnapshot,
     pub widgets: Vec<BackupWidgetMetadata>,
+    pub drawer: DrawerBackup,
     pub next_item_id: u64,
     pub next_page_id: u64,
 }
@@ -372,6 +412,7 @@ pub struct BackupImportPlan {
     pub settings: BackupSettings,
     pub profiles: Vec<BackupProfileRef>,
     pub widgets: Vec<BackupWidgetMetadata>,
+    pub drawer: DrawerBackup,
     pub next_item_id: u64,
     pub next_page_id: u64,
     pub unresolved_applications: Vec<u64>,
@@ -468,6 +509,8 @@ pub enum BackupError {
     InvalidGrid,
     #[error("invalid title")]
     InvalidTitle,
+    #[error("invalid drawer customization")]
+    InvalidDrawer,
     #[error("cross profile")]
     CrossProfile,
     #[error("widget is too large for grid")]
@@ -557,6 +600,126 @@ pub fn project_profile_item(
     core::project_profile_item(profile.into(), surface.into()).into()
 }
 
+#[derive(Clone, Copy, uniffi::Enum)]
+pub enum UserTypeHint {
+    Managed,
+    Private,
+    Other,
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct DiscoveryInput {
+    pub profile_id: u64,
+    pub owner: bool,
+    pub user_type: Option<UserTypeHint>,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct DiscoveryState {
+    pub authoritative: Vec<u64>,
+    pub uncertain: Vec<u64>,
+}
+
+#[uniffi::export]
+pub fn update_discovery(
+    state: DiscoveryState,
+    inputs: Vec<DiscoveryInput>,
+    existing_ids: Vec<u64>,
+) -> DiscoveryState {
+    core::update_discovery(
+        &state.into(),
+        &inputs.into_iter().map(Into::into).collect::<Vec<_>>(),
+        &existing_ids,
+    )
+    .into()
+}
+
+#[uniffi::export]
+pub fn discovery_previous_kind(
+    state: DiscoveryState,
+    current_kinds: Vec<ProfileKindEntry>,
+    profile_id: u64,
+) -> Option<ProfileKind> {
+    let kinds: Vec<(u64, core::ProfileKind)> = current_kinds
+        .into_iter()
+        .map(|entry| (entry.profile_id, entry.kind.into()))
+        .collect();
+    core::previous_kind(&state.into(), &kinds, profile_id).map(Into::into)
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct ProfileKindEntry {
+    pub profile_id: u64,
+    pub kind: ProfileKind,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct IconPackMapping {
+    pub component: String,
+    pub drawable: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct IconPackIndex {
+    pub mappings: Vec<IconPackMapping>,
+    pub drawables: Vec<String>,
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum IconPackError {
+    #[error("malformed icon XML")]
+    Malformed,
+    #[error("icon XML exceeds bounds")]
+    Bounds,
+}
+
+const MAX_ICON_XML_BYTES: usize = 4 * 1024 * 1024;
+
+#[uniffi::export]
+pub fn parse_iconpack_index(xml: Vec<u8>) -> Result<IconPackIndex, IconPackError> {
+    if xml.len() > MAX_ICON_XML_BYTES {
+        return Err(IconPackError::Bounds);
+    }
+    core::parse_index(&xml)
+        .map(|index| IconPackIndex {
+            mappings: index
+                .mappings
+                .into_iter()
+                .map(|(component, drawable)| IconPackMapping {
+                    component,
+                    drawable,
+                })
+                .collect(),
+            drawables: index.drawables,
+        })
+        .map_err(|error| match error {
+            core::IconPackError::Malformed(_) => IconPackError::Malformed,
+            core::IconPackError::Bounds(_) => IconPackError::Bounds,
+        })
+}
+
+#[uniffi::export]
+pub fn classify_profile(
+    profile_id: u64,
+    owner: bool,
+    user_type: Option<UserTypeHint>,
+    quiet: bool,
+    running: bool,
+    unlocked: bool,
+    previous_kind: Option<ProfileKind>,
+) -> ProfileDescriptor {
+    core::classify_profile(
+        profile_id,
+        owner,
+        user_type.map(Into::into),
+        quiet,
+        running,
+        unlocked,
+        previous_kind.map(Into::into),
+    )
+    .into()
+}
+
 #[uniffi::export]
 pub fn apply_workspace_command(
     snapshot: WorkspaceSnapshot,
@@ -571,6 +734,7 @@ pub fn build_backup_document(
     workspace: WorkspaceSnapshot,
     settings: BackupSettings,
     widgets: Vec<BackupWidgetMetadata>,
+    drawer: DrawerBackup,
     options: BackupExportOptions,
     next_item_id: u64,
     next_page_id: u64,
@@ -579,6 +743,7 @@ pub fn build_backup_document(
         workspace.into(),
         settings.into(),
         widgets.into_iter().map(Into::into).collect(),
+        drawer.into(),
         options.into(),
         next_item_id,
         next_page_id,
@@ -589,6 +754,191 @@ pub fn build_backup_document(
 #[uniffi::export]
 pub fn validate_backup_document(document: BackupDocument) -> Result<(), BackupError> {
     Ok(core::validate_backup_document(document.into())?)
+}
+
+#[uniffi::export]
+pub fn scope_drawer_for_targets(
+    drawer: DrawerBackup,
+    targets: Vec<BackupProfileRef>,
+) -> Result<DrawerBackup, BackupError> {
+    Ok(core::scope_drawer_for_targets(
+        drawer.into(),
+        &targets.into_iter().map(Into::into).collect::<Vec<_>>(),
+    )?
+    .into())
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum CodecError {
+    #[error("format")]
+    Format,
+    #[error("version")]
+    Version,
+    #[error("source")]
+    Source,
+    #[error("payload")]
+    Payload,
+    #[error("checksum")]
+    Checksum,
+    #[error("trailing")]
+    Trailing,
+    #[error("malformed")]
+    Malformed,
+    #[error("drawer")]
+    Drawer,
+    #[error("journal")]
+    Journal,
+    #[error("obsolete")]
+    Obsolete,
+    #[error("settings")]
+    Settings,
+    #[error("profiles")]
+    Profiles,
+    #[error("workspace")]
+    Workspace,
+    #[error("widgets")]
+    Widgets,
+    #[error("allocator")]
+    Allocator,
+    #[error("grid")]
+    Grid,
+    #[error("pages")]
+    Pages,
+    #[error("items")]
+    Items,
+    #[error("folders")]
+    Folders,
+    #[error("item")]
+    Item,
+    #[error("folder")]
+    Folder,
+    #[error("member")]
+    Member,
+    #[error("widget")]
+    Widget,
+    #[error("kind")]
+    Kind,
+    #[error("container")]
+    Container,
+    #[error("cell")]
+    Cell,
+    #[error("page")]
+    Page,
+    #[error("string")]
+    String,
+    #[error("integer")]
+    Integer,
+    #[error("count")]
+    Count,
+    #[error("duplicate-key")]
+    DuplicateKey,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("token")]
+    Token,
+    #[error("truncated")]
+    Truncated,
+    #[error("depth")]
+    Depth,
+    #[error("overlap")]
+    Overlap,
+    #[error("span")]
+    Span,
+    #[error("profile")]
+    Profile,
+    #[error("mixed")]
+    Mixed,
+    #[error("duplicate")]
+    Duplicate,
+    #[error("utf8")]
+    Utf8,
+    #[error("oversized")]
+    Oversized,
+}
+
+impl From<core::CodecError> for CodecError {
+    fn from(value: core::CodecError) -> Self {
+        match value {
+            core::CodecError::Format => Self::Format,
+            core::CodecError::Version => Self::Version,
+            core::CodecError::Source => Self::Source,
+            core::CodecError::Payload => Self::Payload,
+            core::CodecError::Checksum => Self::Checksum,
+            core::CodecError::Trailing => Self::Trailing,
+            core::CodecError::Malformed => Self::Malformed,
+            core::CodecError::Drawer => Self::Drawer,
+            core::CodecError::Journal => Self::Journal,
+            core::CodecError::Obsolete => Self::Obsolete,
+            core::CodecError::Settings => Self::Settings,
+            core::CodecError::Profiles => Self::Profiles,
+            core::CodecError::Workspace => Self::Workspace,
+            core::CodecError::Widgets => Self::Widgets,
+            core::CodecError::Allocator => Self::Allocator,
+            core::CodecError::Grid => Self::Grid,
+            core::CodecError::Pages => Self::Pages,
+            core::CodecError::Items => Self::Items,
+            core::CodecError::Folders => Self::Folders,
+            core::CodecError::Item => Self::Item,
+            core::CodecError::Folder => Self::Folder,
+            core::CodecError::Member => Self::Member,
+            core::CodecError::Widget => Self::Widget,
+            core::CodecError::Kind => Self::Kind,
+            core::CodecError::Container => Self::Container,
+            core::CodecError::Cell => Self::Cell,
+            core::CodecError::Page => Self::Page,
+            core::CodecError::String => Self::String,
+            core::CodecError::Integer => Self::Integer,
+            core::CodecError::Count => Self::Count,
+            core::CodecError::DuplicateKey => Self::DuplicateKey,
+            core::CodecError::Forbidden => Self::Forbidden,
+            core::CodecError::Token => Self::Token,
+            core::CodecError::Truncated => Self::Truncated,
+            core::CodecError::Depth => Self::Depth,
+            core::CodecError::Overlap => Self::Overlap,
+            core::CodecError::Span => Self::Span,
+            core::CodecError::Profile => Self::Profile,
+            core::CodecError::Mixed => Self::Mixed,
+            core::CodecError::Duplicate => Self::Duplicate,
+            core::CodecError::Utf8 => Self::Utf8,
+            core::CodecError::Oversized => Self::Oversized,
+        }
+    }
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct DrawerJournal {
+    pub drawer: DrawerBackup,
+    pub targets: Vec<BackupProfileRef>,
+}
+
+#[uniffi::export]
+pub fn encode_backup_envelope(document: BackupDocument) -> Result<Vec<u8>, CodecError> {
+    Ok(core::encode_backup_envelope(&document.into())?)
+}
+
+#[uniffi::export]
+pub fn decode_backup_envelope(bytes: Vec<u8>) -> Result<BackupDocument, CodecError> {
+    Ok(core::decode_backup_envelope(&bytes)?.into())
+}
+
+#[uniffi::export]
+pub fn encode_drawer_journal(
+    drawer: DrawerBackup,
+    targets: Vec<BackupProfileRef>,
+) -> Result<String, CodecError> {
+    Ok(core::encode_drawer_journal(
+        &drawer.into(),
+        &targets.into_iter().map(Into::into).collect::<Vec<_>>(),
+    )?)
+}
+
+#[uniffi::export]
+pub fn decode_drawer_journal(payload: String) -> Result<DrawerJournal, CodecError> {
+    let journal = core::decode_drawer_journal(&payload)?;
+    Ok(DrawerJournal {
+        drawer: journal.drawer.into(),
+        targets: journal.targets.into_iter().map(Into::into).collect(),
+    })
 }
 
 #[uniffi::export]
@@ -665,16 +1015,41 @@ impl From<core::WidgetProviderId> for WidgetProviderId {
     }
 }
 
+fn profile_kind_into(value: ProfileKind) -> core::ProfileKind {
+    match value {
+        ProfileKind::Personal => core::ProfileKind::Personal,
+        ProfileKind::Work => core::ProfileKind::Work,
+        ProfileKind::Private => core::ProfileKind::Private,
+        ProfileKind::Other => core::ProfileKind::Other,
+    }
+}
+
+fn profile_kind_from(value: core::ProfileKind) -> ProfileKind {
+    match value {
+        core::ProfileKind::Personal => ProfileKind::Personal,
+        core::ProfileKind::Work => ProfileKind::Work,
+        core::ProfileKind::Private => ProfileKind::Private,
+        core::ProfileKind::Other => ProfileKind::Other,
+    }
+}
+
+impl From<ProfileKind> for core::ProfileKind {
+    fn from(value: ProfileKind) -> Self {
+        profile_kind_into(value)
+    }
+}
+
+impl From<core::ProfileKind> for ProfileKind {
+    fn from(value: core::ProfileKind) -> Self {
+        profile_kind_from(value)
+    }
+}
+
 impl From<ProfileDescriptor> for core::ProfileDescriptor {
     fn from(value: ProfileDescriptor) -> Self {
         Self {
             profile_id: value.profile_id,
-            kind: match value.kind {
-                ProfileKind::Personal => core::ProfileKind::Personal,
-                ProfileKind::Work => core::ProfileKind::Work,
-                ProfileKind::Private => core::ProfileKind::Private,
-                ProfileKind::Other => core::ProfileKind::Other,
-            },
+            kind: value.kind.into(),
             access: match value.access {
                 ProfileAccess::Available => core::ProfileAccess::Available,
                 ProfileAccess::Quiet => core::ProfileAccess::Quiet,
@@ -682,6 +1057,148 @@ impl From<ProfileDescriptor> for core::ProfileDescriptor {
                 ProfileAccess::Unavailable => core::ProfileAccess::Unavailable,
             },
         }
+    }
+}
+
+impl From<core::ProfileDescriptor> for ProfileDescriptor {
+    fn from(value: core::ProfileDescriptor) -> Self {
+        Self {
+            profile_id: value.profile_id,
+            kind: value.kind.into(),
+            access: match value.access {
+                core::ProfileAccess::Available => ProfileAccess::Available,
+                core::ProfileAccess::Quiet => ProfileAccess::Quiet,
+                core::ProfileAccess::Locked => ProfileAccess::Locked,
+                core::ProfileAccess::Unavailable => ProfileAccess::Unavailable,
+            },
+        }
+    }
+}
+
+impl From<UserTypeHint> for core::UserTypeHint {
+    fn from(value: UserTypeHint) -> Self {
+        match value {
+            UserTypeHint::Managed => Self::Managed,
+            UserTypeHint::Private => Self::Private,
+            UserTypeHint::Other => Self::Other,
+        }
+    }
+}
+
+impl From<DiscoveryInput> for core::DiscoveryInput {
+    fn from(value: DiscoveryInput) -> Self {
+        Self {
+            profile_id: value.profile_id,
+            owner: value.owner,
+            user_type: value.user_type.map(Into::into),
+        }
+    }
+}
+
+impl From<DiscoveryState> for core::DiscoveryState {
+    fn from(value: DiscoveryState) -> Self {
+        Self {
+            authoritative: value.authoritative,
+            uncertain: value.uncertain,
+        }
+    }
+}
+
+impl From<core::DiscoveryState> for DiscoveryState {
+    fn from(value: core::DiscoveryState) -> Self {
+        Self {
+            authoritative: value.authoritative,
+            uncertain: value.uncertain,
+        }
+    }
+}
+
+/// Drawer category rules are canonical in `cenix-core::drawer`. These thin
+/// exports let live editing and projection share the exact rules used by
+/// backup validation and normalization.
+
+#[uniffi::export]
+pub fn drawer_builtin_categories() -> Vec<String> {
+    core::DRAWER_BUILTINS
+        .iter()
+        .map(|id| id.to_string())
+        .collect()
+}
+
+#[uniffi::export]
+pub fn drawer_is_valid_custom_id(id: String) -> bool {
+    core::is_valid_custom_id(&id)
+}
+
+#[uniffi::export]
+pub fn drawer_sanitize_title(raw: String) -> Option<String> {
+    core::sanitize_title(&raw)
+}
+
+#[uniffi::export]
+pub fn drawer_order_categories(custom_ids: Vec<String>, order: Vec<String>) -> Vec<String> {
+    core::order_categories(&custom_ids, &order)
+}
+
+#[uniffi::export]
+pub fn drawer_assignment_category(
+    auto: String,
+    category_override: Option<String>,
+    supports_customization: bool,
+) -> String {
+    core::assignment_category(&auto, category_override.as_deref(), supports_customization)
+}
+
+#[uniffi::export]
+pub fn drawer_section_key(requested: String, known: Vec<String>) -> String {
+    core::section_key(&requested, &known)
+}
+
+#[derive(Clone, Copy, uniffi::Record)]
+pub struct ProfileObservation {
+    pub profile_id: u64,
+    pub owner: bool,
+    pub user_type: Option<UserTypeHint>,
+    pub quiet: bool,
+    pub running: bool,
+    pub unlocked: bool,
+    pub serial_resolved: bool,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct ReconciledProfiles {
+    pub descriptors: Vec<ProfileDescriptor>,
+    pub state: DiscoveryState,
+    pub removed: Vec<u64>,
+}
+
+#[uniffi::export]
+pub fn reconcile_profiles(
+    state: DiscoveryState,
+    observations: Vec<ProfileObservation>,
+    previous_kinds: Vec<ProfileKindEntry>,
+) -> ReconciledProfiles {
+    let observations: Vec<core::ProfileObservation> = observations
+        .into_iter()
+        .map(|observation| core::ProfileObservation {
+            profile_id: observation.profile_id,
+            owner: observation.owner,
+            user_type: observation.user_type.map(Into::into),
+            quiet: observation.quiet,
+            running: observation.running,
+            unlocked: observation.unlocked,
+            serial_resolved: observation.serial_resolved,
+        })
+        .collect();
+    let previous: Vec<(u64, core::ProfileKind)> = previous_kinds
+        .into_iter()
+        .map(|entry| (entry.profile_id, entry.kind.into()))
+        .collect();
+    let reconciled = core::reconcile_profiles(&state.into(), &observations, &previous);
+    ReconciledProfiles {
+        descriptors: reconciled.descriptors.into_iter().map(Into::into).collect(),
+        state: reconciled.state.into(),
+        removed: reconciled.removed,
     }
 }
 
@@ -1188,6 +1705,7 @@ impl From<core::BackupError> for BackupError {
             core::BackupError::Full => Self::Full,
             core::BackupError::InvalidGrid => Self::InvalidGrid,
             core::BackupError::InvalidTitle => Self::InvalidTitle,
+            core::BackupError::InvalidDrawer => Self::InvalidDrawer,
             core::BackupError::CrossProfile => Self::CrossProfile,
             core::BackupError::WidgetTooLarge => Self::WidgetTooLarge,
             core::BackupError::InvariantViolation => Self::InvariantViolation,
@@ -1280,6 +1798,114 @@ impl From<core::BackupWidgetMetadata> for BackupWidgetMetadata {
     }
 }
 
+impl From<DrawerCategory> for core::DrawerCategory {
+    fn from(value: DrawerCategory) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+        }
+    }
+}
+
+impl From<core::DrawerCategory> for DrawerCategory {
+    fn from(value: core::DrawerCategory) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+        }
+    }
+}
+
+impl From<CategoryAssignment> for core::CategoryAssignment {
+    fn from(value: CategoryAssignment) -> Self {
+        Self {
+            package: value.package,
+            profile_id: value.profile_id,
+            category_id: value.category_id,
+        }
+    }
+}
+
+impl From<core::CategoryAssignment> for CategoryAssignment {
+    fn from(value: core::CategoryAssignment) -> Self {
+        Self {
+            package: value.package,
+            profile_id: value.profile_id,
+            category_id: value.category_id,
+        }
+    }
+}
+
+impl From<IconOverride> for core::IconOverride {
+    fn from(value: IconOverride) -> Self {
+        Self {
+            package: value.package,
+            class: value.class,
+            profile_id: value.profile_id,
+            pack_package: value.pack_package,
+            drawable: value.drawable,
+        }
+    }
+}
+
+impl From<core::IconOverride> for IconOverride {
+    fn from(value: core::IconOverride) -> Self {
+        Self {
+            package: value.package,
+            class: value.class,
+            profile_id: value.profile_id,
+            pack_package: value.pack_package,
+            drawable: value.drawable,
+        }
+    }
+}
+
+impl From<DrawerTaxonomy> for core::DrawerTaxonomy {
+    fn from(value: DrawerTaxonomy) -> Self {
+        Self {
+            selected: value.selected,
+            categories: value.categories.into_iter().map(Into::into).collect(),
+            order: value.order,
+        }
+    }
+}
+
+impl From<core::DrawerTaxonomy> for DrawerTaxonomy {
+    fn from(value: core::DrawerTaxonomy) -> Self {
+        Self {
+            selected: value.selected,
+            categories: value.categories.into_iter().map(Into::into).collect(),
+            order: value.order,
+        }
+    }
+}
+
+impl From<DrawerBackup> for core::DrawerBackup {
+    fn from(value: DrawerBackup) -> Self {
+        Self {
+            mode: value.mode,
+            personal: value.personal.into(),
+            work: value.work.map(Into::into),
+            assignments: value.assignments.into_iter().map(Into::into).collect(),
+            icon_pack: value.icon_pack,
+            icon_overrides: value.icon_overrides.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<core::DrawerBackup> for DrawerBackup {
+    fn from(value: core::DrawerBackup) -> Self {
+        Self {
+            mode: value.mode,
+            personal: value.personal.into(),
+            work: value.work.map(Into::into),
+            assignments: value.assignments.into_iter().map(Into::into).collect(),
+            icon_pack: value.icon_pack,
+            icon_overrides: value.icon_overrides.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<BackupDocument> for core::BackupDocument {
     fn from(value: BackupDocument) -> Self {
         Self {
@@ -1290,6 +1916,7 @@ impl From<BackupDocument> for core::BackupDocument {
             profiles: value.profiles.into_iter().map(Into::into).collect(),
             workspace: value.workspace.into(),
             widgets: value.widgets.into_iter().map(Into::into).collect(),
+            drawer: value.drawer.into(),
             next_item_id: value.next_item_id,
             next_page_id: value.next_page_id,
         }
@@ -1306,6 +1933,7 @@ impl From<core::BackupDocument> for BackupDocument {
             profiles: value.profiles.into_iter().map(Into::into).collect(),
             workspace: value.workspace.into(),
             widgets: value.widgets.into_iter().map(Into::into).collect(),
+            drawer: value.drawer.into(),
             next_item_id: value.next_item_id,
             next_page_id: value.next_page_id,
         }
@@ -1358,6 +1986,7 @@ impl From<core::BackupImportPlan> for BackupImportPlan {
             settings: value.settings.into(),
             profiles: value.profiles.into_iter().map(Into::into).collect(),
             widgets: value.widgets.into_iter().map(Into::into).collect(),
+            drawer: value.drawer.into(),
             next_item_id: value.next_item_id,
             next_page_id: value.next_page_id,
             unresolved_applications: value.unresolved_applications,

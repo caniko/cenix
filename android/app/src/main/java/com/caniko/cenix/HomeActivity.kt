@@ -21,6 +21,7 @@ import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -43,6 +44,7 @@ import com.caniko.cenix.uniffi.ShortcutId
 import com.caniko.cenix.uniffi.WorkspaceItem
 import com.caniko.cenix.uniffi.WorkspaceSnapshot
 import com.caniko.cenix.uniffi.WorkspaceTransition
+import com.caniko.cenix.db.RestorePhase
 import com.caniko.cenix.db.WidgetItemEntity
 
 class HomeActivity : AppCompatActivity() {
@@ -53,6 +55,8 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var shortcutCatalog: ShortcutCatalog
     private lateinit var packageSessions: PackageSessionController
     private lateinit var themedIcons: ThemedIconRenderer
+    private lateinit var iconPacks: IconPackManager
+    private lateinit var categories: CategoryStore
     private lateinit var appearance: WallpaperAppearanceController
     private lateinit var search: SearchController
     private lateinit var root: LauncherRoot
@@ -71,6 +75,12 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var privateSpaceContainer: View
     private lateinit var privateSpaceState: TextView
     private lateinit var privateSpaceToggle: Button
+    private lateinit var categoryChips: ViewGroup
+    private lateinit var categorySections: View
+    private lateinit var categorySectionsBody: ViewGroup
+    private lateinit var drawerSectionsBtn: Button
+    private lateinit var drawerAllBtn: Button
+    private lateinit var manageCategoriesBtn: Button
     private lateinit var dragLayer: DragLayer
     private lateinit var pager: WorkspacePager
     private lateinit var hotseat: HotseatView
@@ -86,9 +96,20 @@ class HomeActivity : AppCompatActivity() {
     private val privateVisible = mutableListOf<LaunchableApp>()
     private var profileSnapshot = emptyList<AndroidProfile>()
     private var activeProfileSection = ProfileKind.PERSONAL
+    private var uncertainProfileIds = emptySet<Long>()
+    private val pendingAutoPlace = mutableSetOf<PackageKey>()
+    @Volatile private var reloadPending = false
+    @Volatile private var searchDirty = false
+    // True until the first successful reload publishes: destructive profile
+    // cleanup additionally preserves every locally known serial, so a
+    // transient lookup failure before first in-memory discovery cannot purge
+    // rows for a profile simply unseen this boot.
+    @Volatile private var coldStart = true
     private val shortcuts = mutableMapOf<ShortcutId, LauncherShortcut>()
     private val widgetBindings = mutableMapOf<Long, WidgetItemEntity>()
     private var contextQueryToken = 0
+    private val reloadGate = ReloadGate()
+    private var pendingWorkSection = false
     private var notificationSubscription: AutoCloseable? = null
 
     private val exportDiagnostics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
@@ -114,6 +135,8 @@ class HomeActivity : AppCompatActivity() {
         catalog = AppCatalog(this, profiles)
         shortcutCatalog = ShortcutCatalog(this, catalog, profiles)
         themedIcons = ThemedIconRenderer(this)
+        iconPacks = IconPackManager(this)
+        categories = CategoryStore(this)
         appearance = WallpaperAppearanceController(this) {
             themedIcons.invalidate(null)
             scheduleReload("appearance")
@@ -128,7 +151,13 @@ class HomeActivity : AppCompatActivity() {
                     runOnUiThread(::applySurface)
                 }
             },
-            onResult = { matches -> runOnUiThread { bindList(matches) } },
+            onResult = { publication, token, matches ->
+                runOnUiThread {
+                    // Re-verify on the UI thread: a newer query or invalidation
+                    // between background dispatch and delivery drops the result.
+                    if (search.isCurrent(publication, token)) bindList(matches)
+                }
+            },
         )
         setContentView(R.layout.activity_home)
         bindViews()
@@ -146,6 +175,7 @@ class HomeActivity : AppCompatActivity() {
         packageSessions.start()
         profileReceiver = profiles.register(this) { scheduleReload("profile") }
         scheduleReload("create")
+        if (savedInstanceState == null) routeLaunchIntent(intent)
     }
 
     private fun bindViews() {
@@ -165,6 +195,12 @@ class HomeActivity : AppCompatActivity() {
         privateSpaceContainer = findViewById(R.id.privateSpaceContainer)
         privateSpaceState = findViewById(R.id.privateSpaceState)
         privateSpaceToggle = findViewById(R.id.privateSpaceToggle)
+        categoryChips = findViewById(R.id.categoryChips)
+        categorySections = findViewById(R.id.categorySections)
+        categorySectionsBody = findViewById(R.id.categorySectionsBody)
+        drawerSectionsBtn = findViewById(R.id.drawerSections)
+        drawerAllBtn = findViewById(R.id.drawerAll)
+        manageCategoriesBtn = findViewById(R.id.manageCategories)
         dragLayer = findViewById(R.id.dragLayer)
         pager = findViewById(R.id.workspaceGrid)
         hotseat = findViewById(R.id.hotseatGrid)
@@ -196,13 +232,11 @@ class HomeActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = applyFilter()
         })
         searchField.setOnKeyListener { _, keyCode, event ->
-            if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN || event.action != KeyEvent.ACTION_DOWN || visible.isEmpty()) {
+            if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN || event.action != KeyEvent.ACTION_DOWN) {
                 return@setOnKeyListener false
             }
+            if (!DrawerNavigation.focusFirstResult(categorySectionsBody, appList, privateAppList)) return@setOnKeyListener false
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
-            searchField.clearFocus()
-            appList.requestFocus()
-            appList.setSelection(0)
             true
         }
         appList.adapter = AppAdapter(visible)
@@ -216,6 +250,14 @@ class HomeActivity : AppCompatActivity() {
         workTab.setOnClickListener { selectProfileSection(ProfileKind.WORK) }
         workProfileToggle.setOnClickListener { toggleProfile(ProfileKind.WORK) }
         privateSpaceToggle.setOnClickListener { toggleProfile(ProfileKind.PRIVATE) }
+        drawerSectionsBtn.setOnClickListener { categories.setDrawerMode("sections"); noteCustomizationChanged(); applyFilter() }
+        drawerAllBtn.setOnClickListener {
+            categories.setDrawerMode("all")
+            drawerScopeSerial()?.let { categories.setSelected(it, AppCategories.ALL) }
+            noteCustomizationChanged()
+            applyFilter()
+        }
+        manageCategoriesBtn.setOnClickListener { showCategoryManager() }
         val allAppsLongPress = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
         var allAppsSource: View? = null
         var allAppsItem: LaunchableApp? = null
@@ -284,10 +326,34 @@ class HomeActivity : AppCompatActivity() {
         setIntent(intent)
         closeFolder("home")
         closeContext("home")
+        if (routeLaunchIntent(intent)) return
         selectedPageId = rendered.pages.firstOrNull()?.pageId
         pager.setCurrentPage(0, false)
         setSurface(LauncherShell.homeIntent(app.emergency), false)
         applyForceNativeFailure()
+    }
+
+    private fun routeLaunchIntent(intent: Intent): Boolean {
+        when (intent.action) {
+            "android.intent.action.ALL_APPS" -> {
+                setSurface(LauncherSurface.ALL_APPS, false)
+                applyForceNativeFailure()
+                return true
+            }
+            "android.intent.action.SHOW_WORK_APPS" -> {
+                // Cold start has no profile snapshot yet; defer the section switch to bindList.
+                if (profileSnapshot.any { it.descriptor.kind == ProfileKind.WORK }) {
+                    activeProfileSection = ProfileKind.WORK
+                    applyFilter()
+                } else {
+                    pendingWorkSection = true
+                }
+                setSurface(LauncherSurface.ALL_APPS, false)
+                applyForceNativeFailure()
+                return true
+            }
+        }
+        return false
     }
 
     override fun onDestroy() {
@@ -303,17 +369,32 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
+        reloadPending = true
+        val reloadToken = reloadGate.next()
+        if (reason == "profile") invalidatePrivateUi()
+        if (reason in PACKAGE_INVALIDATIONS || reason in setOf("icons", "appearance", "profile")) iconPacks.invalidate()
         if (reason in PACKAGE_INVALIDATIONS) themedIcons.invalidate(packageKey)
         if (reason == "remove" && packageKey != null) NotificationDotStore.remove(packageKey)
-        search.cancel()
+        search.invalidate()
         val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         CenixExecutors.io {
-            if (!app.awaitReady()) return@io
+            if (!app.awaitReady()) {
+                clearReloadPending(reloadToken)
+                return@io
+            }
             if (!app.emergency) app.recoverSystemRestore()
-            val database = app.database ?: return@io
+            val database = app.database ?: run {
+                clearReloadPending(reloadToken)
+                return@io
+            }
             val workspace = WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
                 val profileChange = profiles.refresh()
+                if (!reloadGate.isCurrent(reloadToken)) {
+                    clearReloadPending(reloadToken)
+                    return@io
+                }
+                completePendingRestore(database)
                 widgetHost.recover()
                 val availableProfileIds = profileChange.profiles
                     .filter { it.descriptor.access == ProfileAccess.AVAILABLE }
@@ -321,10 +402,27 @@ class HomeActivity : AppCompatActivity() {
                     .toSet()
                 val settings = checkNotNull(database.dao().launcherSettings())
                 NotificationDotStore.setEnabled(settings.notificationDots && !app.emergency)
+                val customizationProfiles = profileChange.profiles
+                    .filter { it.descriptor.kind == ProfileKind.PERSONAL || it.descriptor.kind == ProfileKind.WORK }
+                    .map { it.descriptor.profileId.toLong() }.toSet()
+                categories.clearLegacyDevState()
+                // Uncertain first-discovery profiles keep their rows until classified.
+                val coldPreserve = if (coldStart) {
+                    categories.knownSerials() + iconPacks.knownSerials()
+                } else emptySet()
+                val preserve = profileChange.uncertainProfileIds + coldPreserve
+                categories.retainProfiles(customizationProfiles, preserve)
+                iconPacks.retainProfiles(customizationProfiles, preserve)
                 val loaded = packageSessions.decorate(
                     catalog.load(profileChange.profiles),
                     database.dao().workspaceApplications(),
-                ).map { item -> item.copy(icon = themedIcons.icon(item, settings.themedIcons, appearance.generation)) }
+                ).map { item ->
+                    val themed = themedIcons.icon(item, settings.themedIcons, appearance.generation)
+                    val packed = try {
+                        if (!app.emergency) iconPacks.resolve(item) else null
+                    } catch (_: Exception) { null }
+                    item.copy(icon = packed ?: themed)
+                }
                     .filterNot {
                         reason == "remove" && packageKey != null &&
                             it.packageName == packageKey.packageName && it.profileId == packageKey.profileId
@@ -354,6 +452,18 @@ class HomeActivity : AppCompatActivity() {
                     CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
                 } ?: state
                 shortcutCatalog.pin(state.shortcutIds())
+                if (database.dao().pendingRestore()?.phase != RestorePhase.PLATFORM_RECONCILE &&
+                    (workspace.consumeDeferredRestore() || pendingAutoPlace.isNotEmpty())
+                ) {
+                    // Recovery finished but deferred a mutation: replay one-shot placements
+                    // and reconcile once more instead of silently dropping the event.
+                    // The journal check runs first so a still-pending journal never loses
+                    // the retry flag.
+                    drainPendingAutoPlace()
+                    scheduleReload("restore-retry")
+                    clearReloadPending(reloadToken)
+                    return@io
+                }
                 val bindings = database.dao().workspaceWidgets()
                 val matches = try {
                     app.activeFilter().filter(loaded, query, availableProfileIds)
@@ -390,7 +500,9 @@ class HomeActivity : AppCompatActivity() {
                     )
                 }
                 runOnUiThread {
+                    if (!reloadGate.isCurrent(reloadToken)) return@runOnUiThread
                     profileSnapshot = profileChange.profiles
+                    uncertainProfileIds = profileChange.uncertainProfileIds
                     apps.clear()
                     apps.addAll(loaded)
                     shortcuts.clear()
@@ -401,12 +513,47 @@ class HomeActivity : AppCompatActivity() {
                     render(state)
                     widgetHost.refreshOptions(state, widgetBindings)
                     applySurface()
+                    coldStart = false
+                    clearReloadPending(reloadToken)
+                    // A search typed while the reload was in flight used the stale catalog;
+                    // resubmit once with the freshly published snapshot and query.
+                    if (searchDirty) {
+                        searchDirty = false
+                        applyFilter()
+                    }
                 }
             } catch (_: Throwable) {
+                clearReloadPending(reloadToken)
+                searchDirty = false
                 app.requestEmergency()
                 runOnUiThread(::applySurface)
             }
         }
+    }
+
+    // Only the latest scheduled reload may lift the quarantine it raised; stale
+    // reloads exiting early must not unblock searches for a newer in-flight reload.
+    private fun clearReloadPending(token: Int) {
+        if (reloadGate.isCurrent(token)) reloadPending = false
+    }
+
+    private fun invalidatePrivateUi() {
+        // scheduleReload also runs off the main thread (package callbacks, IO follow-ups),
+        // so route every view mutation through the main looper.
+        if (!this::privateAppList.isInitialized || isFinishing || isDestroyed) return
+        val clear = {
+            // Hide private content synchronously; the refreshed catalog repopulates it if still available.
+            if (!isFinishing && !isDestroyed) {
+                search.invalidate()
+                privateVisible.clear()
+                (privateAppList.adapter as? AppAdapter)?.notifyDataSetChanged()
+                privateAppList.visibility = View.GONE
+                closeContext("profile")
+                closeFolder("profile")
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) clear()
+        else runOnUiThread(clear)
     }
 
     private fun render(snapshot: WorkspaceSnapshot) {
@@ -807,6 +954,7 @@ class HomeActivity : AppCompatActivity() {
                         canUninstall(appItem),
                         itemId != null,
                         appItem.profileKind != ProfileKind.PRIVATE,
+                        appItem.supportsCustomization,
                     )
                 }
             }
@@ -857,6 +1005,8 @@ class HomeActivity : AppCompatActivity() {
         }
         popup.onAppInfo = { closeContext("app-info"); openAppInfo(appItem) }
         popup.onUninstall = { closeContext("uninstall"); requestUninstall(appItem) }
+        popup.onMoveCategory = { closeContext("category"); showMoveToCategory(appItem) }
+        popup.onCustomizeIcon = { closeContext("icon"); showIconPicker(appItem) }
         popup.onRemove = { itemId?.let { mutate { workspace -> workspace.remove(it) } }; closeContext("remove") }
         popup.onLaunchShortcut = ::launch
         popup.onDragShortcut = { row, shortcut ->
@@ -871,6 +1021,7 @@ class HomeActivity : AppCompatActivity() {
             canUninstall(appItem),
             itemId != null,
             appItem.profileKind != ProfileKind.PRIVATE,
+            appItem.supportsCustomization,
         )
     }
 
@@ -1027,7 +1178,17 @@ class HomeActivity : AppCompatActivity() {
     private fun mutate(block: (WorkspaceController) -> com.caniko.cenix.uniffi.WorkspaceTransition?) {
         CenixExecutors.io {
             val workspace = controller ?: return@io
-            block(workspace)?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+            val result = block(workspace)
+            if (result == null && workspace.consumeDeferredRestore()) {
+                // A pending restore journal rejected this user action: say so instead of
+                // silently dropping the drag, and retry once recovery has completed.
+                runOnUiThread {
+                    Toast.makeText(this, R.string.restore_deferred, Toast.LENGTH_SHORT).show()
+                }
+                scheduleReload("restore-retry")
+            } else {
+                result?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+            }
         }
     }
 
@@ -1035,20 +1196,272 @@ class HomeActivity : AppCompatActivity() {
         if (activeProfileSection == ProfileKind.WORK && profileSnapshot.none { it.descriptor.kind == ProfileKind.WORK }) {
             activeProfileSection = ProfileKind.PERSONAL
         }
-        visible.clear()
-        privateVisible.clear()
-        if (activeProfileSection == ProfileKind.WORK) {
-            visible.addAll(matches.filter { it.profileKind == ProfileKind.WORK })
+        if (pendingWorkSection) {
+            pendingWorkSection = false
+            if (profileSnapshot.any { it.descriptor.kind == ProfileKind.WORK }) {
+                activeProfileSection = ProfileKind.WORK
+            }
+        }
+        val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
+        // Provisionally classified profiles stay hidden until discovery succeeds; their
+        // customization rows are preserved (see retainProfiles preserve set).
+        val certain = matches.filter { it.profileId !in uncertainProfileIds }
+        val profileFiltered = if (activeProfileSection == ProfileKind.WORK) {
+            certain.filter { it.profileKind == ProfileKind.WORK }
         } else {
-            visible.addAll(matches.filter { it.profileKind == ProfileKind.PERSONAL || it.profileKind == ProfileKind.OTHER })
-            privateVisible.addAll(matches.filter { it.profileKind == ProfileKind.PRIVATE })
+            certain.filter { it.profileKind == ProfileKind.PERSONAL || it.profileKind == ProfileKind.OTHER }
+        }
+        privateVisible.clear()
+        if (activeProfileSection != ProfileKind.WORK) {
+            privateVisible.addAll(certain.filter { it.profileKind == ProfileKind.PRIVATE })
+        }
+        val mode = if (this::categories.isInitialized) categories.drawerMode() else "sections"
+        val scope = drawerScopeSerial()
+        val selected = if (this::categories.isInitialized && scope != null) categories.selectedCategory(scope) else AppCategories.ALL
+        val ordered = if (this::categories.isInitialized && scope != null) categories.orderedCategories(scope) else emptyList()
+        val overrides = if (this::categories.isInitialized) categories.overrides() else emptyMap()
+        visible.clear()
+        if (query.isNotBlank()) {
+            visible.addAll(profileFiltered)
+        } else if (selected == AppCategories.ALL) {
+            visible.addAll(profileFiltered)
+        } else {
+            visible.addAll(profileFiltered.filter { categories.effective(it, overrides) == selected })
         }
         (appList.adapter as AppAdapter).notifyDataSetChanged()
         (privateAppList.adapter as AppAdapter).notifyDataSetChanged()
+        if (this::categoryChips.isInitialized) renderCategoryChips(profileFiltered, overrides, query, scope, ordered)
+        if (this::categorySections.isInitialized) renderSections(profileFiltered, overrides, query, mode, ordered)
         bindProfileChrome()
     }
 
+    private fun drawerScopeSerial(): Long? {
+        val kind = if (activeProfileSection == ProfileKind.WORK) ProfileKind.WORK else ProfileKind.PERSONAL
+        return profileSnapshot.firstOrNull { it.descriptor.kind == kind }?.descriptor?.profileId?.toLong()
+    }
+
+    private fun noteCustomizationChanged() {
+        try {
+            app.scheduleBackup()
+        } catch (_: RuntimeException) {
+            Unit
+        }
+    }
+
+    private fun renderCategoryChips(
+        profileFiltered: List<LaunchableApp>,
+        overrides: Map<String, String>,
+        query: String,
+        scope: Long?,
+        ordered: List<DrawerCategory>,
+    ) {
+        DrawerNavigation.preserveFocus(categoryChips) {
+            categoryChips.removeAllViews()
+        val mode = categories.drawerMode()
+        val selected = if (scope != null) categories.selectedCategory(scope) else AppCategories.ALL
+        val counts = profileFiltered.groupingBy { categories.effective(it, overrides) }.eachCount()
+        fun chip(id: String, label: String, selectedChip: Boolean, onTap: () -> Unit) {
+            categoryChips.addView(Button(this).apply {
+                tag = "chip:$id"
+                text = if (id == AppCategories.ALL) label else getString(R.string.category_count, label, counts[id] ?: 0)
+                isSelected = selectedChip
+                minHeight = (48 * resources.displayMetrics.density).toInt()
+                setOnClickListener { onTap() }
+            })
+        }
+        chip(AppCategories.ALL, getString(R.string.category_all), selected == AppCategories.ALL || (mode == "sections" && query.isBlank())) {
+            scope?.let { categories.setSelected(it, AppCategories.ALL) }
+            noteCustomizationChanged()
+            applyFilter()
+        }
+        ordered.forEach { cat ->
+            val label = AppCategories.label(this, cat.id, cat.name)
+            chip(cat.id, label, selected == cat.id && (mode == "all" || query.isNotBlank())) {
+                scope?.let { categories.setSelected(it, cat.id) }
+                categories.setDrawerMode("all")
+                noteCustomizationChanged()
+                applyFilter()
+            }
+        }
+        drawerSectionsBtn.isSelected = mode == "sections"
+        drawerAllBtn.isSelected = mode == "all"
+        }
+    }
+
+    private fun renderSections(
+        profileFiltered: List<LaunchableApp>,
+        overrides: Map<String, String>,
+        query: String,
+        mode: String,
+        ordered: List<DrawerCategory>,
+    ) {
+        val showSections = mode == "sections" && query.isBlank() && !app.emergency
+        categorySections.visibility = if (showSections) View.VISIBLE else View.GONE
+        appList.visibility = if (showSections) View.GONE else View.VISIBLE
+        if (!showSections) {
+            categorySectionsBody.removeAllViews()
+            return
+        }
+        DrawerNavigation.preserveFocus(categorySectionsBody) {
+            categorySectionsBody.removeAllViews()
+        // ponytail: sections instantiate O(apps) cells; replace with recycling if device frame/memory budgets fail.
+        AppCategories.sections(profileFiltered, ordered, overrides).forEach { (cat, items) ->
+            categorySectionsBody.addView(TextView(this).apply {
+                text = getString(R.string.category_count, AppCategories.label(this@HomeActivity, cat.id, cat.name), items.size)
+                textSize = 16f
+                val dp = resources.displayMetrics.density
+                setPadding((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
+                isAccessibilityHeading = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            })
+            val widthDp = resources.configuration.screenWidthDp - 32
+            val cellDp = 80 * resources.configuration.fontScale.coerceAtLeast(1f)
+            val grid = android.widget.GridLayout(this).apply { columnCount = (widthDp / cellDp).toInt().coerceIn(2, 6) }
+            val adapter = AppAdapter(items)
+            items.forEachIndexed { index, item ->
+                val cell = adapter.getView(index, null, grid)
+                cell.layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                    width = 0
+                    columnSpec = android.widget.GridLayout.spec(index % grid.columnCount, 1f)
+                    rowSpec = android.widget.GridLayout.spec(index / grid.columnCount)
+                }
+                cell.tag = Triple(item.packageName, item.className, item.profileId)
+                cell.isFocusable = true
+                cell.setOnClickListener { launch(item) }
+                cell.setOnLongClickListener {
+                    if (!app.emergency && item.canPlace) openContext(cell, item, null, null) else false
+                }
+                grid.addView(cell)
+            }
+            categorySectionsBody.addView(grid)
+        }
+        if (categorySectionsBody.childCount == 0) {
+            categorySectionsBody.addView(TextView(this).apply { text = getString(R.string.empty_apps) })
+        }
+        }
+    }
+
+    private fun showCategoryManager() {
+        if (app.emergency) return
+        val scope = drawerScopeSerial() ?: return
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val dp = resources.displayMetrics.density
+            setPadding((16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt(), 0)
+        }
+        val input = android.widget.EditText(this).apply { hint = getString(R.string.category_name_hint) }
+        body.addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.manage_categories)
+            .setView(body)
+            .setPositiveButton(R.string.category_create) { _, _ ->
+                val name = input.text?.toString().orEmpty()
+                if (name.isNotBlank() && categories.createCustom(name, scope).isNotEmpty()) {
+                    noteCustomizationChanged()
+                    applyFilter()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        val refresh = {
+            dialog.dismiss()
+            if (!app.emergency) showCategoryManager()
+        }
+        categories.customCategories(scope).forEach { custom ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(TextView(this).apply { text = custom.name ?: custom.id }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            fun smallButton(label: String, action: () -> Unit) {
+                row.addView(Button(this).apply {
+                    text = label
+                    setOnClickListener { action() }
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, (48 * resources.displayMetrics.density).toInt()))
+            }
+            smallButton("↑") { moveCustom(scope, custom.id, -1); refresh() }
+            smallButton("↓") { moveCustom(scope, custom.id, 1); refresh() }
+            smallButton(getString(R.string.category_rename)) { showCategoryRename(scope, custom.id, custom.name ?: custom.id, refresh) }
+            smallButton(getString(R.string.category_delete)) {
+                categories.deleteCustom(custom.id, scope)
+                if (categories.selectedCategory(scope) == custom.id) categories.setSelected(scope, AppCategories.ALL)
+                noteCustomizationChanged()
+                applyFilter()
+                refresh()
+            }
+            body.addView(row)
+        }
+        dialog.show()
+    }
+
+    private fun moveCustom(scope: Long, id: String, delta: Int) {
+        val order = categories.orderedCategories(scope).map { it.id }.toMutableList()
+        val index = order.indexOf(id)
+        val target = (index + delta).coerceIn(0, order.size - 1)
+        if (index < 0 || target == index) return
+        order.removeAt(index)
+        order.add(target, id)
+        categories.reorder(order, scope)
+        noteCustomizationChanged()
+        applyFilter()
+    }
+
+    private fun showCategoryRename(scope: Long, id: String, current: String, onDone: () -> Unit) {
+        val input = android.widget.EditText(this).apply { setText(current) }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.category_rename)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                categories.renameCustom(id, scope, input.text?.toString().orEmpty())
+                noteCustomizationChanged()
+                applyFilter()
+                onDone()
+            }
+            .setNegativeButton(R.string.cancel) { _, _ -> onDone() }
+            .setOnCancelListener { onDone() }
+            .show()
+    }
+
+    private fun showMoveToCategory(app: LaunchableApp) {
+        if (!app.supportsCustomization || this.app.emergency) return
+        // Scope to the app's own profile, not the active drawer section: a work app on
+        // HOME must be offered work categories even while browsing Personal.
+        val scope = app.profileId
+        val ordered = categories.orderedCategories(scope)
+        val labels = mutableListOf(getString(R.string.category_reset_auto))
+        val ids = mutableListOf<String?>(null)
+        ordered.forEach { cat ->
+            labels.add(AppCategories.label(this, cat.id, cat.name))
+            ids.add(cat.id)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.move_to_category)
+            .setItems(labels.toTypedArray()) { _, which ->
+                val id = ids[which]
+                if (profiles.isAvailable(app.profileId)) {
+                    categories.setOverride(app, id)
+                    noteCustomizationChanged()
+                }
+                applyFilter()
+            }
+            .show()
+    }
+
+    private fun showIconPicker(app: LaunchableApp) {
+        if (!app.supportsCustomization || this.app.emergency) return
+        IconPickerDialog(this, iconPacks, iconPacks.overrideFor(app)?.packPackage ?: iconPacks.selectedPack()) { ref ->
+            if (!this.app.emergency && profiles.isAvailable(app.profileId)) {
+                iconPacks.setOverride(app, ref)
+                noteCustomizationChanged()
+                scheduleReload("icons")
+            }
+        }.show()
+    }
+
     private fun applyFilter() {
+        // While a reload is in flight the apps snapshot is stale: quarantine the input
+        // and let the publish path resubmit with the fresh catalog instead.
+        if (reloadPending) {
+            searchDirty = true
+            return
+        }
         val query = searchField.text?.toString().orEmpty()
         search.submit(apps.toList(), query, catalog.visibleProfiles())
     }
@@ -1064,7 +1477,7 @@ class HomeActivity : AppCompatActivity() {
         val profile = profileSnapshot.firstOrNull { it.descriptor.kind == kind } ?: return
         val makeAvailable = profile.descriptor.access != ProfileAccess.AVAILABLE
         if (kind == ProfileKind.PRIVATE && !makeAvailable) {
-            search.cancel()
+            search.invalidate()
             closeContext("private-lock")
             closeFolder("private-lock")
             dragLayer.cancel("private-lock")
@@ -1321,7 +1734,7 @@ class HomeActivity : AppCompatActivity() {
         override fun getItemId(position: Int) = items[position].let { 31L * it.packageName.hashCode() + it.profileId }
         override fun hasStableIds() = true
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.app_row, parent, false)
+            val view = convertView ?: LayoutInflater.from(this@HomeActivity).inflate(R.layout.app_grid_cell, parent, false)
             val item = items[position]
             view.findViewById<ImageView>(R.id.appIcon).setImageDrawable(item.displayIcon())
             view.findViewById<TextView>(R.id.appLabel).text = item.label
@@ -1344,6 +1757,10 @@ class HomeActivity : AppCompatActivity() {
                 packageStatus,
                 if (item.hasDot()) getString(R.string.notifications_available) else null,
             ).joinToString()
+            view.isScreenReaderFocusable = true
+            (view as? ViewGroup)?.let { group ->
+                for (index in 0 until group.childCount) group.getChildAt(index).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
             return view
         }
     }
@@ -1363,6 +1780,8 @@ class HomeActivity : AppCompatActivity() {
         (appList.adapter as? AppAdapter)?.notifyDataSetChanged()
         (privateAppList.adapter as? AppAdapter)?.notifyDataSetChanged()
         render(rendered)
+        // Sections bind dots at render time; re-filter so lock/dot changes refresh them too.
+        if (this::categorySections.isInitialized && categorySections.visibility == View.VISIBLE) applyFilter()
     }
 
     private fun LaunchableApp.hasDot(): Boolean = NotificationDotStore.dot(PackageKey(packageName, profileId)) != null
@@ -1410,7 +1829,30 @@ class HomeActivity : AppCompatActivity() {
                 .filter { it.packageName == key.packageName && it.canPlace }
                 .minByOrNull { it.className } ?: return@io
             val workspace = controller ?: WorkspaceController(LauncherRepository(database)) { !app.emergency }
-            workspace.autoPlace(item)?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+            val applied = workspace.autoPlace(item)?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+            // Queue on either signal: the flag may already have been consumed by a
+            // concurrent mutate, in which case the pending journal itself is the proof.
+            if (applied == null && (workspace.consumeDeferredRestore() ||
+                    database.dao().pendingRestore()?.phase == RestorePhase.PLATFORM_RECONCILE)
+            ) {
+                pendingAutoPlace.add(key)
+            }
+        }
+    }
+
+    private fun drainPendingAutoPlace() {
+        pendingAutoPlace.toList().forEach(::autoPlace)
+        pendingAutoPlace.clear()
+    }
+
+    private fun completePendingRestore(database: com.caniko.cenix.db.CenixDatabase) {
+        val journal = database.dao().pendingRestore() ?: return
+        if (journal.phase != RestorePhase.PLATFORM_RECONCILE) return
+        val generation = journal.committedGeneration ?: return
+        try {
+            BackupRepository(database).complete(this, generation)
+        } catch (_: RuntimeException) {
+            app.requestEmergency()
         }
     }
 

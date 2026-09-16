@@ -7,23 +7,44 @@ IssueTracker: https://github.com/caniko/cenix/issues
 
 AutoName: Cenix
 Name: Cenix
+Summary: GrapheneOS-style Android launcher
+Description: |-
+  Cenix is a normally installable Android HOME launcher with GrapheneOS Launcher
+  behavior where public APIs allow it, plus an editable categorized app drawer
+  and installed icon-pack support. No network permission, no trackers.
+
+  Privileged features (Quickstep/Recents replacement, app locking) are out of
+  scope for the installable APK. Private Space follows the public third-party
+  HOME boundary; credential-bound private customization requires a separate
+  system-integrated design (see docs/private-customization.md).
+
+  Version 2 backups include personal customization and optionally work-profile
+  customization. Private Space presentation is transient, without saved private
+  category assignments or individual icon overrides.
 
 RepoType: git
 Repo: https://github.com/caniko/cenix
 
 Builds:
-  - versionName: 0.1.0
-    versionCode: 1
-    commit: unknown
+  - versionName: 0.2.0
+    versionCode: 2
+    commit: v0.2.0
+    subdir: android
+    sudo:
+      - apt-get update
+      - apt-get install -y --no-install-recommends cargo rustc
+      - cargo install cargo-ndk --locked --version 4.1.2
+    init:
+      - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
     gradle:
       - yes
-    output: android/app/build/outputs/apk/release/app-release-unsigned.apk
-    srclibs: []
-    prebuild: echo "draft recipe; not submitted"
+    prebuild: ../scripts/build-native.sh
+    ndk: 29.0.14206865
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
 AllowedAPKSigningKeys: []
 
-AutoUpdateMode: None
-UpdateCheckMode: None
-CurrentVersion: 0.1.0
-CurrentVersionCode: 1
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.2.0
+CurrentVersionCode: 2

@@ -192,6 +192,7 @@ data class PendingRestoreOperationEntity(
     val source: RestoreSource,
     val phase: RestorePhase,
     val payload: String,
+    val drawerPayload: String? = null,
     val payloadSha256: String,
     val createdAt: Long,
     val attemptCount: Int,
@@ -436,6 +437,15 @@ interface CenixDao {
     ) {
         validateWorkspaceRows(items, applications, shortcuts, widgets, folders, folderMembers)
         val currentMetadata = checkNotNull(workspaceMetadata())
+        // Restore barrier: normal mutations wait while a restore journal awaits
+        // widget-host reconciliation, so completion cannot observe a moved generation.
+        // A stale journal (generation already moved on) no longer blocks callers.
+        val reconcile = pendingRestore()
+        if (reconcile?.phase == RestorePhase.PLATFORM_RECONCILE &&
+            reconcile.committedGeneration == currentMetadata.generation
+        ) {
+            throw StaleWorkspaceGeneration()
+        }
         if (currentMetadata.generation != expectedGeneration) throw StaleWorkspaceGeneration()
         if (metadata.generation == expectedGeneration) {
             if (
@@ -519,8 +529,8 @@ interface CenixDao {
         return pendingRestore()
     }
 
-    @Query("UPDATE pending_restore_operations SET phase = 'PLATFORM_RECONCILE', committedGeneration = :committedGeneration WHERE singletonId = 1 AND phase = 'APPLYING'")
-    fun markRestoreReconcile(committedGeneration: Long): Int
+    @Query("UPDATE pending_restore_operations SET phase = 'PLATFORM_RECONCILE', committedGeneration = :committedGeneration, drawerPayload = :drawerPayload WHERE singletonId = 1 AND phase = 'APPLYING'")
+    fun markRestoreReconcile(committedGeneration: Long, drawerPayload: String?): Int
 
     @Transaction
     fun completeRestore(committedGeneration: Long): Boolean {
@@ -543,6 +553,7 @@ interface CenixDao {
         folders: List<FolderEntity> = emptyList(),
         folderMembers: List<FolderMemberEntity> = emptyList(),
         settings: LauncherSettingsEntity,
+        drawerPayload: String? = null,
     ) {
         val journal = pendingRestore() ?: throw InvalidWorkspaceTransition()
         val currentMetadata = checkNotNull(workspaceMetadata())
@@ -592,7 +603,7 @@ interface CenixDao {
         if (folders.isNotEmpty()) insertFolders(folders)
         if (folderMembers.isNotEmpty()) insertFolderMembers(folderMembers)
         upsertLauncherSettings(settings)
-        if (markRestoreReconcile(metadata.generation) != 1) throw InvalidWorkspaceTransition()
+        if (markRestoreReconcile(metadata.generation, drawerPayload) != 1) throw InvalidWorkspaceTransition()
     }
 
     private fun restoreReconcileIsStale(entity: PendingRestoreOperationEntity): Boolean =
@@ -706,7 +717,7 @@ abstract class CenixDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "cenix.db"
-        const val VERSION = 9
+        const val VERSION = 10
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -859,9 +870,15 @@ abstract class CenixDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `pending_restore_operations` ADD COLUMN `drawerPayload` TEXT")
+            }
+        }
+
         fun open(context: Context): CenixDatabase {
             val builder = Room.databaseBuilder(context.applicationContext, CenixDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
             if (android.os.Build.FINGERPRINT == "robolectric") builder.allowMainThreadQueries()
             val metrics = context.resources.displayMetrics
             val grid = PhoneGrid.pick(

@@ -18,7 +18,10 @@ data class LaunchableApp(
     val packageState: PackageState = PackageState.READY,
     val installProgress: Int? = null,
     val baseIcon: Drawable? = icon,
+    val autoCategory: String = AppCategories.UNCATEGORIZED,
 ) {
+    val supportsCustomization: Boolean
+        get() = profileKind == ProfileKind.PERSONAL || profileKind == ProfileKind.WORK
     val canLaunch: Boolean get() = packageState == PackageState.READY || packageState == PackageState.ARCHIVED
     val canPlace: Boolean get() = packageState == PackageState.READY
 
@@ -35,6 +38,7 @@ data class LaunchableApp(
                 user = info.user,
                 icon = info.getBadgedIcon(0),
                 baseIcon = info.getIcon(0),
+                autoCategory = AppCategories.fromPlatform(info.applicationInfo.category),
                 packageState = when {
                     info.applicationInfo.isArchived -> PackageState.ARCHIVED
                     !info.applicationInfo.enabled -> PackageState.DISABLED

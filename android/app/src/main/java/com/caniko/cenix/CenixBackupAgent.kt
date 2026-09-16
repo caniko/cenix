@@ -41,6 +41,7 @@ class CenixBackupAgent : BackupAgent() {
                         includeWork = false,
                         sourceVersion = BuildConfig.VERSION_NAME,
                         sourceCommit = BuildConfig.GIT_COMMIT,
+                        drawer = DrawerBackupExport.build(this, profiles, includeWork = false),
                     ),
                     stream,
                 )

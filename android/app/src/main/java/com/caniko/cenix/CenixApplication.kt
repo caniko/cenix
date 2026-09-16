@@ -123,6 +123,9 @@ class CenixApplication : Application() {
         NotificationDotStore.replace(emptyMap())
         CenixBackupAgent.artifact(this).delete()
         CenixBackupAgent.restoredArtifact(this).delete()
+        // Drawer categories and icon-pack selections are local-only in v1 (see docs/backup-reference.md).
+        try { getSharedPreferences("cenix_drawer", MODE_PRIVATE).edit().clear().apply() } catch (_: Exception) { }
+        try { getSharedPreferences("cenix_icons", MODE_PRIVATE).edit().clear().apply() } catch (_: Exception) { }
         database?.close()
         deleteDatabase(CenixDatabase.NAME)
         database = openDatabase()
@@ -167,6 +170,7 @@ class CenixApplication : Application() {
                 CenixLog.event(EventId.BACKUP_RESTORE, Severity.INFO, mapOf("result" to "applied"))
             }
         } catch (error: Exception) {
+            if (db.dao().pendingRestore()?.phase == com.caniko.cenix.db.RestorePhase.PLATFORM_RECONCILE) requestEmergency()
             CenixLog.event(EventId.BACKUP_RESTORE, Severity.WARN, mapOf("category" to error.javaClass.simpleName))
         }
     }

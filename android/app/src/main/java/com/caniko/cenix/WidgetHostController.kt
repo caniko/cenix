@@ -123,14 +123,26 @@ class WidgetHostController(
     }
 
     fun recover() {
-        if (recovered) return
-        recovered = true
+        // The widget-ops cleanup runs once, but restore completion must run whenever a
+        // journal pends: a restore staged after the first recovery would otherwise leave
+        // the barrier up forever and push every later reload into emergency mode.
         CenixExecutors.io {
+            val pendingRestore = database()?.dao()?.pendingRestore()
+            if (pendingRestore?.phase == RestorePhase.PLATFORM_RECONCILE) {
+                try {
+                    pendingRestore.committedGeneration?.let { generation ->
+                        database()?.let { BackupRepository(it).complete(activity, generation) }
+                    }
+                } catch (_: RuntimeException) {
+                    (activity.application as CenixApplication).requestEmergency()
+                }
+            }
+            if (recovered) return@io
+            recovered = true
             val dao = database()?.dao() ?: return@io
             val operations = dao.pendingWidgetOperations()
             val committed = dao.workspaceWidgets()
             val knownIds = (committed.mapNotNull { it.appWidgetId } + operations.mapNotNull { it.appWidgetId }).toSet()
-            val restore = dao.pendingRestore()
             host.appWidgetIds.filter { it !in knownIds }.forEach(host::deleteAppWidgetId)
             operations.forEach { operation ->
                 val row = committed.firstOrNull { it.itemId == operation.itemId }
@@ -139,9 +151,6 @@ class WidgetHostController(
                     operation.phase == WidgetOperationPhase.COMMITTING && validBinding(operation) -> commit(operation)
                     else -> rollback(operation, false)
                 }
-            }
-            if (restore?.phase == RestorePhase.PLATFORM_RECONCILE) {
-                restore.committedGeneration?.let(dao::completeRestore)
             }
         }
     }

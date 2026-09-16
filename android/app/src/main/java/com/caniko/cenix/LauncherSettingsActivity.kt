@@ -55,6 +55,8 @@ class LauncherSettingsActivity : AppCompatActivity() {
     private lateinit var autoAddApps: Switch
     private lateinit var includeWorkBackup: Switch
     private lateinit var appearance: WallpaperAppearanceController
+    private lateinit var iconPacks: IconPackManager
+    private lateinit var drawerStore: CategoryStore
     private var binding = false
     private var exportWork = false
 
@@ -90,6 +92,8 @@ class LauncherSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         appearance = WallpaperAppearanceController(this) { recreate() }
         app = application as CenixApplication
+        iconPacks = IconPackManager(this)
+        drawerStore = CategoryStore(this)
         setContentView(R.layout.activity_launcher_settings)
         options = findViewById(R.id.gridOptions)
         progress = findViewById(R.id.gridProgress)
@@ -112,6 +116,18 @@ class LauncherSettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.importBackup).setOnClickListener {
             importBackup.launch(arrayOf("application/json", "text/json", "application/octet-stream"))
         }
+        findViewById<Button>(R.id.drawerModeToggle).setOnClickListener {
+            if (app.emergency) return@setOnClickListener
+            val next = if (drawerStore.drawerMode() == "all") "sections" else "all"
+            drawerStore.setDrawerMode(next)
+            (it as Button).text = getString(if (next == "all") R.string.drawer_all else R.string.drawer_sections)
+            try {
+                app.scheduleBackup()
+            } catch (_: RuntimeException) {
+                Unit
+            }
+        }
+        findViewById<Button>(R.id.iconPack).setOnClickListener { showPackPicker() }
         findViewById<Button>(R.id.resetLauncher).setOnClickListener { confirmReset() }
         findViewById<TextView>(R.id.buildIdentity).text = getString(
             R.string.build_identity,
@@ -145,6 +161,41 @@ class LauncherSettingsActivity : AppCompatActivity() {
         updateHomeRole()
         updateNotificationAccess()
         updateBackupProfiles()
+        updateCustomizationUi()
+    }
+
+    private fun updateCustomizationUi() {
+        findViewById<Button>(R.id.drawerModeToggle)?.text =
+            getString(if (drawerStore.drawerMode() == "all") R.string.drawer_all else R.string.drawer_sections)
+        val pack = try { iconPacks.selectedPack() } catch (_: Exception) { null }
+        val label = if (pack.isNullOrBlank()) getString(R.string.icon_pack_system) else try {
+            packageManager.getApplicationInfo(pack, 0).loadLabel(packageManager).toString()
+        } catch (_: Exception) { pack }
+        findViewById<Button>(R.id.iconPack)?.text = label
+    }
+
+    private fun showPackPicker() {
+        if (app.emergency) return
+        val packs = try { iconPacks.discover() } catch (_: Exception) { emptyList() }
+        val labels = mutableListOf(getString(R.string.icon_pack_system))
+        val ids = mutableListOf<String?>(null)
+        packs.forEach { labels.add(it.label); ids.add(it.packageName) }
+        if (packs.isEmpty()) {
+            status.setText(R.string.icon_pack_unavailable)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.icon_pack)
+            .setItems(labels.toTypedArray()) { _, which ->
+                iconPacks.setPack(ids[which])
+                updateCustomizationUi()
+                try {
+                    app.scheduleBackup()
+                } catch (_: RuntimeException) {
+                    Unit
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun bindGridOptions() {
@@ -231,6 +282,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                         includeWork = exportWork,
                         sourceVersion = BuildConfig.VERSION_NAME,
                         sourceCommit = BuildConfig.GIT_COMMIT,
+                        drawer = DrawerBackupExport.build(this, profiles, exportWork),
                     )
                     contentResolver.openOutputStream(uri, "wt")?.use { BackupJsonCodec.write(document, it) } != null
                 }
@@ -356,6 +408,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                     val database = app.database ?: throw IllegalStateException("database unavailable")
                     val repository = BackupRepository(database)
                     repository.applyLocalPlan(plan, payload, System.currentTimeMillis())
+                    check(repository.complete(this, plan.workspace.generation.toLong()))
                     try {
                         AppWidgetHost(this, WidgetHostController.HOST_ID).deleteHost()
                     } catch (_: RuntimeException) {
@@ -365,6 +418,7 @@ class LauncherSettingsActivity : AppCompatActivity() {
                     true
                 }
             } catch (_: Throwable) {
+                if (app.database?.dao()?.pendingRestore()?.phase == com.caniko.cenix.db.RestorePhase.PLATFORM_RECONCILE) app.requestEmergency()
                 false
             }
             runOnUiThread {

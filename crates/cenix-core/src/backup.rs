@@ -1,12 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::drawer::{
+    ALL_CATEGORY, BUILTIN_CATEGORIES, MAX_CUSTOM_CATEGORIES, MAX_ORDER_ENTRIES, MAX_TITLE_CHARS,
+    is_category_id,
+};
 use crate::workspace::{
     CellRect, ComponentId, GridSpec, ItemPayload, ShortcutId, WidgetProviderId, WorkspaceError,
     WorkspaceSnapshot, prepare_snapshot,
 };
 use crate::{MAX_APPLICATIONS, MAX_IDENT_CHARS, ProfileKind};
 
-pub const BACKUP_FORMAT_VERSION: u32 = 1;
+pub const BACKUP_FORMAT_VERSION: u32 = 2;
+const BACKUP_FORMAT_VERSION_V1: u32 = 1;
 pub const LOGICAL_PERSONAL_PROFILE_ID: u64 = 0;
 pub const LOGICAL_WORK_PROFILE_ID: u64 = 1;
 
@@ -16,6 +21,76 @@ pub struct BackupSettings {
     pub notification_dots: bool,
     pub themed_icons: bool,
     pub auto_add_apps: bool,
+}
+
+/// A user-created drawer category. Built-in categories are implicit and never stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrawerCategory {
+    pub id: String,
+    pub title: String,
+}
+
+/// Manual drawer assignment of one package (all its launcher activities) in one logical profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategoryAssignment {
+    pub package: String,
+    pub profile_id: u64,
+    pub category_id: String,
+}
+
+/// Per-component icon override. Pack/drawables are opaque resource names; a pack that is
+/// absent at apply time falls back to the themed/default icon at render time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IconOverride {
+    pub package: String,
+    pub class: String,
+    pub profile_id: u64,
+    pub pack_package: String,
+    pub drawable: String,
+}
+
+/// Per-profile drawer taxonomy: custom categories, their order, and the selected filter.
+/// `None` work means the document carries no work taxonomy (personal-only export).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrawerTaxonomy {
+    pub selected: String,
+    pub categories: Vec<DrawerCategory>,
+    pub order: Vec<String>,
+}
+
+impl Default for DrawerTaxonomy {
+    fn default() -> Self {
+        Self {
+            selected: "all".into(),
+            categories: Vec::new(),
+            order: Vec::new(),
+        }
+    }
+}
+
+/// Auxiliary drawer customization. Structural corruption fails closed; dangling references
+/// (unknown order entries, assignments to unknown categories, unknown `selected`) fall back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrawerBackup {
+    pub mode: String,
+    pub personal: DrawerTaxonomy,
+    pub work: Option<DrawerTaxonomy>,
+    pub assignments: Vec<CategoryAssignment>,
+    pub icon_pack: String,
+    pub icon_overrides: Vec<IconOverride>,
+}
+
+impl Default for DrawerBackup {
+    fn default() -> Self {
+        Self {
+            mode: "sections".into(),
+            personal: DrawerTaxonomy::default(),
+            work: None,
+            assignments: Vec::new(),
+            icon_pack: String::new(),
+            icon_overrides: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +125,7 @@ pub struct BackupDocument {
     pub profiles: Vec<BackupProfileRef>,
     pub workspace: WorkspaceSnapshot,
     pub widgets: Vec<BackupWidgetMetadata>,
+    pub drawer: DrawerBackup,
     pub next_item_id: u64,
     pub next_page_id: u64,
 }
@@ -84,6 +160,7 @@ pub struct BackupImportPlan {
     pub settings: BackupSettings,
     pub profiles: Vec<BackupProfileRef>,
     pub widgets: Vec<BackupWidgetMetadata>,
+    pub drawer: DrawerBackup,
     pub next_item_id: u64,
     pub next_page_id: u64,
     pub unresolved_applications: Vec<u64>,
@@ -115,6 +192,7 @@ pub enum BackupError {
     Full,
     InvalidGrid,
     InvalidTitle,
+    InvalidDrawer,
     CrossProfile,
     WidgetTooLarge,
     InvariantViolation,
@@ -144,24 +222,33 @@ pub fn build_backup_document(
     mut workspace: WorkspaceSnapshot,
     settings: BackupSettings,
     widgets: Vec<BackupWidgetMetadata>,
+    drawer: DrawerBackup,
     options: BackupExportOptions,
     next_item_id: u64,
     next_page_id: u64,
 ) -> Result<BackupDocument, BackupError> {
     validate_source_meta(&options.source_version)?;
     validate_source_meta(&options.source_commit)?;
+    validate_drawer_shape(&drawer)?;
     let (map, profiles) = canonical_export_profiles(&options)?;
     reject_mixed_folders(&workspace)?;
-    if !options.include_work
-        && let Some(work_id) = options
+    let mut drawer = drawer;
+    if !options.include_work {
+        // Personal-only exports carry no work taxonomy at all.
+        drawer.work = None;
+        drop_drawer_profile(&mut drawer, LOGICAL_WORK_PROFILE_ID);
+        if let Some(work_id) = options
             .profiles
             .iter()
             .find(|profile| profile.kind == ProfileKind::Work)
             .map(|profile| profile.profile_id)
-    {
-        drop_profile(&mut workspace, work_id)?;
+        {
+            drop_profile(&mut workspace, work_id)?;
+        }
     }
     remap_workspace(&mut workspace, &map)?;
+    // Drawer rows arrive in logical profile ids from the caller; canonicalize validates
+    // them against the exported logical profiles, so unlisted (e.g. excluded work) rows fail.
     canonicalize(BackupDocument {
         format_version: BACKUP_FORMAT_VERSION,
         source_version: options.source_version,
@@ -170,6 +257,7 @@ pub fn build_backup_document(
         profiles,
         workspace,
         widgets,
+        drawer,
         next_item_id,
         next_page_id,
     })
@@ -207,6 +295,8 @@ pub fn plan_backup_import(
         .collect();
     for profile_id in omitted_work {
         drop_profile(&mut document.workspace, profile_id)?;
+        drop_drawer_profile(&mut document.drawer, profile_id);
+        document.drawer.work = None;
     }
     document
         .profiles
@@ -218,6 +308,7 @@ pub fn plan_backup_import(
         .checked_add(1)
         .ok_or(BackupError::InvariantViolation)?;
     remap_workspace(&mut document.workspace, &map)?;
+    remap_drawer_import(&mut document.drawer, &map)?;
     let profiles = document
         .profiles
         .iter()
@@ -239,6 +330,7 @@ pub fn plan_backup_import(
         settings: document.settings,
         profiles,
         widgets: document.widgets,
+        drawer: document.drawer,
         next_item_id: document.next_item_id,
         next_page_id: document.next_page_id,
         unresolved_applications,
@@ -249,7 +341,11 @@ pub fn plan_backup_import(
 }
 
 fn canonicalize(mut document: BackupDocument) -> Result<BackupDocument, BackupError> {
-    if document.format_version != BACKUP_FORMAT_VERSION {
+    if document.format_version == BACKUP_FORMAT_VERSION_V1 {
+        // v1 documents carry no drawer customization; import them with empty defaults.
+        document.drawer = DrawerBackup::default();
+        document.format_version = BACKUP_FORMAT_VERSION;
+    } else if document.format_version != BACKUP_FORMAT_VERSION {
         return Err(BackupError::UnsupportedVersion);
     }
     validate_source_meta(&document.source_version)?;
@@ -260,6 +356,7 @@ fn canonicalize(mut document: BackupDocument) -> Result<BackupDocument, BackupEr
         return Err(BackupError::UnsupportedGrid);
     }
     validate_canonical_profiles(&document.profiles)?;
+    validate_drawer(&mut document.drawer, &document.profiles)?;
     document.profiles.sort_by_key(|profile| profile.profile_id);
     reject_mixed_folders(&document.workspace)?;
     for folder in &mut document.workspace.folders {
@@ -293,6 +390,238 @@ fn validate_settings(settings: &BackupSettings) -> Result<(), BackupError> {
         || settings.grid_name.chars().any(char::is_control)
     {
         return Err(BackupError::InvalidGrid);
+    }
+    Ok(())
+}
+
+fn is_plain_ident(value: &str, max_chars: usize) -> bool {
+    !value.is_empty() && value.chars().count() <= max_chars && !value.chars().any(char::is_control)
+}
+
+fn is_package_name(value: &str) -> bool {
+    is_plain_ident(value, MAX_IDENT_CHARS)
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+}
+
+fn validate_taxonomy_shape(taxonomy: &DrawerTaxonomy) -> Result<(), BackupError> {
+    if taxonomy.categories.len() > MAX_CUSTOM_CATEGORIES || taxonomy.order.len() > MAX_ORDER_ENTRIES
+    {
+        return Err(BackupError::InvalidDrawer);
+    }
+    let mut ids = HashSet::new();
+    for category in &taxonomy.categories {
+        if !is_category_id(&category.id)
+            || category.id == ALL_CATEGORY
+            || BUILTIN_CATEGORIES.contains(&category.id.as_str())
+            || !ids.insert(category.id.as_str())
+        {
+            return Err(BackupError::InvalidDrawer);
+        }
+        if !is_plain_ident(&category.title, MAX_TITLE_CHARS) {
+            return Err(BackupError::InvalidDrawer);
+        }
+    }
+    for entry in &taxonomy.order {
+        if !is_category_id(entry) && *entry != ALL_CATEGORY {
+            return Err(BackupError::InvalidDrawer);
+        }
+    }
+    if !is_category_id(&taxonomy.selected) && taxonomy.selected != ALL_CATEGORY {
+        return Err(BackupError::InvalidDrawer);
+    }
+    Ok(())
+}
+
+/// Shape-only checks that need no profile context (export path).
+fn validate_drawer_shape(drawer: &DrawerBackup) -> Result<(), BackupError> {
+    if drawer.assignments.len() > MAX_APPLICATIONS || drawer.icon_overrides.len() > MAX_APPLICATIONS
+    {
+        return Err(BackupError::InvalidDrawer);
+    }
+    if drawer.mode != "sections" && drawer.mode != "all" {
+        return Err(BackupError::InvalidDrawer);
+    }
+    validate_taxonomy_shape(&drawer.personal)?;
+    if let Some(work) = &drawer.work {
+        validate_taxonomy_shape(work)?;
+    }
+    if !is_plain_ident(&drawer.icon_pack, MAX_IDENT_CHARS) && !drawer.icon_pack.is_empty() {
+        return Err(BackupError::InvalidDrawer);
+    }
+    for assignment in &drawer.assignments {
+        if !is_package_name(&assignment.package) || !is_category_id(&assignment.category_id) {
+            return Err(BackupError::InvalidDrawer);
+        }
+    }
+    for icon in &drawer.icon_overrides {
+        if !is_package_name(&icon.package)
+            || !is_plain_ident(&icon.class, MAX_IDENT_CHARS)
+            || !is_package_name(&icon.pack_package)
+            || !is_plain_ident(&icon.drawable, MAX_IDENT_CHARS)
+        {
+            return Err(BackupError::InvalidDrawer);
+        }
+    }
+    Ok(())
+}
+
+fn normalize_taxonomy(taxonomy: &mut DrawerTaxonomy, known: &HashSet<String>) {
+    if taxonomy.selected != "all" && !known.contains(taxonomy.selected.as_str()) {
+        taxonomy.selected = "all".into();
+    }
+    taxonomy
+        .order
+        .retain(|entry| known.contains(entry.as_str()));
+    let mut seen_order = HashSet::new();
+    taxonomy
+        .order
+        .retain(|entry| seen_order.insert(entry.clone()));
+    taxonomy.categories.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
+/// Full validation against the document's logical profiles plus fallback normalization:
+/// unknown `selected` becomes "all"; order entries and assignments that reference unknown
+/// categories are dropped; pack references are kept (absent packs fall back at render time).
+fn validate_drawer(
+    drawer: &mut DrawerBackup,
+    profiles: &[BackupProfileRef],
+) -> Result<(), BackupError> {
+    validate_drawer_shape(drawer)?;
+    let listed: HashSet<u64> = profiles.iter().map(|profile| profile.profile_id).collect();
+    for profile_id in drawer
+        .assignments
+        .iter()
+        .map(|assignment| assignment.profile_id)
+        .chain(drawer.icon_overrides.iter().map(|icon| icon.profile_id))
+    {
+        if profile_id != LOGICAL_PERSONAL_PROFILE_ID && profile_id != LOGICAL_WORK_PROFILE_ID {
+            return Err(BackupError::PrivateProfile);
+        }
+        if !listed.contains(&profile_id) {
+            return Err(BackupError::InvalidProfile);
+        }
+    }
+    let known_personal: HashSet<String> = BUILTIN_CATEGORIES
+        .iter()
+        .map(|category| category.to_string())
+        .chain(
+            drawer
+                .personal
+                .categories
+                .iter()
+                .map(|category| category.id.clone()),
+        )
+        .collect();
+    let known_work: HashSet<String> = BUILTIN_CATEGORIES
+        .iter()
+        .map(|category| category.to_string())
+        .chain(
+            drawer
+                .work
+                .iter()
+                .flat_map(|work| work.categories.iter())
+                .map(|category| category.id.clone()),
+        )
+        .collect();
+    // Personal-only documents carry no work taxonomy; work rows without one fail below.
+    normalize_taxonomy(&mut drawer.personal, &known_personal);
+    if let Some(work) = drawer.work.as_mut() {
+        normalize_taxonomy(work, &known_work);
+    }
+    drawer.assignments.retain(|assignment| {
+        if assignment.profile_id == LOGICAL_PERSONAL_PROFILE_ID {
+            known_personal.contains(assignment.category_id.as_str())
+        } else {
+            known_work.contains(assignment.category_id.as_str())
+        }
+    });
+    drawer.assignments.sort_by(|a, b| {
+        (&a.package, a.profile_id, &a.category_id).cmp(&(&b.package, b.profile_id, &b.category_id))
+    });
+    drawer
+        .assignments
+        .dedup_by(|a, b| a.package == b.package && a.profile_id == b.profile_id);
+    drawer.icon_overrides.sort_by(|a, b| {
+        (
+            &a.package,
+            &a.class,
+            a.profile_id,
+            &a.pack_package,
+            &a.drawable,
+        )
+            .cmp(&(
+                &b.package,
+                &b.class,
+                b.profile_id,
+                &b.pack_package,
+                &b.drawable,
+            ))
+    });
+    drawer.icon_overrides.dedup_by(|a, b| {
+        a.package == b.package && a.class == b.class && a.profile_id == b.profile_id
+    });
+    Ok(())
+}
+
+/// Scope an already-remapped drawer snapshot to concrete restore targets.
+///
+/// Keeps only assignments/overrides whose profile is a targeted personal or work
+/// serial, and drops the work taxonomy when no work target exists (omitted work).
+/// Exactly one personal target is required; anything else is a caller bug.
+pub fn scope_drawer_for_targets(
+    mut drawer: DrawerBackup,
+    targets: &[BackupProfileRef],
+) -> Result<DrawerBackup, BackupError> {
+    use super::ProfileKind;
+    if targets
+        .iter()
+        .filter(|t| t.kind == ProfileKind::Personal)
+        .count()
+        != 1
+    {
+        return Err(BackupError::InvalidProfile);
+    }
+    let allowed: std::collections::HashSet<u64> = targets
+        .iter()
+        .filter(|t| t.kind == ProfileKind::Personal || t.kind == ProfileKind::Work)
+        .map(|t| t.profile_id)
+        .collect();
+    if !targets.iter().any(|t| t.kind == ProfileKind::Work) {
+        drawer.work = None;
+    }
+    drawer
+        .assignments
+        .retain(|assignment| allowed.contains(&assignment.profile_id));
+    drawer
+        .icon_overrides
+        .retain(|icon| allowed.contains(&icon.profile_id));
+    Ok(drawer)
+}
+
+fn drop_drawer_profile(drawer: &mut DrawerBackup, profile_id: u64) {
+    drawer
+        .assignments
+        .retain(|assignment| assignment.profile_id != profile_id);
+    drawer
+        .icon_overrides
+        .retain(|icon| icon.profile_id != profile_id);
+}
+
+fn remap_drawer_import(
+    drawer: &mut DrawerBackup,
+    map: &HashMap<u64, u64>,
+) -> Result<(), BackupError> {
+    for assignment in &mut drawer.assignments {
+        assignment.profile_id = *map
+            .get(&assignment.profile_id)
+            .ok_or(BackupError::UnmappedProfile)?;
+    }
+    for icon in &mut drawer.icon_overrides {
+        icon.profile_id = *map
+            .get(&icon.profile_id)
+            .ok_or(BackupError::UnmappedProfile)?;
     }
     Ok(())
 }
@@ -861,10 +1190,31 @@ mod tests {
         next_item_id: u64,
         next_page_id: u64,
     ) -> Result<BackupDocument, BackupError> {
+        build_with_drawer(
+            snapshot,
+            widgets,
+            DrawerBackup::default(),
+            include_work,
+            profiles,
+            next_item_id,
+            next_page_id,
+        )
+    }
+
+    fn build_with_drawer(
+        snapshot: WorkspaceSnapshot,
+        widgets: Vec<BackupWidgetMetadata>,
+        drawer: DrawerBackup,
+        include_work: bool,
+        profiles: Vec<BackupProfileRef>,
+        next_item_id: u64,
+        next_page_id: u64,
+    ) -> Result<BackupDocument, BackupError> {
         build_backup_document(
             snapshot,
             settings(),
             widgets,
+            drawer,
             options(include_work, profiles),
             next_item_id,
             next_page_id,
@@ -914,6 +1264,7 @@ mod tests {
                 workspace(vec![item(1, "a", 0, 0)], default_pages()),
                 settings(),
                 vec![],
+                DrawerBackup::default(),
                 bad,
                 2,
                 11,
@@ -927,6 +1278,7 @@ mod tests {
                 workspace(vec![item(1, "a", 0, 0)], default_pages()),
                 settings(),
                 vec![],
+                DrawerBackup::default(),
                 control,
                 2,
                 11,
@@ -1615,11 +1967,19 @@ mod tests {
             Err(BackupError::InvalidSpan)
         );
         let mut future = document();
-        future.format_version = 2;
+        future.format_version = BACKUP_FORMAT_VERSION + 1;
         assert_eq!(
             validate_backup_document(future),
             Err(BackupError::UnsupportedVersion)
         );
+        let mut legacy = document();
+        legacy.format_version = BACKUP_FORMAT_VERSION_V1;
+        legacy.drawer = DrawerBackup {
+            mode: "bogus".into(),
+            ..DrawerBackup::default()
+        };
+        // v1 drawer state is ignored and replaced with empty defaults.
+        assert_eq!(validate_backup_document(legacy), Ok(()));
         assert_eq!(
             plan_backup_import(document(), target(4, 3), map_personal()),
             Err(BackupError::StaleGeneration)
@@ -1664,6 +2024,241 @@ mod tests {
             validate_backup_document(oversized),
             Err(BackupError::InvariantViolation)
         );
+    }
+
+    fn drawer() -> DrawerBackup {
+        DrawerBackup {
+            mode: "sections".into(),
+            personal: DrawerTaxonomy {
+                selected: "games".into(),
+                categories: vec![DrawerCategory {
+                    id: "user_retro".into(),
+                    title: "Retro".into(),
+                }],
+                order: vec!["games".into(), "user_retro".into(), "uncategorized".into()],
+            },
+            work: Some(DrawerTaxonomy {
+                selected: "productivity".into(),
+                categories: vec![DrawerCategory {
+                    id: "user_work".into(),
+                    title: "Work stuff".into(),
+                }],
+                order: vec!["productivity".into(), "user_work".into()],
+            }),
+            assignments: vec![CategoryAssignment {
+                package: "game.pkg".into(),
+                profile_id: LOGICAL_PERSONAL_PROFILE_ID,
+                category_id: "games".into(),
+            }],
+            icon_pack: "com.example.pack".into(),
+            icon_overrides: vec![IconOverride {
+                package: "game.pkg".into(),
+                class: "Main".into(),
+                profile_id: LOGICAL_PERSONAL_PROFILE_ID,
+                pack_package: "com.example.pack".into(),
+                drawable: "ic_game".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn scope_drawer_drops_untargeted_rows_and_work_taxonomy() {
+        use super::ProfileKind;
+        let scoped = scope_drawer_for_targets(
+            drawer(),
+            &[
+                BackupProfileRef {
+                    profile_id: 42,
+                    kind: ProfileKind::Personal,
+                },
+                BackupProfileRef {
+                    profile_id: 99,
+                    kind: ProfileKind::Work,
+                },
+            ],
+        )
+        .unwrap();
+        // Fixture rows use logical ids, which are not targeted serials: dropped.
+        assert!(scoped.assignments.is_empty());
+        assert!(scoped.icon_overrides.is_empty());
+        assert!(scoped.work.is_some());
+
+        let mut with_rows = drawer();
+        with_rows.assignments.push(CategoryAssignment {
+            package: "work.pkg".into(),
+            profile_id: 99,
+            category_id: "productivity".into(),
+        });
+        with_rows.icon_overrides.push(IconOverride {
+            package: "work.pkg".into(),
+            class: "Main".into(),
+            profile_id: 7,
+            pack_package: "com.example.pack".into(),
+            drawable: "ic_work".into(),
+        });
+        let scoped = scope_drawer_for_targets(
+            with_rows,
+            &[BackupProfileRef {
+                profile_id: 42,
+                kind: ProfileKind::Personal,
+            }],
+        )
+        .unwrap();
+        // Personal-only targets drop work rows and the whole work taxonomy.
+        assert!(scoped.assignments.is_empty());
+        assert!(scoped.icon_overrides.is_empty());
+        assert_eq!(scoped.work, None);
+
+        assert_eq!(
+            scope_drawer_for_targets(drawer(), &[]),
+            Err(BackupError::InvalidProfile)
+        );
+        assert_eq!(
+            scope_drawer_for_targets(
+                drawer(),
+                &[
+                    BackupProfileRef {
+                        profile_id: 42,
+                        kind: ProfileKind::Personal,
+                    },
+                    BackupProfileRef {
+                        profile_id: 43,
+                        kind: ProfileKind::Personal,
+                    },
+                ],
+            ),
+            Err(BackupError::InvalidProfile)
+        );
+    }
+
+    #[test]
+    fn drawer_round_trips_and_remaps_to_target_profiles() {
+        let built = build_with_drawer(
+            workspace(vec![item(1, "a", 0, 0)], default_pages()),
+            vec![],
+            drawer(),
+            false,
+            vec![live_personal()],
+            2,
+            11,
+        )
+        .unwrap();
+        assert_eq!(built.format_version, BACKUP_FORMAT_VERSION);
+        assert_eq!(built.drawer.assignments.len(), 1);
+        // Personal-only export drops the work taxonomy entirely.
+        assert_eq!(built.drawer.work, None);
+        let plan = plan_backup_import(built, target(1, 1), map_personal()).unwrap();
+        assert_eq!(plan.drawer.assignments[0].profile_id, 50);
+        assert_eq!(plan.drawer.icon_overrides[0].profile_id, 50);
+        assert_eq!(plan.drawer.icon_pack, "com.example.pack");
+        assert_eq!(plan.drawer.personal.selected, "games");
+    }
+
+    #[test]
+    fn drawer_falls_back_instead_of_failing_on_dangling_references() {
+        let mut dangling = drawer();
+        dangling.personal.selected = "user_deleted".into();
+        dangling.personal.order.push("user_deleted".into());
+        dangling.assignments.push(CategoryAssignment {
+            package: "stale.pkg".into(),
+            profile_id: LOGICAL_PERSONAL_PROFILE_ID,
+            category_id: "user_deleted".into(),
+        });
+        // Absent packs are opaque names; the import keeps them and render falls back.
+        dangling.icon_pack = "com.example.absent".into();
+        let built = build_with_drawer(
+            workspace(vec![item(1, "a", 0, 0)], default_pages()),
+            vec![],
+            dangling,
+            false,
+            vec![live_personal()],
+            2,
+            11,
+        )
+        .unwrap();
+        assert_eq!(built.drawer.personal.selected, "all");
+        assert!(
+            !built
+                .drawer
+                .personal
+                .order
+                .contains(&"user_deleted".to_string())
+        );
+        assert_eq!(built.drawer.assignments.len(), 1);
+        assert_eq!(built.drawer.icon_pack, "com.example.absent");
+    }
+
+    #[test]
+    fn drawer_rejects_structural_corruption_and_private_rows() {
+        for mutate in [
+            |d: &mut DrawerBackup| d.mode = "grid".into(),
+            |d: &mut DrawerBackup| {
+                d.personal.categories.push(DrawerCategory {
+                    id: "games".into(),
+                    title: "Clash".into(),
+                })
+            },
+            |d: &mut DrawerBackup| {
+                d.personal.categories.push(DrawerCategory {
+                    id: "bad id!".into(),
+                    title: "Bad".into(),
+                })
+            },
+        ] {
+            let mut bad = drawer();
+            mutate(&mut bad);
+            let result = build_with_drawer(
+                workspace(vec![item(1, "a", 0, 0)], default_pages()),
+                vec![],
+                bad,
+                false,
+                vec![live_personal()],
+                2,
+                11,
+            );
+            assert_eq!(result.unwrap_err(), BackupError::InvalidDrawer);
+        }
+        let mut private = drawer();
+        private.assignments[0].profile_id = 7;
+        assert_eq!(
+            build_with_drawer(
+                workspace(vec![item(1, "a", 0, 0)], default_pages()),
+                vec![],
+                private,
+                false,
+                vec![live_personal()],
+                2,
+                11,
+            ),
+            Err(BackupError::PrivateProfile)
+        );
+    }
+
+    #[test]
+    fn omitted_work_drops_drawer_work_rows() {
+        let mut both = drawer();
+        both.assignments.push(CategoryAssignment {
+            package: "work.pkg".into(),
+            profile_id: LOGICAL_WORK_PROFILE_ID,
+            category_id: "productivity".into(),
+        });
+        let built = build_with_drawer(
+            workspace(vec![item(1, "a", 0, 0)], default_pages()),
+            vec![],
+            both,
+            true,
+            vec![live_personal(), live_work()],
+            2,
+            11,
+        )
+        .unwrap();
+        assert_eq!(built.drawer.assignments.len(), 2);
+        assert!(built.drawer.work.is_some());
+        let plan = plan_backup_import(built, target(1, 1), map_personal()).unwrap();
+        assert_eq!(plan.drawer.assignments.len(), 1);
+        assert_eq!(plan.drawer.assignments[0].package, "game.pkg");
+        // Omitting work drops its taxonomy as well as its rows.
+        assert_eq!(plan.drawer.work, None);
     }
 
     #[test]

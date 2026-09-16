@@ -11,6 +11,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
       - run: git diff --check
+      - run: nix develop -c cargo build -p cenix-ffi --locked --offline
       - run: nix develop -c bash -lc 'cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug :fixture:assembleDebug'
       - run: nix develop -c cargo fmt --check
       - run: nix develop -c cargo clippy --workspace --all-targets --locked --offline -- -D warnings
@@ -27,8 +28,40 @@ jobs:
       - run: nix develop -c scripts/generate-sbom.sh
       - run: nix develop -c scripts/compare-release-apks.sh
       - run: nix flake check --no-update-lock-file
+      - name: Retain test and lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: host-reports-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            android/app/build/test-results/
+            android/app/build/reports/
+          retention-days: 30
+      - name: Retain audited unsigned APK and reproducibility evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-apk-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            dist/upload/app-release-unsigned.apk
+            dist/reproducibility.json
+            dist/reproducibility.txt
+            dist/sbom.cdx.json
+            dist/licenses.json
+          if-no-files-found: error
+          retention-days: 30
   emulator-aosp:
+    # Never execute pull-request code on the persistent runner.
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: CENIX_REPEAT=5 nix develop .#emulator-aosp -c scripts/repeat-conformance.sh
+        env:
+          CENIX_REPEAT_DIR: ${{ runner.temp }}/cenix-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Retain emulator conformance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: emulator-conformance-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cenix-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30

@@ -25,6 +25,7 @@ import com.caniko.cenix.uniffi.BackupSettings
 import com.caniko.cenix.uniffi.BackupWidgetMetadata
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.ContainerRef
+import com.caniko.cenix.uniffi.DrawerBackup
 import com.caniko.cenix.uniffi.ItemPayload
 import com.caniko.cenix.uniffi.ProfileAccess
 import com.caniko.cenix.uniffi.ProfileKind
@@ -43,6 +44,7 @@ class BackupRepository(private val db: CenixDatabase) {
         includeWork: Boolean,
         sourceVersion: String,
         sourceCommit: String,
+        drawer: DrawerBackup = DrawerBackupExport.empty(),
     ): BackupDocument {
         val launcher = LauncherRepository(db)
         val settings = checkNotNull(db.dao().launcherSettings())
@@ -52,6 +54,7 @@ class BackupRepository(private val db: CenixDatabase) {
             db.dao().workspaceWidgets().map {
                 BackupWidgetMetadata(it.itemId.toULong(), it.minSpanX, it.minSpanY, it.resizeX, it.resizeY)
             },
+            drawer,
             BackupExportOptions(includeWork, sourceVersion, sourceCommit, profiles),
             launcher.nextItemId(),
             launcher.nextPageId(),
@@ -117,7 +120,28 @@ class BackupRepository(private val db: CenixDatabase) {
 
     fun retry(): PendingRestoreOperationEntity? = db.dao().retryRestore()
 
-    fun complete(committedGeneration: Long): Boolean = db.dao().completeRestore(committedGeneration)
+    fun complete(context: Context, committedGeneration: Long): Boolean {
+        val operation = pending() ?: return false
+        if (operation.phase != RestorePhase.PLATFORM_RECONCILE || operation.committedGeneration != committedGeneration) return false
+        reconcileDrawer(context)
+        return db.dao().completeRestore(committedGeneration)
+    }
+
+    private fun reconcileDrawer(context: Context) {
+        val operation = pending() ?: return
+        if (operation.phase != RestorePhase.PLATFORM_RECONCILE) return
+        check(operation.committedGeneration == db.dao().workspaceMetadata()?.generation) { "stale restore reconciliation" }
+        operation.drawerPayload?.let {
+            // Best-effort drawer replay: the workspace replacement above already succeeded.
+            // A superseded dev-era journal must not trap startup in failed reconciliation.
+            try {
+                val (drawer, targets) = BackupJsonCodec.readDrawerJournal(it)
+                DrawerBackupExport.replay(context, drawer, targets)
+            } catch (_: ObsoleteDrawerJournalException) {
+                CenixLog.event(EventId.BACKUP_RESTORE, Severity.WARN, mapOf("result" to "drawer-replay-skipped"))
+            }
+        }
+    }
 
     fun stage(source: RestoreSource, payload: String, expectedGeneration: Long, now: Long) {
         db.dao().stageRestore(
@@ -133,29 +157,30 @@ class BackupRepository(private val db: CenixDatabase) {
         )
     }
 
-    fun applyPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
+    fun applyPlan(plan: BackupImportPlan, payload: String) = applyWorkspace(plan, payload)
 
     fun applyLocalPlan(plan: BackupImportPlan, payload: String, now: Long) {
         db.runInTransaction {
             stage(RestoreSource.LOCAL, payload, plan.workspace.generation.toLong() - 1, now)
             confirmLocal()
-            applyPlan(plan, payload, complete = true)
+            applyWorkspace(plan, payload)
         }
     }
 
-    internal fun applySystemPlan(plan: BackupImportPlan, payload: String) = applyPlan(plan, payload, complete = false)
+    internal fun applySystemPlan(plan: BackupImportPlan, payload: String) = applyWorkspace(plan, payload)
 
     fun recoverSystem(context: Context): Boolean {
         var operation = pending() ?: return false
+        if (operation.phase == RestorePhase.PLATFORM_RECONCILE) {
+            reconcileDrawer(context) // Also repairs interrupted, user-confirmed local restores.
+            return false
+        }
         if (operation.source != RestoreSource.SYSTEM) return false
         if (operation.phase == RestorePhase.PARSED) {
             queueSystem()
             operation = checkNotNull(pending())
         }
         if (operation.phase == RestorePhase.FAILED) operation = retry() ?: return false
-        if (operation.phase == RestorePhase.PLATFORM_RECONCILE) {
-            return false
-        }
         if (operation.phase != RestorePhase.SYSTEM_RESTORE_PENDING) return false
         val document = try {
             BackupJsonCodec.read(ByteArrayInputStream(operation.payload.toByteArray(Charsets.UTF_8)))
@@ -170,10 +195,11 @@ class BackupRepository(private val db: CenixDatabase) {
             throw error
         }
         applySystemPlan(plan, operation.payload)
+        reconcileDrawer(context)
         return true
     }
 
-    private fun applyPlan(plan: BackupImportPlan, payload: String, complete: Boolean) {
+    private fun applyWorkspace(plan: BackupImportPlan, payload: String) {
         val workspace = plan.workspace
         val payloadSha256 = sha256(payload)
         val widgetMeta = plan.widgets.associateBy { it.itemId }
@@ -225,11 +251,14 @@ class BackupRepository(private val db: CenixDatabase) {
                     themedIcons = plan.settings.themedIcons,
                     autoAddApps = plan.settings.autoAddApps,
                 ),
+                drawerPayload = BackupJsonCodec.encodeDrawerJournal(
+                    DrawerBackupExport.scoped(plan.drawer, plan.profiles),
+                    plan.profiles,
+                ),
             )
-            if (complete) check(db.dao().completeRestore(workspace.generation.toLong()))
         }
         try {
-            if (complete) db.runInTransaction { apply() } else apply()
+            apply()
         } catch (error: RuntimeException) {
             db.dao().recordRestoreFailure(payloadSha256)
             throw error

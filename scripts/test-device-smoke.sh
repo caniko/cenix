@@ -59,10 +59,13 @@ else echo "unexpected helper call: $*" >&2; exit 2; fi
 SH
   cat >"$t/bin/readelf" <<'SH'
 #!/usr/bin/env bash
-# Fake ELF audit: well-formed library, no debug sections, has globals.
+# Fake ELF audit: well-formed library with globals; debug sections only when
+# FAKE_DEBUG_SECTIONS is set.
 case "$*" in
   *"-Ws"*) echo "     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND fake_symbol" ;;
-  *"-S"*) echo "  [ 1] .text PROGBITS  [ 2] .dynsym DYNSYM" ;;
+  *"-S"*)
+    echo "  [ 1] .text PROGBITS  [ 2] .dynsym DYNSYM"
+    [[ -n "${FAKE_DEBUG_SECTIONS:-}" ]] && echo "  [ 3] .debug_info PROGBITS" || true ;;
   *) exit 0 ;;
 esac
 SH
@@ -199,6 +202,33 @@ elif [[ "$(grep -c 'am get-current-user' "$t/adb.log")" -lt 2 ]]; then echo "FAI
 elif grep -q 'ro.grapheneos.version' "$t/adb.log"; then echo "FAIL success queried empty grapheneos prop"; failures=$((failures+1));
 elif mutating <(grep -vE '(^| )install( |$)' "$t/adb.log"); then echo "FAIL success extra mutations"; failures=$((failures+1));
 else echo "pass success"; fi; rm -rf "$t"
+
+t="$(new_env)"  # 12: debug APK keeps DWARF without tripping the audit
+cp "$t/app.apk" "$t/app-debug.apk"
+rc=0
+env CENIX_DEVICE_SERIAL=S1 CENIX_TEST_USER=10 CENIX_EXPECTED_BUILD=2026091001 CENIX_APK="$t/app-debug.apk" \
+  CENIX_JNILIBS_DIR="$t/jni" CENIX_EVIDENCE_DIR="$t/ev" ADB="$t/bin/adb" \
+  PATH="$t/bin:$PATH" FAKE_ADB_LOG="$t/adb.log" FAKE_SERIAL=S1 \
+  FAKE_DEVICE=mustang FAKE_BUILD=2026091001 FAKE_USERS="10" FAKE_FOREGROUND="10" \
+  FAKE_INSTALLED="10" FAKE_AAPT_PACKAGE=com.caniko.cenix FAKE_DEBUG_SECTIONS=1 \
+  "$smoke" >"$t/smoke.out" 2>"$t/smoke.err" || rc=$?
+if [[ "$rc" != "0" ]]; then echo "FAIL debug-sections rc=$rc"; cat "$t/smoke.err"; failures=$((failures+1));
+elif ! grep -q "install -r -t --user 10 $t/app-debug.apk" "$t/adb.log"; then echo "FAIL debug-sections install args"; failures=$((failures+1));
+else echo "pass debug-sections"; fi; rm -rf "$t"
+
+t="$(new_env)"  # 13: release APK with DWARF still trips the audit
+cp "$t/app.apk" "$t/app-release.apk"
+rc=0
+env CENIX_DEVICE_SERIAL=S1 CENIX_TEST_USER=10 CENIX_EXPECTED_BUILD=2026091001 CENIX_APK="$t/app-release.apk" \
+  CENIX_JNILIBS_DIR="$t/jni" CENIX_EVIDENCE_DIR="$t/ev" ADB="$t/bin/adb" \
+  PATH="$t/bin:$PATH" FAKE_ADB_LOG="$t/adb.log" FAKE_SERIAL=S1 \
+  FAKE_DEVICE=mustang FAKE_BUILD=2026091001 FAKE_USERS="10" FAKE_FOREGROUND="10" \
+  FAKE_INSTALLED="10" FAKE_AAPT_PACKAGE=com.caniko.cenix FAKE_DEBUG_SECTIONS=1 \
+  "$smoke" >"$t/smoke.out" 2>"$t/smoke.err" || rc=$?
+if [[ "$rc" != "1" ]]; then echo "FAIL release-sections rc=$rc"; failures=$((failures+1));
+elif ! grep -qF "debug sections remain" "$t/smoke.err"; then echo "FAIL release-sections message"; cat "$t/smoke.err"; failures=$((failures+1));
+elif mutating "$t/adb.log" 2>/dev/null; then echo "FAIL release-sections mutations"; failures=$((failures+1));
+else echo "pass release-sections"; fi; rm -rf "$t"
 
 if [[ "$failures" -gt 0 ]]; then echo "$failures harness failures"; exit 1; fi
 echo "device-smoke harness passed"

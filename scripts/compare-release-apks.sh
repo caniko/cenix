@@ -43,12 +43,22 @@ ha="$(sha256sum "$a" | cut -d' ' -f1)"
 hb="$(sha256sum "$b" | cut -d' ' -f1)"
 status="mismatch"
 [[ "$ha" == "$hb" ]] && status="identical"
-python3 - "$dist/reproducibility.json" "$commit" "$epoch" "$ha" "$hb" "$status" <<'PY'
+# The uploaded artifact is a copy of a compared build, never a separately
+# built checkout APK, so its digest always equals the recorded rebuild hashes.
+upload="$dist/upload/app-release-unsigned.apk"
+uploaded="none"
+if [[ "$status" == "identical" ]]; then
+  mkdir -p "$dist/upload"
+  cp "$a" "$upload"
+  uploaded="$(sha256sum "$upload" | cut -d' ' -f1)"
+fi
+python3 - "$dist/reproducibility.json" "$commit" "$epoch" "$ha" "$hb" "$status" "$uploaded" <<'PY'
 import json, pathlib, sys
-out, commit, epoch, a, b, status = sys.argv[1:]
+out, commit, epoch, a, b, status, uploaded = sys.argv[1:]
 pathlib.Path(out).write_text(json.dumps({
     "schemaVersion": 1, "commit": commit, "sourceDateEpoch": int(epoch),
     "buildA": {"sha256": a}, "buildB": {"sha256": b}, "outcome": status,
+    "uploadedArtifact": {"file": "app-release-unsigned.apk", "sha256": uploaded},
 }, indent=2, sort_keys=True) + "\n")
 PY
 {
@@ -57,6 +67,7 @@ PY
   echo "a=$ha"
   echo "b=$hb"
   echo "outcome=$status"
+  echo "uploaded=$uploaded"
 } >"$dist/reproducibility.txt"
 
 if [[ "$status" == "identical" ]]; then

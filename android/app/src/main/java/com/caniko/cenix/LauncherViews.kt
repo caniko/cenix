@@ -319,7 +319,14 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
     }
 }
 
-class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ListView(context, attrs)
+class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : android.widget.GridView(context, attrs) {
+    init {
+        numColumns = AUTO_FIT
+        columnWidth = (72 * resources.displayMetrics.density).toInt()
+        stretchMode = STRETCH_COLUMN_WIDTH
+        isFastScrollEnabled = true
+    }
+}
 
 enum class WidgetResizeEdge { LEFT, RIGHT, TOP, BOTTOM }
 
@@ -637,11 +644,15 @@ class ContextPopup(context: Context) : FrameLayout(context) {
     private val appInfo = action(R.id.context_app_info, R.string.app_info)
     private val uninstall = action(R.id.context_uninstall, R.string.uninstall)
     private val remove = action(R.id.context_remove, R.string.remove)
+    private val moveCategory = action(R.id.action_move_category, R.string.move_to_category)
+    private val customizeIcon = action(R.id.action_customize_icon, R.string.customize_icon)
     var onClose: (() -> Unit)? = null
     var onDragApp: (() -> Unit)? = null
     var onAppInfo: (() -> Unit)? = null
     var onUninstall: (() -> Unit)? = null
     var onRemove: (() -> Unit)? = null
+    var onMoveCategory: (() -> Unit)? = null
+    var onCustomizeIcon: (() -> Unit)? = null
     var onLaunchShortcut: ((LauncherShortcut) -> Unit)? = null
     var onDragShortcut: ((View, LauncherShortcut) -> Unit)? = null
     var onPinShortcut: ((LauncherShortcut) -> Unit)? = null
@@ -658,11 +669,15 @@ class ContextPopup(context: Context) : FrameLayout(context) {
         panel.addView(shortcuts, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         panel.addView(drag)
         panel.addView(appInfo)
+        panel.addView(moveCategory)
+        panel.addView(customizeIcon)
         panel.addView(uninstall)
         panel.addView(remove)
         addView(panel, LayoutParams(dp(280), LayoutParams.WRAP_CONTENT))
         drag.setOnClickListener { onDragApp?.invoke() }
         appInfo.setOnClickListener { onAppInfo?.invoke() }
+        moveCategory.setOnClickListener { onMoveCategory?.invoke() }
+        customizeIcon.setOnClickListener { onCustomizeIcon?.invoke() }
         uninstall.setOnClickListener { onUninstall?.invoke() }
         remove.setOnClickListener { onRemove?.invoke() }
     }
@@ -673,6 +688,7 @@ class ContextPopup(context: Context) : FrameLayout(context) {
         canUninstall: Boolean,
         canRemove: Boolean,
         canAddToWorkspace: Boolean,
+        canCustomize: Boolean = false,
     ) {
         title.text = ShortcutCatalog.safeLabel(label)
         shortcuts.removeAllViews()
@@ -711,6 +727,8 @@ class ContextPopup(context: Context) : FrameLayout(context) {
         uninstall.visibility = if (canUninstall) VISIBLE else GONE
         remove.visibility = if (canRemove) VISIBLE else GONE
         drag.visibility = if (canAddToWorkspace) VISIBLE else GONE
+        moveCategory.visibility = if (canCustomize) VISIBLE else GONE
+        customizeIcon.visibility = if (canCustomize) VISIBLE else GONE
     }
 
     fun anchor(source: View) {

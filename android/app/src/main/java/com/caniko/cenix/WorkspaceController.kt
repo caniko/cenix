@@ -16,6 +16,8 @@ class WorkspaceController(
     private val repository: LauncherRepository,
     private val nativeAvailable: () -> Boolean,
 ) {
+    private val deferredRestore = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun snapshot(): WorkspaceSnapshot = repository.snapshot()
 
     fun placeFromAllApps(app: LaunchableApp, pageId: ULong, cellX: Int, cellY: Int): WorkspaceTransition? {
@@ -74,8 +76,20 @@ class WorkspaceController(
                 mapOf("result" to "rejected", "category" to error.javaClass.simpleName),
             )
             null
+        } catch (_: com.caniko.cenix.db.StaleWorkspaceGeneration) {
+            // A pending restore journal is normal orchestration state, not a corrupt
+            // workspace: record the deferral so the caller retries after recovery.
+            deferredRestore.set(true)
+            CenixLog.event(
+                EventId.WORKSPACE_TRANSITION,
+                Severity.INFO,
+                mapOf("result" to "deferred-restore"),
+            )
+            null
         }
     }
+
+    fun consumeDeferredRestore(): Boolean = deferredRestore.getAndSet(false)
 
     fun resizeWidget(itemId: ULong, cell: CellRect): WorkspaceTransition? {
         val state = snapshot()
@@ -260,6 +274,19 @@ class WorkspaceController(
                 EventId.WORKSPACE_TRANSITION,
                 Severity.WARN,
                 mapOf("result" to "rejected", "category" to error.javaClass.simpleName),
+            )
+            null
+        } catch (_: com.caniko.cenix.db.StaleWorkspaceGeneration) {
+            // A pending restore journal is normal orchestration state, not a corrupt
+            // workspace: record the deferral so the caller retries after recovery.
+            // execute() is the funnel for every normal placement path (autoPlace routes
+            // through placeFromAllApps here), so the flag must be set here and not only
+            // in placeWidget.
+            deferredRestore.set(true)
+            CenixLog.event(
+                EventId.WORKSPACE_TRANSITION,
+                Severity.INFO,
+                mapOf("result" to "deferred-restore"),
             )
             null
         }

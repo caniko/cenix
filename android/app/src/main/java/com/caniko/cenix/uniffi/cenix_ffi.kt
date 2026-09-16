@@ -727,6 +727,38 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -746,15 +778,47 @@ internal interface IntegrityCheckingUniffiLib : Library {
 ): Short
 fun uniffi_cenix_ffi_checksum_func_build_backup_document(
 ): Short
+fun uniffi_cenix_ffi_checksum_func_classify_profile(
+): Short
+fun uniffi_cenix_ffi_checksum_func_decode_backup_envelope(
+): Short
+fun uniffi_cenix_ffi_checksum_func_decode_drawer_journal(
+): Short
+fun uniffi_cenix_ffi_checksum_func_discovery_previous_kind(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_assignment_category(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_builtin_categories(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_is_valid_custom_id(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_order_categories(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_sanitize_title(
+): Short
+fun uniffi_cenix_ffi_checksum_func_drawer_section_key(
+): Short
+fun uniffi_cenix_ffi_checksum_func_encode_backup_envelope(
+): Short
+fun uniffi_cenix_ffi_checksum_func_encode_drawer_journal(
+): Short
 fun uniffi_cenix_ffi_checksum_func_filter_and_order_apps(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_init_diagnostics(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_native_panicked(
 ): Short
+fun uniffi_cenix_ffi_checksum_func_parse_iconpack_index(
+): Short
 fun uniffi_cenix_ffi_checksum_func_plan_backup_import(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_project_profile_item(
+): Short
+fun uniffi_cenix_ffi_checksum_func_reconcile_profiles(
+): Short
+fun uniffi_cenix_ffi_checksum_func_scope_drawer_for_targets(
+): Short
+fun uniffi_cenix_ffi_checksum_func_update_discovery(
 ): Short
 fun uniffi_cenix_ffi_checksum_func_validate_backup_document(
 ): Short
@@ -805,7 +869,31 @@ internal interface UniffiLib : Library {
     // FFI functions
     fun uniffi_cenix_ffi_fn_func_apply_workspace_command(`snapshot`: RustBuffer.ByValue,`command`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun uniffi_cenix_ffi_fn_func_build_backup_document(`workspace`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,`widgets`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`nextItemId`: Long,`nextPageId`: Long,uniffi_out_err: UniffiRustCallStatus,
+fun uniffi_cenix_ffi_fn_func_build_backup_document(`workspace`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,`widgets`: RustBuffer.ByValue,`drawer`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`nextItemId`: Long,`nextPageId`: Long,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_classify_profile(`profileId`: Long,`owner`: Byte,`userType`: RustBuffer.ByValue,`quiet`: Byte,`running`: Byte,`unlocked`: Byte,`previousKind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_decode_backup_envelope(`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_decode_drawer_journal(`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_discovery_previous_kind(`state`: RustBuffer.ByValue,`currentKinds`: RustBuffer.ByValue,`profileId`: Long,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_drawer_assignment_category(`auto`: RustBuffer.ByValue,`categoryOverride`: RustBuffer.ByValue,`supportsCustomization`: Byte,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_drawer_builtin_categories(uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_drawer_is_valid_custom_id(`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Byte
+fun uniffi_cenix_ffi_fn_func_drawer_order_categories(`customIds`: RustBuffer.ByValue,`order`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_drawer_sanitize_title(`raw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_drawer_section_key(`requested`: RustBuffer.ByValue,`known`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_encode_backup_envelope(`document`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_encode_drawer_journal(`drawer`: RustBuffer.ByValue,`targets`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_filter_and_order_apps(`apps`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`visibleProfileIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
@@ -813,9 +901,17 @@ fun uniffi_cenix_ffi_fn_func_init_diagnostics(`config`: RustBuffer.ByValue,uniff
 ): Unit
 fun uniffi_cenix_ffi_fn_func_native_panicked(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
+fun uniffi_cenix_ffi_fn_func_parse_iconpack_index(`xml`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_plan_backup_import(`document`: RustBuffer.ByValue,`target`: RustBuffer.ByValue,`mappings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_project_profile_item(`profile`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_reconcile_profiles(`state`: RustBuffer.ByValue,`observations`: RustBuffer.ByValue,`previousKinds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_scope_drawer_for_targets(`drawer`: RustBuffer.ByValue,`targets`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_cenix_ffi_fn_func_update_discovery(`state`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,`existingIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_cenix_ffi_fn_func_validate_backup_document(`document`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
@@ -948,7 +1044,43 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cenix_ffi_checksum_func_apply_workspace_command() != 56944.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_cenix_ffi_checksum_func_build_backup_document() != 55615.toShort()) {
+    if (lib.uniffi_cenix_ffi_checksum_func_build_backup_document() != 13408.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_classify_profile() != 35228.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_decode_backup_envelope() != 56212.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_decode_drawer_journal() != 45747.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_discovery_previous_kind() != 38765.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_assignment_category() != 32460.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_builtin_categories() != 34797.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_is_valid_custom_id() != 26829.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_order_categories() != 35759.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_sanitize_title() != 38702.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_drawer_section_key() != 12415.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_encode_backup_envelope() != 58523.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_encode_drawer_journal() != 52062.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cenix_ffi_checksum_func_filter_and_order_apps() != 6283.toShort()) {
@@ -960,10 +1092,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cenix_ffi_checksum_func_native_panicked() != 51392.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_cenix_ffi_checksum_func_parse_iconpack_index() != 1464.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cenix_ffi_checksum_func_plan_backup_import() != 11565.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cenix_ffi_checksum_func_project_profile_item() != 373.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_reconcile_profiles() != 2174.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_scope_drawer_for_targets() != 39721.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cenix_ffi_checksum_func_update_discovery() != 57608.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cenix_ffi_checksum_func_validate_backup_document() != 7715.toShort()) {
@@ -1197,6 +1341,25 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
+/**
+ * @suppress
+ */
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+    override fun read(buf: ByteBuffer): ByteArray {
+        val len = buf.getInt()
+        val byteArr = ByteArray(len)
+        buf.get(byteArr)
+        return byteArr
+    }
+    override fun allocationSize(value: ByteArray): ULong {
+        return 4UL + value.size.toULong()
+    }
+    override fun write(value: ByteArray, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        buf.put(value)
+    }
+}
+
 
 
 data class App (
@@ -1283,6 +1446,7 @@ data class BackupDocument (
     var `profiles`: List<BackupProfileRef>,
     var `workspace`: WorkspaceSnapshot,
     var `widgets`: List<BackupWidgetMetadata>,
+    var `drawer`: DrawerBackup,
     var `nextItemId`: kotlin.ULong,
     var `nextPageId`: kotlin.ULong
 ) {
@@ -1303,6 +1467,7 @@ public object FfiConverterTypeBackupDocument: FfiConverterRustBuffer<BackupDocum
             FfiConverterSequenceTypeBackupProfileRef.read(buf),
             FfiConverterTypeWorkspaceSnapshot.read(buf),
             FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterTypeDrawerBackup.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterULong.read(buf),
         )
@@ -1316,6 +1481,7 @@ public object FfiConverterTypeBackupDocument: FfiConverterRustBuffer<BackupDocum
             FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
             FfiConverterTypeWorkspaceSnapshot.allocationSize(value.`workspace`) +
             FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterTypeDrawerBackup.allocationSize(value.`drawer`) +
             FfiConverterULong.allocationSize(value.`nextItemId`) +
             FfiConverterULong.allocationSize(value.`nextPageId`)
     )
@@ -1328,6 +1494,7 @@ public object FfiConverterTypeBackupDocument: FfiConverterRustBuffer<BackupDocum
             FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
             FfiConverterTypeWorkspaceSnapshot.write(value.`workspace`, buf)
             FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterTypeDrawerBackup.write(value.`drawer`, buf)
             FfiConverterULong.write(value.`nextItemId`, buf)
             FfiConverterULong.write(value.`nextPageId`, buf)
     }
@@ -1380,6 +1547,7 @@ data class BackupImportPlan (
     var `settings`: BackupSettings,
     var `profiles`: List<BackupProfileRef>,
     var `widgets`: List<BackupWidgetMetadata>,
+    var `drawer`: DrawerBackup,
     var `nextItemId`: kotlin.ULong,
     var `nextPageId`: kotlin.ULong,
     var `unresolvedApplications`: List<kotlin.ULong>,
@@ -1401,6 +1569,7 @@ public object FfiConverterTypeBackupImportPlan: FfiConverterRustBuffer<BackupImp
             FfiConverterTypeBackupSettings.read(buf),
             FfiConverterSequenceTypeBackupProfileRef.read(buf),
             FfiConverterSequenceTypeBackupWidgetMetadata.read(buf),
+            FfiConverterTypeDrawerBackup.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterSequenceULong.read(buf),
@@ -1415,6 +1584,7 @@ public object FfiConverterTypeBackupImportPlan: FfiConverterRustBuffer<BackupImp
             FfiConverterTypeBackupSettings.allocationSize(value.`settings`) +
             FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`profiles`) +
             FfiConverterSequenceTypeBackupWidgetMetadata.allocationSize(value.`widgets`) +
+            FfiConverterTypeDrawerBackup.allocationSize(value.`drawer`) +
             FfiConverterULong.allocationSize(value.`nextItemId`) +
             FfiConverterULong.allocationSize(value.`nextPageId`) +
             FfiConverterSequenceULong.allocationSize(value.`unresolvedApplications`) +
@@ -1428,6 +1598,7 @@ public object FfiConverterTypeBackupImportPlan: FfiConverterRustBuffer<BackupImp
             FfiConverterTypeBackupSettings.write(value.`settings`, buf)
             FfiConverterSequenceTypeBackupProfileRef.write(value.`profiles`, buf)
             FfiConverterSequenceTypeBackupWidgetMetadata.write(value.`widgets`, buf)
+            FfiConverterTypeDrawerBackup.write(value.`drawer`, buf)
             FfiConverterULong.write(value.`nextItemId`, buf)
             FfiConverterULong.write(value.`nextPageId`, buf)
             FfiConverterSequenceULong.write(value.`unresolvedApplications`, buf)
@@ -1607,6 +1778,42 @@ public object FfiConverterTypeBackupWidgetMetadata: FfiConverterRustBuffer<Backu
 
 
 
+data class CategoryAssignment (
+    var `package`: kotlin.String,
+    var `profileId`: kotlin.ULong,
+    var `categoryId`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCategoryAssignment: FfiConverterRustBuffer<CategoryAssignment> {
+    override fun read(buf: ByteBuffer): CategoryAssignment {
+        return CategoryAssignment(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CategoryAssignment) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterString.allocationSize(value.`categoryId`)
+    )
+
+    override fun write(value: CategoryAssignment, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterString.write(value.`categoryId`, buf)
+    }
+}
+
+
+
 data class CellRect (
     var `cellX`: kotlin.Int,
     var `cellY`: kotlin.Int,
@@ -1710,6 +1917,222 @@ public object FfiConverterTypeDiagnosticsConfig: FfiConverterRustBuffer<Diagnost
     override fun write(value: DiagnosticsConfig, buf: ByteBuffer) {
             FfiConverterString.write(value.`level`, buf)
             FfiConverterBoolean.write(value.`releaseRedaction`, buf)
+    }
+}
+
+
+
+data class DiscoveryInput (
+    var `profileId`: kotlin.ULong,
+    var `owner`: kotlin.Boolean,
+    var `userType`: UserTypeHint?
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDiscoveryInput: FfiConverterRustBuffer<DiscoveryInput> {
+    override fun read(buf: ByteBuffer): DiscoveryInput {
+        return DiscoveryInput(
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeUserTypeHint.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DiscoveryInput) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterBoolean.allocationSize(value.`owner`) +
+            FfiConverterOptionalTypeUserTypeHint.allocationSize(value.`userType`)
+    )
+
+    override fun write(value: DiscoveryInput, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterBoolean.write(value.`owner`, buf)
+            FfiConverterOptionalTypeUserTypeHint.write(value.`userType`, buf)
+    }
+}
+
+
+
+data class DiscoveryState (
+    var `authoritative`: List<kotlin.ULong>,
+    var `uncertain`: List<kotlin.ULong>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDiscoveryState: FfiConverterRustBuffer<DiscoveryState> {
+    override fun read(buf: ByteBuffer): DiscoveryState {
+        return DiscoveryState(
+            FfiConverterSequenceULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DiscoveryState) = (
+            FfiConverterSequenceULong.allocationSize(value.`authoritative`) +
+            FfiConverterSequenceULong.allocationSize(value.`uncertain`)
+    )
+
+    override fun write(value: DiscoveryState, buf: ByteBuffer) {
+            FfiConverterSequenceULong.write(value.`authoritative`, buf)
+            FfiConverterSequenceULong.write(value.`uncertain`, buf)
+    }
+}
+
+
+
+data class DrawerBackup (
+    var `mode`: kotlin.String,
+    var `personal`: DrawerTaxonomy,
+    var `work`: DrawerTaxonomy?,
+    var `assignments`: List<CategoryAssignment>,
+    var `iconPack`: kotlin.String,
+    var `iconOverrides`: List<IconOverride>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDrawerBackup: FfiConverterRustBuffer<DrawerBackup> {
+    override fun read(buf: ByteBuffer): DrawerBackup {
+        return DrawerBackup(
+            FfiConverterString.read(buf),
+            FfiConverterTypeDrawerTaxonomy.read(buf),
+            FfiConverterOptionalTypeDrawerTaxonomy.read(buf),
+            FfiConverterSequenceTypeCategoryAssignment.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeIconOverride.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DrawerBackup) = (
+            FfiConverterString.allocationSize(value.`mode`) +
+            FfiConverterTypeDrawerTaxonomy.allocationSize(value.`personal`) +
+            FfiConverterOptionalTypeDrawerTaxonomy.allocationSize(value.`work`) +
+            FfiConverterSequenceTypeCategoryAssignment.allocationSize(value.`assignments`) +
+            FfiConverterString.allocationSize(value.`iconPack`) +
+            FfiConverterSequenceTypeIconOverride.allocationSize(value.`iconOverrides`)
+    )
+
+    override fun write(value: DrawerBackup, buf: ByteBuffer) {
+            FfiConverterString.write(value.`mode`, buf)
+            FfiConverterTypeDrawerTaxonomy.write(value.`personal`, buf)
+            FfiConverterOptionalTypeDrawerTaxonomy.write(value.`work`, buf)
+            FfiConverterSequenceTypeCategoryAssignment.write(value.`assignments`, buf)
+            FfiConverterString.write(value.`iconPack`, buf)
+            FfiConverterSequenceTypeIconOverride.write(value.`iconOverrides`, buf)
+    }
+}
+
+
+
+data class DrawerCategory (
+    var `id`: kotlin.String,
+    var `title`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDrawerCategory: FfiConverterRustBuffer<DrawerCategory> {
+    override fun read(buf: ByteBuffer): DrawerCategory {
+        return DrawerCategory(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DrawerCategory) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`title`)
+    )
+
+    override fun write(value: DrawerCategory, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`title`, buf)
+    }
+}
+
+
+
+data class DrawerJournal (
+    var `drawer`: DrawerBackup,
+    var `targets`: List<BackupProfileRef>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDrawerJournal: FfiConverterRustBuffer<DrawerJournal> {
+    override fun read(buf: ByteBuffer): DrawerJournal {
+        return DrawerJournal(
+            FfiConverterTypeDrawerBackup.read(buf),
+            FfiConverterSequenceTypeBackupProfileRef.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DrawerJournal) = (
+            FfiConverterTypeDrawerBackup.allocationSize(value.`drawer`) +
+            FfiConverterSequenceTypeBackupProfileRef.allocationSize(value.`targets`)
+    )
+
+    override fun write(value: DrawerJournal, buf: ByteBuffer) {
+            FfiConverterTypeDrawerBackup.write(value.`drawer`, buf)
+            FfiConverterSequenceTypeBackupProfileRef.write(value.`targets`, buf)
+    }
+}
+
+
+
+data class DrawerTaxonomy (
+    var `selected`: kotlin.String,
+    var `categories`: List<DrawerCategory>,
+    var `order`: List<kotlin.String>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDrawerTaxonomy: FfiConverterRustBuffer<DrawerTaxonomy> {
+    override fun read(buf: ByteBuffer): DrawerTaxonomy {
+        return DrawerTaxonomy(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeDrawerCategory.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DrawerTaxonomy) = (
+            FfiConverterString.allocationSize(value.`selected`) +
+            FfiConverterSequenceTypeDrawerCategory.allocationSize(value.`categories`) +
+            FfiConverterSequenceString.allocationSize(value.`order`)
+    )
+
+    override fun write(value: DrawerTaxonomy, buf: ByteBuffer) {
+            FfiConverterString.write(value.`selected`, buf)
+            FfiConverterSequenceTypeDrawerCategory.write(value.`categories`, buf)
+            FfiConverterSequenceString.write(value.`order`, buf)
     }
 }
 
@@ -1823,6 +2246,114 @@ public object FfiConverterTypeGridSpec: FfiConverterRustBuffer<GridSpec> {
 
 
 
+data class IconOverride (
+    var `package`: kotlin.String,
+    var `class`: kotlin.String,
+    var `profileId`: kotlin.ULong,
+    var `packPackage`: kotlin.String,
+    var `drawable`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeIconOverride: FfiConverterRustBuffer<IconOverride> {
+    override fun read(buf: ByteBuffer): IconOverride {
+        return IconOverride(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: IconOverride) = (
+            FfiConverterString.allocationSize(value.`package`) +
+            FfiConverterString.allocationSize(value.`class`) +
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterString.allocationSize(value.`packPackage`) +
+            FfiConverterString.allocationSize(value.`drawable`)
+    )
+
+    override fun write(value: IconOverride, buf: ByteBuffer) {
+            FfiConverterString.write(value.`package`, buf)
+            FfiConverterString.write(value.`class`, buf)
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterString.write(value.`packPackage`, buf)
+            FfiConverterString.write(value.`drawable`, buf)
+    }
+}
+
+
+
+data class IconPackIndex (
+    var `mappings`: List<IconPackMapping>,
+    var `drawables`: List<kotlin.String>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeIconPackIndex: FfiConverterRustBuffer<IconPackIndex> {
+    override fun read(buf: ByteBuffer): IconPackIndex {
+        return IconPackIndex(
+            FfiConverterSequenceTypeIconPackMapping.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: IconPackIndex) = (
+            FfiConverterSequenceTypeIconPackMapping.allocationSize(value.`mappings`) +
+            FfiConverterSequenceString.allocationSize(value.`drawables`)
+    )
+
+    override fun write(value: IconPackIndex, buf: ByteBuffer) {
+            FfiConverterSequenceTypeIconPackMapping.write(value.`mappings`, buf)
+            FfiConverterSequenceString.write(value.`drawables`, buf)
+    }
+}
+
+
+
+data class IconPackMapping (
+    var `component`: kotlin.String,
+    var `drawable`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeIconPackMapping: FfiConverterRustBuffer<IconPackMapping> {
+    override fun read(buf: ByteBuffer): IconPackMapping {
+        return IconPackMapping(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: IconPackMapping) = (
+            FfiConverterString.allocationSize(value.`component`) +
+            FfiConverterString.allocationSize(value.`drawable`)
+    )
+
+    override fun write(value: IconPackMapping, buf: ByteBuffer) {
+            FfiConverterString.write(value.`component`, buf)
+            FfiConverterString.write(value.`drawable`, buf)
+    }
+}
+
+
+
 data class ProfileDescriptor (
     var `profileId`: kotlin.ULong,
     var `kind`: ProfileKind,
@@ -1859,6 +2390,38 @@ public object FfiConverterTypeProfileDescriptor: FfiConverterRustBuffer<ProfileD
 
 
 
+data class ProfileKindEntry (
+    var `profileId`: kotlin.ULong,
+    var `kind`: ProfileKind
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileKindEntry: FfiConverterRustBuffer<ProfileKindEntry> {
+    override fun read(buf: ByteBuffer): ProfileKindEntry {
+        return ProfileKindEntry(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeProfileKind.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileKindEntry) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterTypeProfileKind.allocationSize(value.`kind`)
+    )
+
+    override fun write(value: ProfileKindEntry, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterTypeProfileKind.write(value.`kind`, buf)
+    }
+}
+
+
+
 data class ProfileMapping (
     var `sourceProfileId`: kotlin.ULong,
     var `targetProfileId`: kotlin.ULong
@@ -1886,6 +2449,94 @@ public object FfiConverterTypeProfileMapping: FfiConverterRustBuffer<ProfileMapp
     override fun write(value: ProfileMapping, buf: ByteBuffer) {
             FfiConverterULong.write(value.`sourceProfileId`, buf)
             FfiConverterULong.write(value.`targetProfileId`, buf)
+    }
+}
+
+
+
+data class ProfileObservation (
+    var `profileId`: kotlin.ULong,
+    var `owner`: kotlin.Boolean,
+    var `userType`: UserTypeHint?,
+    var `quiet`: kotlin.Boolean,
+    var `running`: kotlin.Boolean,
+    var `unlocked`: kotlin.Boolean,
+    var `serialResolved`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeProfileObservation: FfiConverterRustBuffer<ProfileObservation> {
+    override fun read(buf: ByteBuffer): ProfileObservation {
+        return ProfileObservation(
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeUserTypeHint.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProfileObservation) = (
+            FfiConverterULong.allocationSize(value.`profileId`) +
+            FfiConverterBoolean.allocationSize(value.`owner`) +
+            FfiConverterOptionalTypeUserTypeHint.allocationSize(value.`userType`) +
+            FfiConverterBoolean.allocationSize(value.`quiet`) +
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterBoolean.allocationSize(value.`unlocked`) +
+            FfiConverterBoolean.allocationSize(value.`serialResolved`)
+    )
+
+    override fun write(value: ProfileObservation, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`profileId`, buf)
+            FfiConverterBoolean.write(value.`owner`, buf)
+            FfiConverterOptionalTypeUserTypeHint.write(value.`userType`, buf)
+            FfiConverterBoolean.write(value.`quiet`, buf)
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterBoolean.write(value.`unlocked`, buf)
+            FfiConverterBoolean.write(value.`serialResolved`, buf)
+    }
+}
+
+
+
+data class ReconciledProfiles (
+    var `descriptors`: List<ProfileDescriptor>,
+    var `state`: DiscoveryState,
+    var `removed`: List<kotlin.ULong>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeReconciledProfiles: FfiConverterRustBuffer<ReconciledProfiles> {
+    override fun read(buf: ByteBuffer): ReconciledProfiles {
+        return ReconciledProfiles(
+            FfiConverterSequenceTypeProfileDescriptor.read(buf),
+            FfiConverterTypeDiscoveryState.read(buf),
+            FfiConverterSequenceULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ReconciledProfiles) = (
+            FfiConverterSequenceTypeProfileDescriptor.allocationSize(value.`descriptors`) +
+            FfiConverterTypeDiscoveryState.allocationSize(value.`state`) +
+            FfiConverterSequenceULong.allocationSize(value.`removed`)
+    )
+
+    override fun write(value: ReconciledProfiles, buf: ByteBuffer) {
+            FfiConverterSequenceTypeProfileDescriptor.write(value.`descriptors`, buf)
+            FfiConverterTypeDiscoveryState.write(value.`state`, buf)
+            FfiConverterSequenceULong.write(value.`removed`, buf)
     }
 }
 
@@ -2301,6 +2952,12 @@ sealed class BackupException: kotlin.Exception() {
             get() = ""
     }
 
+    class InvalidDrawer(
+        ) : BackupException() {
+        override val message
+            get() = ""
+    }
+
     class CrossProfile(
         ) : BackupException() {
         override val message
@@ -2356,9 +3013,10 @@ public object FfiConverterTypeBackupError : FfiConverterRustBuffer<BackupExcepti
             19 -> BackupException.Full()
             20 -> BackupException.InvalidGrid()
             21 -> BackupException.InvalidTitle()
-            22 -> BackupException.CrossProfile()
-            23 -> BackupException.WidgetTooLarge()
-            24 -> BackupException.InvariantViolation()
+            22 -> BackupException.InvalidDrawer()
+            23 -> BackupException.CrossProfile()
+            24 -> BackupException.WidgetTooLarge()
+            25 -> BackupException.InvariantViolation()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -2446,6 +3104,10 @@ public object FfiConverterTypeBackupError : FfiConverterRustBuffer<BackupExcepti
                 4UL
             )
             is BackupException.InvalidTitle -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BackupException.InvalidDrawer -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
@@ -2550,16 +3212,20 @@ public object FfiConverterTypeBackupError : FfiConverterRustBuffer<BackupExcepti
                 buf.putInt(21)
                 Unit
             }
-            is BackupException.CrossProfile -> {
+            is BackupException.InvalidDrawer -> {
                 buf.putInt(22)
                 Unit
             }
-            is BackupException.WidgetTooLarge -> {
+            is BackupException.CrossProfile -> {
                 buf.putInt(23)
                 Unit
             }
-            is BackupException.InvariantViolation -> {
+            is BackupException.WidgetTooLarge -> {
                 buf.putInt(24)
+                Unit
+            }
+            is BackupException.InvariantViolation -> {
+                buf.putInt(25)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -2656,6 +3322,674 @@ public object FfiConverterTypeBackupImportWarning : FfiConverterRustBuffer<Backu
 }
 
 
+
+
+
+
+
+sealed class CodecException: kotlin.Exception() {
+
+    class Format(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Version(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Source(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Payload(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Checksum(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Trailing(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Malformed(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Drawer(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Journal(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Obsolete(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Settings(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Profiles(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Workspace(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Widgets(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Allocator(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Grid(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Pages(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Items(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Folders(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Item(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Folder(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Member(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Widget(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Kind(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Container(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Cell(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Page(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class String(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Integer(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Count(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class DuplicateKey(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Forbidden(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Token(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Truncated(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Depth(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Overlap(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Span(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Profile(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Mixed(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Duplicate(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Utf8(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+    class Oversized(
+        ) : CodecException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<CodecException> {
+        override fun lift(error_buf: RustBuffer.ByValue): CodecException = FfiConverterTypeCodecError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCodecError : FfiConverterRustBuffer<CodecException> {
+    override fun read(buf: ByteBuffer): CodecException {
+
+
+        return when(buf.getInt()) {
+            1 -> CodecException.Format()
+            2 -> CodecException.Version()
+            3 -> CodecException.Source()
+            4 -> CodecException.Payload()
+            5 -> CodecException.Checksum()
+            6 -> CodecException.Trailing()
+            7 -> CodecException.Malformed()
+            8 -> CodecException.Drawer()
+            9 -> CodecException.Journal()
+            10 -> CodecException.Obsolete()
+            11 -> CodecException.Settings()
+            12 -> CodecException.Profiles()
+            13 -> CodecException.Workspace()
+            14 -> CodecException.Widgets()
+            15 -> CodecException.Allocator()
+            16 -> CodecException.Grid()
+            17 -> CodecException.Pages()
+            18 -> CodecException.Items()
+            19 -> CodecException.Folders()
+            20 -> CodecException.Item()
+            21 -> CodecException.Folder()
+            22 -> CodecException.Member()
+            23 -> CodecException.Widget()
+            24 -> CodecException.Kind()
+            25 -> CodecException.Container()
+            26 -> CodecException.Cell()
+            27 -> CodecException.Page()
+            28 -> CodecException.String()
+            29 -> CodecException.Integer()
+            30 -> CodecException.Count()
+            31 -> CodecException.DuplicateKey()
+            32 -> CodecException.Forbidden()
+            33 -> CodecException.Token()
+            34 -> CodecException.Truncated()
+            35 -> CodecException.Depth()
+            36 -> CodecException.Overlap()
+            37 -> CodecException.Span()
+            38 -> CodecException.Profile()
+            39 -> CodecException.Mixed()
+            40 -> CodecException.Duplicate()
+            41 -> CodecException.Utf8()
+            42 -> CodecException.Oversized()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: CodecException): ULong {
+        return when(value) {
+            is CodecException.Format -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Version -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Source -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Payload -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Checksum -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Trailing -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Malformed -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Drawer -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Journal -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Obsolete -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Settings -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Profiles -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Workspace -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Widgets -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Allocator -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Grid -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Pages -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Items -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Folders -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Item -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Folder -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Member -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Widget -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Kind -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Container -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Cell -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Page -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.String -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Integer -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Count -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.DuplicateKey -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Forbidden -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Token -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Truncated -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Depth -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Overlap -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Span -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Profile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Mixed -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Duplicate -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Utf8 -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is CodecException.Oversized -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: CodecException, buf: ByteBuffer) {
+        when(value) {
+            is CodecException.Format -> {
+                buf.putInt(1)
+                Unit
+            }
+            is CodecException.Version -> {
+                buf.putInt(2)
+                Unit
+            }
+            is CodecException.Source -> {
+                buf.putInt(3)
+                Unit
+            }
+            is CodecException.Payload -> {
+                buf.putInt(4)
+                Unit
+            }
+            is CodecException.Checksum -> {
+                buf.putInt(5)
+                Unit
+            }
+            is CodecException.Trailing -> {
+                buf.putInt(6)
+                Unit
+            }
+            is CodecException.Malformed -> {
+                buf.putInt(7)
+                Unit
+            }
+            is CodecException.Drawer -> {
+                buf.putInt(8)
+                Unit
+            }
+            is CodecException.Journal -> {
+                buf.putInt(9)
+                Unit
+            }
+            is CodecException.Obsolete -> {
+                buf.putInt(10)
+                Unit
+            }
+            is CodecException.Settings -> {
+                buf.putInt(11)
+                Unit
+            }
+            is CodecException.Profiles -> {
+                buf.putInt(12)
+                Unit
+            }
+            is CodecException.Workspace -> {
+                buf.putInt(13)
+                Unit
+            }
+            is CodecException.Widgets -> {
+                buf.putInt(14)
+                Unit
+            }
+            is CodecException.Allocator -> {
+                buf.putInt(15)
+                Unit
+            }
+            is CodecException.Grid -> {
+                buf.putInt(16)
+                Unit
+            }
+            is CodecException.Pages -> {
+                buf.putInt(17)
+                Unit
+            }
+            is CodecException.Items -> {
+                buf.putInt(18)
+                Unit
+            }
+            is CodecException.Folders -> {
+                buf.putInt(19)
+                Unit
+            }
+            is CodecException.Item -> {
+                buf.putInt(20)
+                Unit
+            }
+            is CodecException.Folder -> {
+                buf.putInt(21)
+                Unit
+            }
+            is CodecException.Member -> {
+                buf.putInt(22)
+                Unit
+            }
+            is CodecException.Widget -> {
+                buf.putInt(23)
+                Unit
+            }
+            is CodecException.Kind -> {
+                buf.putInt(24)
+                Unit
+            }
+            is CodecException.Container -> {
+                buf.putInt(25)
+                Unit
+            }
+            is CodecException.Cell -> {
+                buf.putInt(26)
+                Unit
+            }
+            is CodecException.Page -> {
+                buf.putInt(27)
+                Unit
+            }
+            is CodecException.String -> {
+                buf.putInt(28)
+                Unit
+            }
+            is CodecException.Integer -> {
+                buf.putInt(29)
+                Unit
+            }
+            is CodecException.Count -> {
+                buf.putInt(30)
+                Unit
+            }
+            is CodecException.DuplicateKey -> {
+                buf.putInt(31)
+                Unit
+            }
+            is CodecException.Forbidden -> {
+                buf.putInt(32)
+                Unit
+            }
+            is CodecException.Token -> {
+                buf.putInt(33)
+                Unit
+            }
+            is CodecException.Truncated -> {
+                buf.putInt(34)
+                Unit
+            }
+            is CodecException.Depth -> {
+                buf.putInt(35)
+                Unit
+            }
+            is CodecException.Overlap -> {
+                buf.putInt(36)
+                Unit
+            }
+            is CodecException.Span -> {
+                buf.putInt(37)
+                Unit
+            }
+            is CodecException.Profile -> {
+                buf.putInt(38)
+                Unit
+            }
+            is CodecException.Mixed -> {
+                buf.putInt(39)
+                Unit
+            }
+            is CodecException.Duplicate -> {
+                buf.putInt(40)
+                Unit
+            }
+            is CodecException.Utf8 -> {
+                buf.putInt(41)
+                Unit
+            }
+            is CodecException.Oversized -> {
+                buf.putInt(42)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
 
 
 
@@ -2794,6 +4128,74 @@ public object FfiConverterTypeEngineError : FfiConverterRustBuffer<EngineExcepti
             is EngineException.Bounds -> {
                 buf.putInt(2)
                 FfiConverterString.write(value.`reason`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+
+
+sealed class IconPackException: kotlin.Exception() {
+
+    class Malformed(
+        ) : IconPackException() {
+        override val message
+            get() = ""
+    }
+
+    class Bounds(
+        ) : IconPackException() {
+        override val message
+            get() = ""
+    }
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<IconPackException> {
+        override fun lift(error_buf: RustBuffer.ByValue): IconPackException = FfiConverterTypeIconPackError.lift(error_buf)
+    }
+
+
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeIconPackError : FfiConverterRustBuffer<IconPackException> {
+    override fun read(buf: ByteBuffer): IconPackException {
+
+
+        return when(buf.getInt()) {
+            1 -> IconPackException.Malformed()
+            2 -> IconPackException.Bounds()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: IconPackException): ULong {
+        return when(value) {
+            is IconPackException.Malformed -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is IconPackException.Bounds -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: IconPackException, buf: ByteBuffer) {
+        when(value) {
+            is IconPackException.Malformed -> {
+                buf.putInt(1)
+                Unit
+            }
+            is IconPackException.Bounds -> {
+                buf.putInt(2)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3027,6 +4429,37 @@ public object FfiConverterTypeProfileSurface: FfiConverterRustBuffer<ProfileSurf
     override fun allocationSize(value: ProfileSurface) = 4UL
 
     override fun write(value: ProfileSurface, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class UserTypeHint {
+
+    MANAGED,
+    PRIVATE,
+    OTHER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeUserTypeHint: FfiConverterRustBuffer<UserTypeHint> {
+    override fun read(buf: ByteBuffer) = try {
+        UserTypeHint.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: UserTypeHint) = 4UL
+
+    override fun write(value: UserTypeHint, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -3998,6 +5431,134 @@ public object FfiConverterTypeWorkspaceError : FfiConverterRustBuffer<WorkspaceE
 /**
  * @suppress
  */
+public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
+    override fun read(buf: ByteBuffer): kotlin.String? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterString.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.String?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterString.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.String?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeDrawerTaxonomy: FfiConverterRustBuffer<DrawerTaxonomy?> {
+    override fun read(buf: ByteBuffer): DrawerTaxonomy? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeDrawerTaxonomy.read(buf)
+    }
+
+    override fun allocationSize(value: DrawerTaxonomy?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeDrawerTaxonomy.allocationSize(value)
+        }
+    }
+
+    override fun write(value: DrawerTaxonomy?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeDrawerTaxonomy.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeProfileKind: FfiConverterRustBuffer<ProfileKind?> {
+    override fun read(buf: ByteBuffer): ProfileKind? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeProfileKind.read(buf)
+    }
+
+    override fun allocationSize(value: ProfileKind?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeProfileKind.allocationSize(value)
+        }
+    }
+
+    override fun write(value: ProfileKind?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeProfileKind.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeUserTypeHint: FfiConverterRustBuffer<UserTypeHint?> {
+    override fun read(buf: ByteBuffer): UserTypeHint? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeUserTypeHint.read(buf)
+    }
+
+    override fun allocationSize(value: UserTypeHint?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeUserTypeHint.allocationSize(value)
+        }
+    }
+
+    override fun write(value: UserTypeHint?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeUserTypeHint.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<kotlin.ULong>> {
     override fun read(buf: ByteBuffer): List<kotlin.ULong> {
         val len = buf.getInt()
@@ -4166,6 +5727,34 @@ public object FfiConverterSequenceTypeBackupWidgetMetadata: FfiConverterRustBuff
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeCategoryAssignment: FfiConverterRustBuffer<List<CategoryAssignment>> {
+    override fun read(buf: ByteBuffer): List<CategoryAssignment> {
+        val len = buf.getInt()
+        return List<CategoryAssignment>(len) {
+            FfiConverterTypeCategoryAssignment.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<CategoryAssignment>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeCategoryAssignment.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<CategoryAssignment>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeCategoryAssignment.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeComponentId: FfiConverterRustBuffer<List<ComponentId>> {
     override fun read(buf: ByteBuffer): List<ComponentId> {
         val len = buf.getInt()
@@ -4184,6 +5773,62 @@ public object FfiConverterSequenceTypeComponentId: FfiConverterRustBuffer<List<C
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeComponentId.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeDiscoveryInput: FfiConverterRustBuffer<List<DiscoveryInput>> {
+    override fun read(buf: ByteBuffer): List<DiscoveryInput> {
+        val len = buf.getInt()
+        return List<DiscoveryInput>(len) {
+            FfiConverterTypeDiscoveryInput.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<DiscoveryInput>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeDiscoveryInput.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<DiscoveryInput>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeDiscoveryInput.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeDrawerCategory: FfiConverterRustBuffer<List<DrawerCategory>> {
+    override fun read(buf: ByteBuffer): List<DrawerCategory> {
+        val len = buf.getInt()
+        return List<DrawerCategory>(len) {
+            FfiConverterTypeDrawerCategory.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<DrawerCategory>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeDrawerCategory.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<DrawerCategory>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeDrawerCategory.write(it, buf)
         }
     }
 }
@@ -4250,6 +5895,118 @@ public object FfiConverterSequenceTypeFolderMember: FfiConverterRustBuffer<List<
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeIconOverride: FfiConverterRustBuffer<List<IconOverride>> {
+    override fun read(buf: ByteBuffer): List<IconOverride> {
+        val len = buf.getInt()
+        return List<IconOverride>(len) {
+            FfiConverterTypeIconOverride.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<IconOverride>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeIconOverride.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<IconOverride>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeIconOverride.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeIconPackMapping: FfiConverterRustBuffer<List<IconPackMapping>> {
+    override fun read(buf: ByteBuffer): List<IconPackMapping> {
+        val len = buf.getInt()
+        return List<IconPackMapping>(len) {
+            FfiConverterTypeIconPackMapping.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<IconPackMapping>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeIconPackMapping.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<IconPackMapping>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeIconPackMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeProfileDescriptor: FfiConverterRustBuffer<List<ProfileDescriptor>> {
+    override fun read(buf: ByteBuffer): List<ProfileDescriptor> {
+        val len = buf.getInt()
+        return List<ProfileDescriptor>(len) {
+            FfiConverterTypeProfileDescriptor.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProfileDescriptor>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeProfileDescriptor.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProfileDescriptor>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeProfileDescriptor.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeProfileKindEntry: FfiConverterRustBuffer<List<ProfileKindEntry>> {
+    override fun read(buf: ByteBuffer): List<ProfileKindEntry> {
+        val len = buf.getInt()
+        return List<ProfileKindEntry>(len) {
+            FfiConverterTypeProfileKindEntry.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProfileKindEntry>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeProfileKindEntry.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProfileKindEntry>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeProfileKindEntry.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeProfileMapping: FfiConverterRustBuffer<List<ProfileMapping>> {
     override fun read(buf: ByteBuffer): List<ProfileMapping> {
         val len = buf.getInt()
@@ -4268,6 +6025,34 @@ public object FfiConverterSequenceTypeProfileMapping: FfiConverterRustBuffer<Lis
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeProfileMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeProfileObservation: FfiConverterRustBuffer<List<ProfileObservation>> {
+    override fun read(buf: ByteBuffer): List<ProfileObservation> {
+        val len = buf.getInt()
+        return List<ProfileObservation>(len) {
+            FfiConverterTypeProfileObservation.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProfileObservation>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeProfileObservation.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProfileObservation>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeProfileObservation.write(it, buf)
         }
     }
 }
@@ -4449,11 +6234,128 @@ public object FfiConverterSequenceTypeBackupImportWarning: FfiConverterRustBuffe
     }
 
 
-    @Throws(BackupException::class) fun `buildBackupDocument`(`workspace`: WorkspaceSnapshot, `settings`: BackupSettings, `widgets`: List<BackupWidgetMetadata>, `options`: BackupExportOptions, `nextItemId`: kotlin.ULong, `nextPageId`: kotlin.ULong): BackupDocument {
+    @Throws(BackupException::class) fun `buildBackupDocument`(`workspace`: WorkspaceSnapshot, `settings`: BackupSettings, `widgets`: List<BackupWidgetMetadata>, `drawer`: DrawerBackup, `options`: BackupExportOptions, `nextItemId`: kotlin.ULong, `nextPageId`: kotlin.ULong): BackupDocument {
             return FfiConverterTypeBackupDocument.lift(
     uniffiRustCallWithError(BackupException) { _status ->
     UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_build_backup_document(
-        FfiConverterTypeWorkspaceSnapshot.lower(`workspace`),FfiConverterTypeBackupSettings.lower(`settings`),FfiConverterSequenceTypeBackupWidgetMetadata.lower(`widgets`),FfiConverterTypeBackupExportOptions.lower(`options`),FfiConverterULong.lower(`nextItemId`),FfiConverterULong.lower(`nextPageId`),_status)
+        FfiConverterTypeWorkspaceSnapshot.lower(`workspace`),FfiConverterTypeBackupSettings.lower(`settings`),FfiConverterSequenceTypeBackupWidgetMetadata.lower(`widgets`),FfiConverterTypeDrawerBackup.lower(`drawer`),FfiConverterTypeBackupExportOptions.lower(`options`),FfiConverterULong.lower(`nextItemId`),FfiConverterULong.lower(`nextPageId`),_status)
+}
+    )
+    }
+
+ fun `classifyProfile`(`profileId`: kotlin.ULong, `owner`: kotlin.Boolean, `userType`: UserTypeHint?, `quiet`: kotlin.Boolean, `running`: kotlin.Boolean, `unlocked`: kotlin.Boolean, `previousKind`: ProfileKind?): ProfileDescriptor {
+            return FfiConverterTypeProfileDescriptor.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_classify_profile(
+        FfiConverterULong.lower(`profileId`),FfiConverterBoolean.lower(`owner`),FfiConverterOptionalTypeUserTypeHint.lower(`userType`),FfiConverterBoolean.lower(`quiet`),FfiConverterBoolean.lower(`running`),FfiConverterBoolean.lower(`unlocked`),FfiConverterOptionalTypeProfileKind.lower(`previousKind`),_status)
+}
+    )
+    }
+
+
+    @Throws(CodecException::class) fun `decodeBackupEnvelope`(`bytes`: kotlin.ByteArray): BackupDocument {
+            return FfiConverterTypeBackupDocument.lift(
+    uniffiRustCallWithError(CodecException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_decode_backup_envelope(
+        FfiConverterByteArray.lower(`bytes`),_status)
+}
+    )
+    }
+
+
+    @Throws(CodecException::class) fun `decodeDrawerJournal`(`payload`: kotlin.String): DrawerJournal {
+            return FfiConverterTypeDrawerJournal.lift(
+    uniffiRustCallWithError(CodecException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_decode_drawer_journal(
+        FfiConverterString.lower(`payload`),_status)
+}
+    )
+    }
+
+ fun `discoveryPreviousKind`(`state`: DiscoveryState, `currentKinds`: List<ProfileKindEntry>, `profileId`: kotlin.ULong): ProfileKind? {
+            return FfiConverterOptionalTypeProfileKind.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_discovery_previous_kind(
+        FfiConverterTypeDiscoveryState.lower(`state`),FfiConverterSequenceTypeProfileKindEntry.lower(`currentKinds`),FfiConverterULong.lower(`profileId`),_status)
+}
+    )
+    }
+
+ fun `drawerAssignmentCategory`(`auto`: kotlin.String, `categoryOverride`: kotlin.String?, `supportsCustomization`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_assignment_category(
+        FfiConverterString.lower(`auto`),FfiConverterOptionalString.lower(`categoryOverride`),FfiConverterBoolean.lower(`supportsCustomization`),_status)
+}
+    )
+    }
+
+
+        /**
+         * Drawer category rules are canonical in `cenix-core::drawer`. These thin
+         * exports let live editing and projection share the exact rules used by
+         * backup validation and normalization.
+         */ fun `drawerBuiltinCategories`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_builtin_categories(
+        _status)
+}
+    )
+    }
+
+ fun `drawerIsValidCustomId`(`id`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_is_valid_custom_id(
+        FfiConverterString.lower(`id`),_status)
+}
+    )
+    }
+
+ fun `drawerOrderCategories`(`customIds`: List<kotlin.String>, `order`: List<kotlin.String>): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_order_categories(
+        FfiConverterSequenceString.lower(`customIds`),FfiConverterSequenceString.lower(`order`),_status)
+}
+    )
+    }
+
+ fun `drawerSanitizeTitle`(`raw`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_sanitize_title(
+        FfiConverterString.lower(`raw`),_status)
+}
+    )
+    }
+
+ fun `drawerSectionKey`(`requested`: kotlin.String, `known`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_drawer_section_key(
+        FfiConverterString.lower(`requested`),FfiConverterSequenceString.lower(`known`),_status)
+}
+    )
+    }
+
+
+    @Throws(CodecException::class) fun `encodeBackupEnvelope`(`document`: BackupDocument): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(CodecException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_encode_backup_envelope(
+        FfiConverterTypeBackupDocument.lower(`document`),_status)
+}
+    )
+    }
+
+
+    @Throws(CodecException::class) fun `encodeDrawerJournal`(`drawer`: DrawerBackup, `targets`: List<BackupProfileRef>): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CodecException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_encode_drawer_journal(
+        FfiConverterTypeDrawerBackup.lower(`drawer`),FfiConverterSequenceTypeBackupProfileRef.lower(`targets`),_status)
 }
     )
     }
@@ -4486,6 +6388,16 @@ public object FfiConverterSequenceTypeBackupImportWarning: FfiConverterRustBuffe
     }
 
 
+    @Throws(IconPackException::class) fun `parseIconpackIndex`(`xml`: kotlin.ByteArray): IconPackIndex {
+            return FfiConverterTypeIconPackIndex.lift(
+    uniffiRustCallWithError(IconPackException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_parse_iconpack_index(
+        FfiConverterByteArray.lower(`xml`),_status)
+}
+    )
+    }
+
+
     @Throws(BackupException::class) fun `planBackupImport`(`document`: BackupDocument, `target`: BackupImportTarget, `mappings`: List<ProfileMapping>): BackupImportPlan {
             return FfiConverterTypeBackupImportPlan.lift(
     uniffiRustCallWithError(BackupException) { _status ->
@@ -4500,6 +6412,34 @@ public object FfiConverterSequenceTypeBackupImportWarning: FfiConverterRustBuffe
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_project_profile_item(
         FfiConverterTypeProfileDescriptor.lower(`profile`),FfiConverterTypeProfileSurface.lower(`surface`),_status)
+}
+    )
+    }
+
+ fun `reconcileProfiles`(`state`: DiscoveryState, `observations`: List<ProfileObservation>, `previousKinds`: List<ProfileKindEntry>): ReconciledProfiles {
+            return FfiConverterTypeReconciledProfiles.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_reconcile_profiles(
+        FfiConverterTypeDiscoveryState.lower(`state`),FfiConverterSequenceTypeProfileObservation.lower(`observations`),FfiConverterSequenceTypeProfileKindEntry.lower(`previousKinds`),_status)
+}
+    )
+    }
+
+
+    @Throws(BackupException::class) fun `scopeDrawerForTargets`(`drawer`: DrawerBackup, `targets`: List<BackupProfileRef>): DrawerBackup {
+            return FfiConverterTypeDrawerBackup.lift(
+    uniffiRustCallWithError(BackupException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_scope_drawer_for_targets(
+        FfiConverterTypeDrawerBackup.lower(`drawer`),FfiConverterSequenceTypeBackupProfileRef.lower(`targets`),_status)
+}
+    )
+    }
+
+ fun `updateDiscovery`(`state`: DiscoveryState, `inputs`: List<DiscoveryInput>, `existingIds`: List<kotlin.ULong>): DiscoveryState {
+            return FfiConverterTypeDiscoveryState.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cenix_ffi_fn_func_update_discovery(
+        FfiConverterTypeDiscoveryState.lower(`state`),FfiConverterSequenceTypeDiscoveryInput.lower(`inputs`),FfiConverterSequenceULong.lower(`existingIds`),_status)
 }
     )
     }

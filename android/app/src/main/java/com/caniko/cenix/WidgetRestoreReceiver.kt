@@ -26,8 +26,12 @@ class WidgetRestoreReceiver : BroadcastReceiver() {
                     val mapped = dao.remapWidgetIds(oldIds, newIds, System.currentTimeMillis()).toSet()
                     val host = AppWidgetHost(context, WidgetHostController.HOST_ID)
                     newIds.filter { it !in mapped }.forEach(host::deleteAppWidgetId)
-                    restore.committedGeneration?.let(dao::completeRestore)
+                    restore.committedGeneration?.let { generation ->
+                        app.database?.let { BackupRepository(it).complete(context, generation) }
+                    }
                 }
+            } catch (_: RuntimeException) {
+                (context.applicationContext as? CenixApplication)?.requestEmergency()
             } finally {
                 pending.finish()
             }
