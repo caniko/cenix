@@ -63,21 +63,21 @@ class DeviceSmokeTest {
             component = ComponentName(PKG, "$PKG.HomeActivity")
         }
         ActivityScenario.launch<HomeActivity>(homeIntent).use {
-            assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))
+            assertTrue("launcherRoot never appeared", device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))
             openDrawer()
             val field = device.findObject(By.res(PKG, "searchField"))
             field.click()
             field.setText("fixture")
-            assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000))
+            assertTrue("fixture row never appeared", device.wait(Until.hasObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000))
             device.pressBack()
-            assertTrue(device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
+            assertTrue("search still visible after back", device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
             openDrawer()
             val entry = device.wait(Until.findObject(By.res(PKG, "launcherSettings")), 5_000)
-            assertNotNull(entry)
+            assertNotNull("settings entry missing", entry)
             entry.click()
-            assertTrue(device.wait(Until.hasObject(By.res(PKG, "settingsTitle")), 5_000))
+            assertTrue("settings never opened", device.wait(Until.hasObject(By.res(PKG, "settingsTitle")), 5_000))
             device.pressBack()
-            assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
+            assertTrue("launcher gone after settings back", device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 5_000))
         }
     }
 
