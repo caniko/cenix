@@ -32,7 +32,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME)
-            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_2_3, CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         val items = database.dao().workspaceItems().associateBy { it.id }
         assertEquals(1L, items[7]!!.containerId)
@@ -55,7 +55,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V3)
-            .addMigrations(CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_3_4, CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         assertEquals(7L, database.dao().workspaceItems().single().id)
         assertEquals("pkg", database.dao().workspaceApplications().single().packageName)
@@ -78,7 +78,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V4)
-            .addMigrations(CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_4_5, CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         assertEquals(7L, database.dao().workspaceMetadata()!!.generation)
         assertEquals(20L, database.dao().workspaceMetadata()!!.nextItemId)
@@ -105,7 +105,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V5)
-            .addMigrations(CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_5_6, CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         assertEquals(7L, database.dao().workspaceMetadata()!!.generation)
         assertEquals(listOf(10L, 13L), database.dao().workspaceItems().map { it.id })
@@ -131,7 +131,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V6)
-            .addMigrations(CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_6_7, CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         assertEquals("5_by_5", database.dao().launcherSettings()!!.gridName)
         assertTrue(database.dao().launcherSettings()!!.notificationDots)
@@ -156,7 +156,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V7)
-            .addMigrations(CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_7_8, CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         val settings = database.dao().launcherSettings()!!
         assertEquals("4_by_5", settings.gridName)
@@ -182,7 +182,7 @@ class WorkspaceMigrationTest {
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.databaseBuilder(context, CenixDatabase::class.java, NAME_V8)
-            .addMigrations(CenixDatabase.MIGRATION_8_9)
+            .addMigrations(CenixDatabase.MIGRATION_8_9, CenixDatabase.MIGRATION_9_10)
             .build()
         val widget = database.dao().workspaceWidgets().single()
         assertEquals(1, widget.minSpanX)

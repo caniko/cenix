@@ -260,22 +260,26 @@
       "inputs": {
         "flake-parts": "flake-parts",
         "git-hooks": "git-hooks",
-        "meta-harbor": "meta-harbor",
+        "harbor-meta": "harbor-meta",
+        "meta-harbor": [
+          "harbor-android",
+          "harbor-meta"
+        ],
         "nixpkgs": "nixpkgs",
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1787471536,
-        "narHash": "sha256-6sxdlyIxEDSKObl1lHjCAf0y28umgbxp6jsbBzFwvUQ=",
+        "lastModified": 1789564824,
+        "narHash": "sha256-a9HyaXc3+e/Rq8fc7/e4kfGkFWlGWSXUvuLHK4m+tUs=",
         "ref": "trunk",
-        "rev": "751a9fcc896afa764b690cd0711c80decbdb7173",
-        "revCount": 1,
+        "rev": "6a794b412b62bc45309b2ac3a08d105bad1bffce",
+        "revCount": 6,
         "type": "git",
         "url": "https://github.com/caniko/harbor-android.git"
       },
       "original": {
         "ref": "trunk",
-        "rev": "751a9fcc896afa764b690cd0711c80decbdb7173",
+        "rev": "6a794b412b62bc45309b2ac3a08d105bad1bffce",
         "type": "git",
         "url": "https://github.com/caniko/harbor-android.git"
       }
@@ -311,6 +315,29 @@
     },
     "harbor-meta": {
       "inputs": {
+        "flake-parts": "flake-parts_2",
+        "nixpkgs": [
+          "harbor-android",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787224113,
+        "narHash": "sha256-7Xz0gzc0Gg1DKamnT/eoytl6xUyGIfY1nZUTjQcaXjA=",
+        "ref": "trunk",
+        "rev": "519bc9305b5ba78f37c3226a9d8427c8f635afb8",
+        "revCount": 7,
+        "type": "git",
+        "url": "https://github.com/caniko/harbor-meta.git"
+      },
+      "original": {
+        "ref": "trunk",
+        "type": "git",
+        "url": "https://github.com/caniko/harbor-meta.git"
+      }
+    },
+    "harbor-meta_2": {
+      "inputs": {
         "flake-parts": "flake-parts_5",
         "nixpkgs": [
           "harbor-rs",
@@ -338,7 +365,7 @@
         "flake-parts": "flake-parts_3",
         "git-hooks": "git-hooks_2",
         "harbor-android": "harbor-android_2",
-        "harbor-meta": "harbor-meta",
+        "harbor-meta": "harbor-meta_2",
         "meta-harbor": [
           "harbor-rs",
           "harbor-meta"
@@ -364,29 +391,6 @@
         "rev": "fac8049316846e0ef1c1e6acd92aed7a337b333a",
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
-      }
-    },
-    "meta-harbor": {
-      "inputs": {
-        "flake-parts": "flake-parts_2",
-        "nixpkgs": [
-          "harbor-android",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1787224113,
-        "narHash": "sha256-7Xz0gzc0Gg1DKamnT/eoytl6xUyGIfY1nZUTjQcaXjA=",
-        "ref": "trunk",
-        "rev": "519bc9305b5ba78f37c3226a9d8427c8f635afb8",
-        "revCount": 7,
-        "type": "git",
-        "url": "https://github.com/caniko/meta-harbor.git"
-      },
-      "original": {
-        "ref": "trunk",
-        "type": "git",
-        "url": "https://github.com/caniko/meta-harbor.git"
       }
     },
     "nix-bundle": {

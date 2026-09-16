@@ -23,8 +23,9 @@ class HomeConformanceTest {
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "homeSurface")), 20_000))
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as CenixApplication
         assertTrue(app.awaitReady())
-        assertEquals(BuildConfig.GIT_COMMIT, app.let { BuildConfig.GIT_COMMIT })
-        assertTrue(BuildConfig.GIT_COMMIT.isNotBlank())
+        val expected = InstrumentationRegistry.getArguments().getString("gitCommit")
+        assertTrue(!expected.isNullOrBlank())
+        assertEquals(expected, BuildConfig.GIT_COMMIT)
     }
 
     @Test

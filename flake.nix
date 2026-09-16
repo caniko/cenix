@@ -3,7 +3,7 @@
 
   inputs = {
     harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=fac8049316846e0ef1c1e6acd92aed7a337b333a";
-    harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=751a9fcc896afa764b690cd0711c80decbdb7173";
+    harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=6a794b412b62bc45309b2ac3a08d105bad1bffce";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
@@ -131,7 +131,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
         };
         emulator = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -139,7 +139,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
         };
         emulator-aosp = harbor-android.lib.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -147,7 +147,7 @@
           ndkVersion = androidNdkVersion;
           rustToolchain = cfg.rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse];
+          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
         };
       }
     );
