@@ -25,3 +25,9 @@ No Cenix-specific Harbor helpers. UniFFI generate/check, APK audit, 16K page che
 ## Later (Harbor, not this repo)
 
 If more projects want an emulator SDK flavor, that belongs in harbor-android. Not needed for this slice.
+
+`mkAndroidDeviceTools` (android-device enroll/verify) is implemented in the
+local harbor-android working tree plus Cenix-side `CENIX_DEVICE_DEF` support
+in `scripts/device-smoke.sh`. Consuming it from the Cenix dev shell needs a
+published harbor-android rev and a pin refresh here; until then the smoke
+script falls back to its inline checks when the helper is absent.
