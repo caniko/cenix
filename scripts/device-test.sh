@@ -45,6 +45,15 @@ check_user_ready() {
     echo "refusing: test profile $user is ${state:-in an unknown state} $where; unlock it on the device first" >&2
     return 1
   }
+  # UI tests need a lit screen: a dozing device renders nothing, so every
+  # view wait times out. Waking is an operator action; never scripted here.
+  local wakefulness
+  wakefulness="$("$adb" -s "$serial" shell dumpsys power 2>/dev/null \
+    | grep -oE 'mWakefulness=[A-Za-z]+' | head -n1 | cut -d= -f2)"
+  [[ "$wakefulness" == "Awake" ]] || {
+    echo "refusing: device screen is ${wakefulness:-unknown} $where; wake it and dismiss the keyguard first" >&2
+    return 1
+  }
 }
 smoke_class="com.caniko.cenix.DeviceSmokeTest"
 expected_tests=3
