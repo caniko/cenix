@@ -1,5 +1,6 @@
 package com.caniko.cenix
 
+import android.content.ComponentName
 import android.content.Intent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -39,7 +40,12 @@ class DeviceSmokeTest {
         assertEquals(ProfileKind.PERSONAL, descriptor.kind)
         assertEquals(ProfileAccess.AVAILABLE, descriptor.access)
         assertEquals(expectedCommit(), BuildConfig.GIT_COMMIT)
-        ActivityScenario.launch(HomeActivity::class.java).use { scenario ->
+        // Explicit cross-package intent: ActivityScenario.launch(Class)
+        // resolves against the test package, not the app under test.
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(PKG, "$PKG.HomeActivity")
+        }
+        ActivityScenario.launch<HomeActivity>(homeIntent).use { scenario ->
             scenario.onActivity { activity ->
                 val app = activity.application as CenixApplication
                 assertTrue(app.awaitReady())
@@ -53,7 +59,10 @@ class DeviceSmokeTest {
 
     @Test
     fun drawerSearchBackAndSettings() {
-        ActivityScenario.launch(HomeActivity::class.java).use {
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(PKG, "$PKG.HomeActivity")
+        }
+        ActivityScenario.launch<HomeActivity>(homeIntent).use {
             assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))
             openDrawer()
             val field = device.findObject(By.res(PKG, "searchField"))
@@ -75,12 +84,19 @@ class DeviceSmokeTest {
     @Test
     fun fixtureLaunchAndReturn() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val intent = context.packageManager.getLaunchIntentForPackage(FIXTURE_PKG)
-        assertNotNull("fixture $FIXTURE_PKG is not installed in this profile", intent)
-        ActivityScenario.launch(HomeActivity::class.java).use {
+        // Explicit component: getLaunchIntentForPackage is subject to package
+        // visibility filtering and returns null without a <queries> entry,
+        // which would fake a missing-fixture failure.
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(PKG, "$PKG.HomeActivity")
+        }
+        ActivityScenario.launch<HomeActivity>(homeIntent).use {
             assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))
-            intent!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            val fixtureIntent = Intent(Intent.ACTION_MAIN).apply {
+                component = ComponentName(FIXTURE_PKG, "$FIXTURE_PKG.FixtureActivity")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(fixtureIntent)
             assertTrue(device.wait(Until.hasObject(By.pkg(FIXTURE_PKG)), 10_000))
             device.pressBack()
             assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))

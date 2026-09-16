@@ -90,9 +90,12 @@ done
 # The test APK must target the app under test, or instrumentation runs
 # against the wrong package (or nothing at all).
 target="$("$aapt" dump xmltree "$test_apk" AndroidManifest.xml 2>/dev/null \
-  | grep -A1 'E: instrumentation' | sed -n 's/.*targetPackage[^"]*"\([^"]*\)".*/\1/p' | head -n1)"
+  | grep -A5 'E: instrumentation' | sed -n 's/.*targetPackage[^"]*"\([^"]*\)".*/\1/p' | head -n1)"
 [[ "$target" == "$pkg" ]] || { echo "refusing: test APK targets '${target:-unknown}', expected $pkg" >&2; exit 1; }
-unzip -l "$app_apk" 2>/dev/null | grep -q 'lib/arm64-v8a/libcenix_ffi.so' \
+# Capture first: piping unzip straight into grep -q races SIGPIPE under
+# pipefail when grep exits before unzip finishes writing.
+apk_contents="$(unzip -l "$app_apk" 2>/dev/null || true)"
+[[ "$apk_contents" == *"lib/arm64-v8a/libcenix_ffi.so"* ]] \
   || { echo "refusing: app APK lacks the arm64 native library" >&2; exit 1; }
 
 # App install with full preflight and evidence via the smoke script. It
@@ -155,7 +158,9 @@ mkdir -p "$evidence"
 sha256sum "$app_apk" "$test_apk" $fixture_apks | sed "s|$root/||" >"$evidence/apk-sha256.txt"
 
 rc=0
-timeout "$instrument_timeout" "$adb" -s "$serial" shell am instrument --user "$user" \
+# -k escalation: plain timeout can wait forever if adb ignores SIGTERM while
+# wedged; KILL guarantees the harness regains control (seen once at 20min).
+timeout -k 30 "$instrument_timeout" "$adb" -s "$serial" shell am instrument --user "$user" \
   -w -r -e gitCommit "$commit" -e class "$smoke_class" \
   "$test_pkg/androidx.test.runner.AndroidJUnitRunner" >"$evidence/instrument-output.txt" 2>&1 || rc=$?
 if [[ "$rc" -ne 0 ]]; then

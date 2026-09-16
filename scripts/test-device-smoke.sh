@@ -58,6 +58,8 @@ SH
 #!/usr/bin/env bash
 if [[ "${2:-}" == "xmltree" ]]; then
   echo 'E: instrumentation (line=9)'
+  echo '  A: android:label(0x01010001)="Tests" (Raw: "Tests")'
+  echo '  A: android:name(0x01010003)="androidx.test.runner.AndroidJUnitRunner" (Raw: "androidx.test.runner.AndroidJUnitRunner")'
   echo "  A: android:targetPackage(0x01010021)=\"$FAKE_TEST_TARGET\" (Raw: \"$FAKE_TEST_TARGET\")"
   exit 0
 fi
