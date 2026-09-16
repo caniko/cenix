@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Negative tests for scripts/device-smoke.sh using a fake adb/aapt.
+# Negative tests for scripts/device-smoke.sh and scripts/device-test.sh
+# using a fake adb/aapt.
 # Every refusal case must exit nonzero with the EXPECTED refusal message and
-# issue ZERO mutating device commands; the success case must issue exactly
-# the one intended user-scoped install.
+# issue ZERO mutating device commands (except cases where an earlier intended
+# install already ran); success cases must issue exactly the intended
+# user-scoped installs and no other mutations.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 smoke="$root/scripts/device-smoke.sh"
+dtest="$root/scripts/device-test.sh"
 failures=0
 
 new_env() {
@@ -38,7 +41,13 @@ case "$*" in
     if [[ -n "${FAKE_FG2:-}" && "$n" -ge 2 ]]; then echo "$FAKE_FG2"; else echo "$FAKE_FOREGROUND"; fi ;;
   *"cmd package list packages"*)
     q="$(grep -o '\-\-user [0-9]*' <<<"$*" | grep -o '[0-9]*')"
-    for u in $FAKE_INSTALLED; do [[ "$u" == "$q" ]] && echo "package:com.caniko.cenix"; done; true ;;
+    for u in $FAKE_INSTALLED; do [[ "$u" == "$q" ]] && echo "package:com.caniko.cenix"; done
+    for pair in ${FAKE_EXTRA_HOLDERS:-}; do
+      [[ "${pair%%:*}" == "$q" ]] && echo "package:${pair##*:}"
+    done; true ;;
+  *"am instrument"*)
+    printf '%s\n' "$FAKE_INSTRUMENT"
+    exit "${FAKE_INSTRUMENT_RC:-0}" ;;
   *"pidof"*) echo "1234" ;;
   *"dumpsys"*) echo "canned dumpsys" ;;
   *"install "*) echo "installed" ;;
@@ -47,7 +56,16 @@ esac
 SH
   cat >"$t/bin/aapt" <<'SH'
 #!/usr/bin/env bash
-echo "package: name='$FAKE_AAPT_PACKAGE' versionCode='2' versionName='0.2.0'"
+if [[ "${2:-}" == "xmltree" ]]; then
+  echo 'E: instrumentation (line=9)'
+  echo "  A: android:targetPackage(0x01010021)=\"$FAKE_TEST_TARGET\" (Raw: \"$FAKE_TEST_TARGET\")"
+  exit 0
+fi
+case "${3:-}" in
+  *test*.apk) echo "package: name='com.caniko.cenix.test' versionCode='' versionName=''" ;;
+  *fixture*.apk) echo "package: name='com.caniko.cenix.fixture' versionCode='1' versionName='0.1.0'" ;;
+  *) echo "package: name='$FAKE_AAPT_PACKAGE' versionCode='2' versionName='0.2.0'" ;;
+esac
 SH
   cat >"$t/bin/android-device" <<'SH'
 #!/usr/bin/env bash
@@ -72,7 +90,11 @@ SH
   cat >"$t/bin/apksigner" <<'SH'
 #!/usr/bin/env bash
 echo "Verifies"
-echo "Signer #1 certificate SHA-256 digest: aa:bb:cc:dd"
+if [[ -n "${FAKE_SIGNER_MISMATCH:-}" && "$*" == *fixture* ]]; then
+  echo "Signer #1 certificate SHA-256 digest: cc:dd:ee:ff"
+else
+  echo "Signer #1 certificate SHA-256 digest: aa:bb:cc:dd"
+fi
 SH
   chmod +x "$t/bin/adb" "$t/bin/aapt" "$t/bin/readelf" "$t/bin/apksigner" "$t/bin/android-device"
   echo "$t"
@@ -229,6 +251,79 @@ if [[ "$rc" != "1" ]]; then echo "FAIL release-sections rc=$rc"; failures=$((fai
 elif ! grep -qF "debug sections remain" "$t/smoke.err"; then echo "FAIL release-sections message"; cat "$t/smoke.err"; failures=$((failures+1));
 elif mutating "$t/adb.log" 2>/dev/null; then echo "FAIL release-sections mutations"; failures=$((failures+1));
 else echo "pass release-sections"; fi; rm -rf "$t"
+
+new_test_env() {
+  local t
+  t="$(new_env)"
+  "${PYTHON:-python3}" - "$t" <<'PY'
+import sys, zipfile
+t = sys.argv[1]
+for name in ("test.apk", "fixture.apk"):
+    with zipfile.ZipFile(f"{t}/{name}", "w") as z:
+        z.writestr("classes.dex", "fake-dex")
+PY
+  echo "$t"
+}
+
+OK3=$'INSTRUMENTATION_RESULT: shortMsg=OK\nINSTRUMENTATION_CODE: 1\nOK (3 tests)'
+FAIL3=$'INSTRUMENTATION_RESULT: shortMsg=FAIL\nINSTRUMENTATION_CODE: 1\nFAILURES!!!\nTests run: 3, Failures: 1'
+OK2=$'INSTRUMENTATION_RESULT: shortMsg=OK\nINSTRUMENTATION_CODE: 1\nOK (2 tests)'
+
+# run_dtest <tmpdir> <case-name> <want-rc> <want-message> [extra env...]
+run_dtest() {
+  local t="$1" name="$2" want="$3" msg="$4"; shift 4
+  local rc=0
+  env CENIX_DEVICE_SERIAL=S1 CENIX_TEST_USER=10 CENIX_EXPECTED_BUILD=2026091001 \
+    CENIX_APK="$t/app.apk" CENIX_TEST_APK="$t/test.apk" CENIX_FIXTURE_APKS="$t/fixture.apk" \
+    CENIX_FIXTURE_ROOTS="$t" CENIX_JNILIBS_DIR="$t/jni" CENIX_EVIDENCE_DIR="$t/ev" ADB="$t/bin/adb" \
+    PATH="$t/bin:$PATH" FAKE_ADB_LOG="$t/adb.log" FAKE_SERIAL=S1 \
+    FAKE_DEVICE=mustang FAKE_BUILD=2026091001 FAKE_TEST_TARGET=com.caniko.cenix \
+    FAKE_USERS="10" FAKE_FOREGROUND="10" FAKE_INSTALLED="10" FAKE_AAPT_PACKAGE=com.caniko.cenix \
+    "$@" "$dtest" >"$t/dtest.out" 2>"$t/dtest.err" || rc=$?
+  if [[ "$rc" != "$want" ]]; then
+    echo "FAIL $name: rc=$rc want=$want"; cat "$t/dtest.err"; failures=$((failures+1)); rm -rf "$t"; return
+  fi
+  if [[ -n "$msg" ]] && ! grep -qF "$msg" "$t/dtest.err" && ! grep -qF "$msg" "$t/dtest.out"; then
+    echo "FAIL $name: missing message '$msg'"; cat "$t/dtest.err"; failures=$((failures+1)); rm -rf "$t"; return
+  fi
+  echo "pass $name"; rm -rf "$t"
+}
+
+t="$(new_test_env)"  # T1: failing tests refuse with the failure message
+run_dtest "$t" dtest-failure 1 "device test FAILED" FAKE_INSTRUMENT="$FAIL3" FAKE_INSTRUMENT_RC=0
+
+t="$(new_test_env)"  # T2: zero passing tests is incomplete, never green
+run_dtest "$t" dtest-zero-tests 1 "no passing summary" FAKE_INSTRUMENT="INSTRUMENTATION_CODE: 1" FAKE_INSTRUMENT_RC=0
+
+t="$(new_test_env)"  # T3: disconnect mid-run is incomplete
+run_dtest "$t" dtest-disconnect 1 "instrumentation exited 3" FAKE_INSTRUMENT="" FAKE_INSTRUMENT_RC=3
+
+t="$(new_test_env)"  # T4: fixture held by another user refuses before its install
+run_dtest "$t" dtest-fixture-conflict 1 "installed for user 11" FAKE_USERS="10 11" FAKE_EXTRA_HOLDERS="11:com.caniko.cenix.fixture"
+
+t="$(new_test_env)"  # T5: signer mismatch refuses before any install
+run_dtest "$t" dtest-signer-mismatch 1 "fixture signer differs" FAKE_SIGNER_MISMATCH=1
+
+t="$(new_test_env)"  # T6: short test count refuses
+run_dtest "$t" dtest-short-count 1 "2 of 3 expected" FAKE_INSTRUMENT="$OK2" FAKE_INSTRUMENT_RC=0
+
+t="$(new_test_env)"  # T7: full pass installs exactly app+test+fixture and reports 3/3
+rc=0
+env CENIX_DEVICE_SERIAL=S1 CENIX_TEST_USER=10 CENIX_EXPECTED_BUILD=2026091001 \
+  CENIX_APK="$t/app.apk" CENIX_TEST_APK="$t/test.apk" CENIX_FIXTURE_APKS="$t/fixture.apk" \
+  CENIX_FIXTURE_ROOTS="$t" CENIX_JNILIBS_DIR="$t/jni" CENIX_EVIDENCE_DIR="$t/ev" ADB="$t/bin/adb" \
+  PATH="$t/bin:$PATH" FAKE_ADB_LOG="$t/adb.log" FAKE_SERIAL=S1 \
+  FAKE_DEVICE=mustang FAKE_BUILD=2026091001 FAKE_TEST_TARGET=com.caniko.cenix \
+  FAKE_USERS="10" FAKE_FOREGROUND="10" FAKE_INSTALLED="10" FAKE_AAPT_PACKAGE=com.caniko.cenix \
+  FAKE_INSTRUMENT="$OK3" FAKE_INSTRUMENT_RC=0 \
+  "$dtest" >"$t/dtest.out" 2>"$t/dtest.err" || rc=$?
+if [[ "$rc" != "0" ]]; then echo "FAIL dtest-success rc=$rc"; cat "$t/dtest.err"; failures=$((failures+1));
+elif [[ "$(grep -cE '(^| )install( |$)' "$t/adb.log")" != "3" ]]; then echo "FAIL dtest-success install count"; failures=$((failures+1));
+elif ! grep -q "install -r -t --user 10 $t/test.apk" "$t/adb.log"; then echo "FAIL dtest-success test install"; failures=$((failures+1));
+elif ! grep -q "install -r -t --user 10 $t/fixture.apk" "$t/adb.log"; then echo "FAIL dtest-success fixture install"; failures=$((failures+1));
+elif ! grep -qF "device test passed: 3/3" "$t/dtest.out"; then echo "FAIL dtest-success report"; cat "$t/dtest.out"; failures=$((failures+1));
+elif mutating <(grep -vE '(^| )install( |$)' "$t/adb.log"); then echo "FAIL dtest-success extra mutations"; failures=$((failures+1));
+else echo "pass dtest-success"; fi; rm -rf "$t"
 
 if [[ "$failures" -gt 0 ]]; then echo "$failures harness failures"; exit 1; fi
 echo "device-smoke harness passed"
