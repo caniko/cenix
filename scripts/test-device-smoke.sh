@@ -49,6 +49,10 @@ case "$*" in
     printf '%s\n' "$FAKE_INSTRUMENT"
     exit "${FAKE_INSTRUMENT_RC:-0}" ;;
   *"pidof"*) echo "1234" ;;
+  *"dumpsys user"*)
+    # All device-test harness cases use test user 10, matching run_dtest.
+    printf '  UserInfo{10:Test:410} serialNo=10 isPrimary=false\n    State: %s\n' \
+      "${FAKE_USER_STATE:-RUNNING_UNLOCKED}" ;;
   *"dumpsys"*) echo "canned dumpsys" ;;
   *"install "*) echo "installed" ;;
   *) echo "unexpected adb call: $*" >&2; exit 2 ;;
@@ -305,6 +309,21 @@ run_dtest "$t" dtest-fixture-conflict 1 "installed for user 11" FAKE_USERS="10 1
 
 t="$(new_test_env)"  # T5: signer mismatch refuses before any install
 run_dtest "$t" dtest-signer-mismatch 1 "fixture signer differs" FAKE_SIGNER_MISMATCH=1
+
+t="$(new_test_env)"  # T5b: locked test profile refuses before any install
+rc=0
+env CENIX_DEVICE_SERIAL=S1 CENIX_TEST_USER=10 CENIX_EXPECTED_BUILD=2026091001 \
+  CENIX_APK="$t/app.apk" CENIX_TEST_APK="$t/test.apk" CENIX_FIXTURE_APKS="$t/fixture.apk" \
+  CENIX_FIXTURE_ROOTS="$t" CENIX_JNILIBS_DIR="$t/jni" CENIX_EVIDENCE_DIR="$t/ev" ADB="$t/bin/adb" \
+  PATH="$t/bin:$PATH" FAKE_ADB_LOG="$t/adb.log" FAKE_SERIAL=S1 \
+  FAKE_DEVICE=mustang FAKE_BUILD=2026091001 FAKE_TEST_TARGET=com.caniko.cenix \
+  FAKE_USERS="10" FAKE_FOREGROUND="10" FAKE_USER_STATE=RUNNING_LOCKED \
+  FAKE_INSTALLED="10" FAKE_AAPT_PACKAGE=com.caniko.cenix \
+  "$dtest" >"$t/dtest.out" 2>"$t/dtest.err" || rc=$?
+if [[ "$rc" != "1" ]]; then echo "FAIL dtest-locked rc=$rc"; failures=$((failures+1));
+elif ! grep -qF "is RUNNING_LOCKED" "$t/dtest.err"; then echo "FAIL dtest-locked message"; cat "$t/dtest.err"; failures=$((failures+1));
+elif grep -qE '(^| )install( |$)' "$t/adb.log" 2>/dev/null; then echo "FAIL dtest-locked installed despite lock"; failures=$((failures+1));
+else echo "pass dtest-locked"; fi; rm -rf "$t"
 
 t="$(new_test_env)"  # T6: short test count refuses
 run_dtest "$t" dtest-short-count 1 "2 of 3 expected" FAKE_INSTRUMENT="$OK2" FAKE_INSTRUMENT_RC=0

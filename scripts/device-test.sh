@@ -28,6 +28,24 @@ fixture_apks="${CENIX_FIXTURE_APKS:-$root/android/fixture/build/outputs/apk/debu
 evidence="${CENIX_EVIDENCE_DIR:-$root/dist/device-test}"
 pkg="com.caniko.cenix"
 test_pkg="com.caniko.cenix.test"
+
+# The test profile must be foreground AND unlocked: a locked profile has no
+# credential-encrypted storage, so apps cannot create data dirs or start
+# activities (seen as ENOENT crashes and unresolvable activities).
+check_user_ready() {
+  local where="$1" foreground state
+  foreground="$("$adb" -s "$serial" shell am get-current-user | tr -d '\r')"
+  [[ "$foreground" == "$user" ]] || {
+    echo "refusing: foreground user is $foreground $where, switch to test profile $user first" >&2
+    return 1
+  }
+  state="$("$adb" -s "$serial" shell dumpsys user 2>/dev/null \
+    | awk -v u="$user" '/UserInfo\{/{f=($0 ~ "UserInfo\\{"u":")} f&&/State:/{print $2; exit}')"
+  [[ "$state" == "RUNNING_UNLOCKED" ]] || {
+    echo "refusing: test profile $user is ${state:-in an unknown state} $where; unlock it on the device first" >&2
+    return 1
+  }
+}
 smoke_class="com.caniko.cenix.DeviceSmokeTest"
 expected_tests=3
 instrument_timeout="${CENIX_INSTRUMENT_TIMEOUT:-600}"
@@ -47,7 +65,9 @@ for fixture in $fixture_apks; do
 done
 command -v timeout >/dev/null || { echo "refusing: timeout(1) not found" >&2; exit 1; }
 command -v "$aapt" >/dev/null || { echo "refusing: aapt not found (set AAPT)" >&2; exit 1; }
-commit="$(git -C "$root" rev-parse HEAD)" || { echo "refusing: cannot determine source commit" >&2; exit 1; }
+# Override only to re-test a previously built APK without rebuilding; the
+# default (current HEAD) requires the app APK to be built from this commit.
+commit="${CENIX_EXPECTED_COMMIT:-$(git -C "$root" rev-parse HEAD)}" || { echo "refusing: cannot determine source commit" >&2; exit 1; }
 
 # Bundle verification first: never touch a device for a wrong bundle.
 pkg_of() {
@@ -111,6 +131,7 @@ if [[ -n "${CENIX_DEVICE_DEF:-}" ]]; then
 fi
 [[ -n "$serial" ]] || { echo "refusing: set CENIX_DEVICE_SERIAL (or CENIX_DEVICE_DEF)" >&2; exit 1; }
 export CENIX_DEVICE_SERIAL="$serial"
+check_user_ready "before install" || exit 1
 CENIX_APK="$app_apk" "$root/scripts/device-smoke.sh" >/dev/null
 
 # Conflict-check and install the test APK plus fixtures, one package at a
@@ -141,12 +162,8 @@ for extra in "$test_apk" $fixture_apks; do
   "$adb" -s "$serial" install -r -t --user "$user" "$extra"
 done
 
-# Foreground recheck at the last moment before the test run.
-foreground="$("$adb" -s "$serial" shell am get-current-user | tr -d '\r')"
-[[ "$foreground" == "$user" ]] || {
-  echo "refusing: foreground user is $foreground, switch to test profile $user first" >&2
-  exit 1
-}
+# Foreground + unlock recheck at the last moment before the test run.
+check_user_ready "before the test run" || exit 1
 
 mkdir -p "$evidence"
 {
