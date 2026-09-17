@@ -3,14 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center"
-    android:minHeight="64dp"
+    android:minHeight="76dp"
     android:orientation="vertical"
-    android:padding="2dp">
+    android:padding="4dp">
 
     <ImageView
         android:id="@+id/cellIcon"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:contentDescription="@null" />
 
     <TextView
@@ -20,5 +20,10 @@
         android:ellipsize="end"
         android:gravity="center"
         android:maxLines="1"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
+        android:shadowColor="#80000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="2"
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:textSize="12sp" />
 </LinearLayout>

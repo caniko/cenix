@@ -76,10 +76,6 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var privateSpaceState: TextView
     private lateinit var privateSpaceToggle: Button
     private lateinit var categoryChips: ViewGroup
-    private lateinit var categorySections: View
-    private lateinit var categorySectionsBody: ViewGroup
-    private lateinit var drawerSectionsBtn: Button
-    private lateinit var drawerAllBtn: Button
     private lateinit var manageCategoriesBtn: Button
     private lateinit var dragLayer: DragLayer
     private lateinit var pager: WorkspacePager
@@ -196,10 +192,6 @@ class HomeActivity : AppCompatActivity() {
         privateSpaceState = findViewById(R.id.privateSpaceState)
         privateSpaceToggle = findViewById(R.id.privateSpaceToggle)
         categoryChips = findViewById(R.id.categoryChips)
-        categorySections = findViewById(R.id.categorySections)
-        categorySectionsBody = findViewById(R.id.categorySectionsBody)
-        drawerSectionsBtn = findViewById(R.id.drawerSections)
-        drawerAllBtn = findViewById(R.id.drawerAll)
         manageCategoriesBtn = findViewById(R.id.manageCategories)
         dragLayer = findViewById(R.id.dragLayer)
         pager = findViewById(R.id.workspaceGrid)
@@ -235,7 +227,7 @@ class HomeActivity : AppCompatActivity() {
             if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN || event.action != KeyEvent.ACTION_DOWN) {
                 return@setOnKeyListener false
             }
-            if (!DrawerNavigation.focusFirstResult(categorySectionsBody, appList, privateAppList)) return@setOnKeyListener false
+            if (!DrawerNavigation.focusFirstResult(appList, privateAppList)) return@setOnKeyListener false
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
             true
         }
@@ -250,13 +242,6 @@ class HomeActivity : AppCompatActivity() {
         workTab.setOnClickListener { selectProfileSection(ProfileKind.WORK) }
         workProfileToggle.setOnClickListener { toggleProfile(ProfileKind.WORK) }
         privateSpaceToggle.setOnClickListener { toggleProfile(ProfileKind.PRIVATE) }
-        drawerSectionsBtn.setOnClickListener { categories.setDrawerMode("sections"); noteCustomizationChanged(); applyFilter() }
-        drawerAllBtn.setOnClickListener {
-            categories.setDrawerMode("all")
-            drawerScopeSerial()?.let { categories.setSelected(it, AppCategories.ALL) }
-            noteCustomizationChanged()
-            applyFilter()
-        }
         manageCategoriesBtn.setOnClickListener { showCategoryManager() }
         val allAppsLongPress = LongPressDragPolicy(android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
         var allAppsSource: View? = null
@@ -1202,7 +1187,6 @@ class HomeActivity : AppCompatActivity() {
                 activeProfileSection = ProfileKind.WORK
             }
         }
-        val query = if (this::searchField.isInitialized) searchField.text?.toString().orEmpty() else ""
         // Provisionally classified profiles stay hidden until discovery succeeds; their
         // customization rows are preserved (see retainProfiles preserve set).
         val certain = matches.filter { it.profileId !in uncertainProfileIds }
@@ -1215,23 +1199,20 @@ class HomeActivity : AppCompatActivity() {
         if (activeProfileSection != ProfileKind.WORK) {
             privateVisible.addAll(certain.filter { it.profileKind == ProfileKind.PRIVATE })
         }
-        val mode = if (this::categories.isInitialized) categories.drawerMode() else "sections"
         val scope = drawerScopeSerial()
         val selected = if (this::categories.isInitialized && scope != null) categories.selectedCategory(scope) else AppCategories.ALL
         val ordered = if (this::categories.isInitialized && scope != null) categories.orderedCategories(scope) else emptyList()
         val overrides = if (this::categories.isInitialized) categories.overrides() else emptyMap()
         visible.clear()
-        if (query.isNotBlank()) {
-            visible.addAll(profileFiltered)
-        } else if (selected == AppCategories.ALL) {
-            visible.addAll(profileFiltered)
-        } else {
-            visible.addAll(profileFiltered.filter { categories.effective(it, overrides) == selected })
-        }
+        // Single-grid tabbed drawer: search filters the active tab, All shows
+        // everything alphabetically, a category tab shows only its members.
+        val tabFiltered = if (selected == AppCategories.ALL) profileFiltered
+        else profileFiltered.filter { categories.effective(it, overrides) == selected }
+        visible.addAll(tabFiltered)
+        appList.visibility = View.VISIBLE
         (appList.adapter as AppAdapter).notifyDataSetChanged()
         (privateAppList.adapter as AppAdapter).notifyDataSetChanged()
-        if (this::categoryChips.isInitialized) renderCategoryChips(profileFiltered, overrides, query, scope, ordered)
-        if (this::categorySections.isInitialized) renderSections(profileFiltered, overrides, query, mode, ordered)
+        if (this::categoryChips.isInitialized) renderCategoryTabs(profileFiltered, overrides, scope, ordered)
         bindProfileChrome()
     }
 
@@ -1248,96 +1229,62 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCategoryChips(
+    private fun renderCategoryTabs(
         profileFiltered: List<LaunchableApp>,
         overrides: Map<String, String>,
-        query: String,
         scope: Long?,
         ordered: List<DrawerCategory>,
     ) {
         DrawerNavigation.preserveFocus(categoryChips) {
             categoryChips.removeAllViews()
-        val mode = categories.drawerMode()
-        val selected = if (scope != null) categories.selectedCategory(scope) else AppCategories.ALL
-        val counts = profileFiltered.groupingBy { categories.effective(it, overrides) }.eachCount()
-        fun chip(id: String, label: String, selectedChip: Boolean, onTap: () -> Unit) {
-            categoryChips.addView(Button(this).apply {
-                tag = "chip:$id"
-                text = if (id == AppCategories.ALL) label else getString(R.string.category_count, label, counts[id] ?: 0)
-                isSelected = selectedChip
-                minHeight = (48 * resources.displayMetrics.density).toInt()
-                setOnClickListener { onTap() }
-            })
-        }
-        chip(AppCategories.ALL, getString(R.string.category_all), selected == AppCategories.ALL || (mode == "sections" && query.isBlank())) {
-            scope?.let { categories.setSelected(it, AppCategories.ALL) }
-            noteCustomizationChanged()
-            applyFilter()
-        }
-        ordered.forEach { cat ->
-            val label = AppCategories.label(this, cat.id, cat.name)
-            chip(cat.id, label, selected == cat.id && (mode == "all" || query.isNotBlank())) {
-                scope?.let { categories.setSelected(it, cat.id) }
-                categories.setDrawerMode("all")
+            val selected = if (scope != null) categories.selectedCategory(scope) else AppCategories.ALL
+            val counts = profileFiltered.groupingBy { categories.effective(it, overrides) }.eachCount()
+            fun tab(id: String, label: String, selectedTab: Boolean, onTap: () -> Unit) {
+                val density = resources.displayMetrics.density
+                categoryChips.addView(Button(this).apply {
+                    tag = "chip:$id"
+                    text = if (id == AppCategories.ALL) label else getString(R.string.category_count, label, counts[id] ?: 0)
+                    isSelected = selectedTab
+                    minHeight = (40 * density).toInt()
+                    minimumHeight = (40 * density).toInt()
+                    val pad = (16 * density).toInt()
+                    setPadding(pad, (8 * density).toInt(), pad, (8 * density).toInt())
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 20 * density
+                        if (selectedTab) {
+                            setColor(getColor(R.color.launcher_accent))
+                        } else {
+                            setColor(android.graphics.Color.TRANSPARENT)
+                            setStroke((1 * density).toInt(), getColor(R.color.launcher_accent))
+                        }
+                    }
+                    setTextColor(
+                        if (selectedTab) getColor(android.R.color.white)
+                        else getColor(R.color.launcher_accent),
+                    )
+                    val params = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (40 * density).toInt(),
+                    )
+                    params.marginEnd = (8 * density).toInt()
+                    layoutParams = params
+                    setOnClickListener { onTap() }
+                })
+            }
+            tab(AppCategories.ALL, getString(R.string.category_all), selected == AppCategories.ALL) {
+                scope?.let { categories.setSelected(it, AppCategories.ALL) }
                 noteCustomizationChanged()
                 applyFilter()
             }
-        }
-        drawerSectionsBtn.isSelected = mode == "sections"
-        drawerAllBtn.isSelected = mode == "all"
-        }
-    }
-
-    private fun renderSections(
-        profileFiltered: List<LaunchableApp>,
-        overrides: Map<String, String>,
-        query: String,
-        mode: String,
-        ordered: List<DrawerCategory>,
-    ) {
-        val showSections = mode == "sections" && query.isBlank() && !app.emergency
-        categorySections.visibility = if (showSections) View.VISIBLE else View.GONE
-        appList.visibility = if (showSections) View.GONE else View.VISIBLE
-        if (!showSections) {
-            categorySectionsBody.removeAllViews()
-            return
-        }
-        DrawerNavigation.preserveFocus(categorySectionsBody) {
-            categorySectionsBody.removeAllViews()
-        // ponytail: sections instantiate O(apps) cells; replace with recycling if device frame/memory budgets fail.
-        AppCategories.sections(profileFiltered, ordered, overrides).forEach { (cat, items) ->
-            categorySectionsBody.addView(TextView(this).apply {
-                text = getString(R.string.category_count, AppCategories.label(this@HomeActivity, cat.id, cat.name), items.size)
-                textSize = 16f
-                val dp = resources.displayMetrics.density
-                setPadding((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
-                isAccessibilityHeading = true
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            })
-            val widthDp = resources.configuration.screenWidthDp - 32
-            val cellDp = 80 * resources.configuration.fontScale.coerceAtLeast(1f)
-            val grid = android.widget.GridLayout(this).apply { columnCount = (widthDp / cellDp).toInt().coerceIn(2, 6) }
-            val adapter = AppAdapter(items)
-            items.forEachIndexed { index, item ->
-                val cell = adapter.getView(index, null, grid)
-                cell.layoutParams = android.widget.GridLayout.LayoutParams().apply {
-                    width = 0
-                    columnSpec = android.widget.GridLayout.spec(index % grid.columnCount, 1f)
-                    rowSpec = android.widget.GridLayout.spec(index / grid.columnCount)
+            ordered.forEach { cat ->
+                val label = AppCategories.label(this, cat.id, cat.name)
+                tab(cat.id, label, selected == cat.id) {
+                    scope?.let { categories.setSelected(it, cat.id) }
+                    noteCustomizationChanged()
+                    applyFilter()
                 }
-                cell.tag = Triple(item.packageName, item.className, item.profileId)
-                cell.isFocusable = true
-                cell.setOnClickListener { launch(item) }
-                cell.setOnLongClickListener {
-                    if (!app.emergency && item.canPlace) openContext(cell, item, null, null) else false
-                }
-                grid.addView(cell)
             }
-            categorySectionsBody.addView(grid)
-        }
-        if (categorySectionsBody.childCount == 0) {
-            categorySectionsBody.addView(TextView(this).apply { text = getString(R.string.empty_apps) })
-        }
         }
     }
 
@@ -1780,8 +1727,6 @@ class HomeActivity : AppCompatActivity() {
         (appList.adapter as? AppAdapter)?.notifyDataSetChanged()
         (privateAppList.adapter as? AppAdapter)?.notifyDataSetChanged()
         render(rendered)
-        // Sections bind dots at render time; re-filter so lock/dot changes refresh them too.
-        if (this::categorySections.isInitialized && categorySections.visibility == View.VISIBLE) applyFilter()
     }
 
     private fun LaunchableApp.hasDot(): Boolean = NotificationDotStore.dot(PackageKey(packageName, profileId)) != null

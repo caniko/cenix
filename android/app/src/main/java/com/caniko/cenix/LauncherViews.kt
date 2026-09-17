@@ -303,13 +303,14 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val gap = 18f * resources.displayMetrics.density
+        val density = resources.displayMetrics.density
+        val gap = 18f * density
         val start = width / 2f - (pages - 1) * gap / 2f
         for (visual in 0 until pages) {
             val index = if (layoutDirection == LAYOUT_DIRECTION_RTL) pages - 1 - visual else visual
             paint.alpha = if (index == current) 255 else 80
             paint.color = currentTextColor()
-            canvas.drawCircle(start + visual * gap, height / 2f, if (index == current) 4.5f else 3f, paint)
+            canvas.drawCircle(start + visual * gap, height / 2f, (if (index == current) 4.5f else 3f) * density, paint)
         }
     }
 
@@ -322,9 +323,13 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
 class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : android.widget.GridView(context, attrs) {
     init {
         numColumns = AUTO_FIT
-        columnWidth = (72 * resources.displayMetrics.density).toInt()
+        columnWidth = (80 * resources.displayMetrics.density).toInt()
         stretchMode = STRETCH_COLUMN_WIDTH
         isFastScrollEnabled = true
+        val spacing = (8 * resources.displayMetrics.density).toInt()
+        verticalSpacing = spacing
+        horizontalSpacing = spacing
+        clipToPadding = false
     }
 }
 
@@ -404,19 +409,36 @@ class WidgetFrame(context: Context) : FrameLayout(context) {
 }
 
 class FolderIconView(context: Context) : LinearLayout(context) {
-    private val preview = GridLayout(context).apply { columnCount = 2; rowCount = 2 }
-    private val label = TextView(context).apply { gravity = android.view.Gravity.CENTER; maxLines = 1 }
+    private val preview = GridLayout(context).apply {
+        columnCount = 2
+        rowCount = 2
+        background = GradientDrawable().apply {
+            setColor(resolvePreviewBackground())
+            cornerRadius = dp(16).toFloat()
+        }
+        val pad = dp(6)
+        setPadding(pad, pad, pad, pad)
+    }
+    private val label = TextView(context).apply {
+        gravity = android.view.Gravity.CENTER
+        maxLines = 1
+        textSize = 12f
+    }
 
     init {
         orientation = VERTICAL
         gravity = android.view.Gravity.CENTER
-        val size = dp(36)
+        val size = dp(56)
         addView(preview, LayoutParams(size, size))
         addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         isFocusable = true
     }
 
     private var hasDot = false
+
+    private fun resolvePreviewBackground(): Int = context.obtainStyledAttributes(intArrayOf(android.R.attr.colorBackground)).use {
+        it.getColor(0, Color.WHITE)
+    }
 
     fun bind(title: String, count: Int, icons: List<Drawable?>, hasDot: Boolean = false) {
         this.hasDot = hasDot
@@ -425,7 +447,7 @@ class FolderIconView(context: Context) : LinearLayout(context) {
             preview.addView(ImageView(context).apply {
                 setImageDrawable(icons.getOrNull(index))
                 contentDescription = null
-            }, GridLayout.LayoutParams().apply { width = dp(18); height = dp(18) })
+            }, GridLayout.LayoutParams().apply { width = dp(20); height = dp(20) })
         }
         label.text = title.ifEmpty { context.getString(R.string.folder) }
         contentDescription = listOfNotNull(
@@ -528,7 +550,7 @@ class FolderPopup(context: Context) : FrameLayout(context) {
                 addView(ImageView(context).apply {
                     setImageDrawable(entry.icon)
                     contentDescription = null
-                }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                }, LinearLayout.LayoutParams(dp(48), dp(48)))
                 addView(TextView(context).apply {
                     text = entry.label
                     gravity = android.view.Gravity.CENTER
@@ -564,7 +586,7 @@ class FolderPopup(context: Context) : FrameLayout(context) {
                     }
                 }
             }
-            members.addView(cell, GridLayout.LayoutParams().apply { width = dp(88); height = dp(76) })
+            members.addView(cell, GridLayout.LayoutParams().apply { width = dp(88); height = dp(88) })
         }
         contentDescription = context.getString(R.string.folder_description, currentTitle.ifEmpty { context.getString(R.string.folder) }, entries.size)
     }

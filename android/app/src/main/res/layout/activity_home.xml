@@ -16,10 +16,10 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:paddingStart="16dp"
-            android:paddingTop="16dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="8dp">
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="12dp">
 
             <com.caniko.cenix.WorkspacePager
                 android:id="@+id/workspaceGrid"
@@ -36,8 +36,14 @@
             <com.caniko.cenix.HotseatView
                 android:id="@+id/hotseatGrid"
                 android:layout_width="match_parent"
-                android:layout_height="72dp"
-                android:contentDescription="@string/hotseat" />
+                android:layout_height="84dp"
+                android:background="@drawable/hotseat_background"
+                android:contentDescription="@string/hotseat"
+                android:elevation="2dp"
+                android:paddingStart="8dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="6dp" />
         </LinearLayout>
     </com.caniko.cenix.HomeSurface>
 
@@ -45,8 +51,9 @@
         android:id="@+id/allAppsContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/launcher_surface"
+        android:background="@drawable/all_apps_background"
         android:contentDescription="@string/all_apps_surface"
+        android:elevation="8dp"
         android:padding="16dp"
         android:visibility="gone">
 
@@ -60,11 +67,18 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:autofillHints=""
+                android:background="@drawable/search_pill"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="12dp"
+                android:elevation="1dp"
                 android:hint="@string/search_hint"
                 android:imeOptions="actionSearch"
                 android:importantForAutofill="no"
                 android:inputType="text"
-                android:minHeight="48dp" />
+                android:minHeight="52dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:singleLine="true" />
 
             <LinearLayout
                 android:id="@+id/profileTabs"
@@ -109,38 +123,11 @@
                     android:layout_height="48dp" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/drawerModeRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/drawerSections"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:text="@string/drawer_sections" />
-
-                <Button
-                    android:id="@+id/drawerAll"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:text="@string/drawer_all" />
-
-                <Button
-                    android:id="@+id/manageCategories"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:text="@string/manage_categories" />
-            </LinearLayout>
-
             <HorizontalScrollView
                 android:id="@+id/categoryBar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:paddingTop="8dp"
                 android:scrollbars="none">
 
                 <LinearLayout
@@ -157,19 +144,14 @@
                 android:layout_weight="1"
                 android:paddingTop="8dp" />
 
-            <ScrollView
-                android:id="@+id/categorySections"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:id="@+id/categorySectionsBody"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </ScrollView>
+            <Button
+                android:id="@+id/manageCategories"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_gravity="end"
+                android:text="@string/manage_categories"
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:id="@+id/privateSpaceContainer"

@@ -18,23 +18,15 @@ class DrawerNavigationTest {
     @Test fun focusEntersVisibleSectionsAndDoesNotEatEmptyResults() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
-        val sections = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        val heading = TextView(activity).apply { text = "Games"; isAccessibilityHeading = true }
-        val first = Button(activity).apply { text = "Game" }
-        sections.addView(heading)
-        sections.addView(first)
         val all = GridView(activity).apply { visibility = View.GONE }
         val private = GridView(activity).apply { visibility = View.GONE }
         activity.setContentView(LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; addView(sections); addView(all); addView(private)
+            orientation = LinearLayout.VERTICAL; addView(all); addView(private)
         })
-        assertTrue(DrawerNavigation.focusFirstResult(sections, all, private))
-        assertTrue(first.hasFocus())
-        sections.visibility = View.GONE
-        assertFalse(DrawerNavigation.focusFirstResult(sections, all, private))
+        assertFalse(DrawerNavigation.focusFirstResult(all, private))
         all.visibility = View.VISIBLE
         all.adapter = ArrayAdapter(activity, android.R.layout.simple_list_item_1, listOf("App"))
-        assertTrue(DrawerNavigation.focusFirstResult(sections, all, private))
+        assertTrue(DrawerNavigation.focusFirstResult(all, private))
         assertTrue(all.hasFocus())
         controller.pause().stop().destroy()
     }

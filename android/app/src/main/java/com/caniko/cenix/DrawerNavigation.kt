@@ -21,11 +21,7 @@ internal object DrawerNavigation {
         return result
     }
 
-    fun focusFirstResult(sections: View, all: GridView, private: GridView): Boolean {
-        if (sections.isShown) {
-            sections.getFocusables(View.FOCUS_FORWARD).firstOrNull { it.isShown && it.isEnabled && it !== sections }
-                ?.let { if (it.requestFocus()) return true }
-        }
+    fun focusFirstResult(all: GridView, private: GridView): Boolean {
         for (grid in listOf(all, private)) {
             if (grid.isShown && grid.count > 0 && grid.requestFocus()) {
                 grid.setSelection(0)

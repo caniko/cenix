@@ -56,7 +56,6 @@ class LauncherSettingsActivity : AppCompatActivity() {
     private lateinit var includeWorkBackup: Switch
     private lateinit var appearance: WallpaperAppearanceController
     private lateinit var iconPacks: IconPackManager
-    private lateinit var drawerStore: CategoryStore
     private var binding = false
     private var exportWork = false
 
@@ -93,7 +92,6 @@ class LauncherSettingsActivity : AppCompatActivity() {
         appearance = WallpaperAppearanceController(this) { recreate() }
         app = application as CenixApplication
         iconPacks = IconPackManager(this)
-        drawerStore = CategoryStore(this)
         setContentView(R.layout.activity_launcher_settings)
         options = findViewById(R.id.gridOptions)
         progress = findViewById(R.id.gridProgress)
@@ -115,17 +113,6 @@ class LauncherSettingsActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.importBackup).setOnClickListener {
             importBackup.launch(arrayOf("application/json", "text/json", "application/octet-stream"))
-        }
-        findViewById<Button>(R.id.drawerModeToggle).setOnClickListener {
-            if (app.emergency) return@setOnClickListener
-            val next = if (drawerStore.drawerMode() == "all") "sections" else "all"
-            drawerStore.setDrawerMode(next)
-            (it as Button).text = getString(if (next == "all") R.string.drawer_all else R.string.drawer_sections)
-            try {
-                app.scheduleBackup()
-            } catch (_: RuntimeException) {
-                Unit
-            }
         }
         findViewById<Button>(R.id.iconPack).setOnClickListener { showPackPicker() }
         findViewById<Button>(R.id.resetLauncher).setOnClickListener { confirmReset() }
@@ -165,8 +152,6 @@ class LauncherSettingsActivity : AppCompatActivity() {
     }
 
     private fun updateCustomizationUi() {
-        findViewById<Button>(R.id.drawerModeToggle)?.text =
-            getString(if (drawerStore.drawerMode() == "all") R.string.drawer_all else R.string.drawer_sections)
         val pack = try { iconPacks.selectedPack() } catch (_: Exception) { null }
         val label = if (pack.isNullOrBlank()) getString(R.string.icon_pack_system) else try {
             packageManager.getApplicationInfo(pack, 0).loadLabel(packageManager).toString()
