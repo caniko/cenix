@@ -155,6 +155,9 @@
           inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
           extraPackages = cfg.devicePackages;
+          extraShellHook = ''
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          '';
         };
         emulator = harbor.lib.android.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -163,6 +166,9 @@
           inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
           extraPackages = cfg.devicePackages;
+          extraShellHook = ''
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          '';
         };
         emulator-aosp = harbor.lib.android.mkAndroidDevShell {
           inherit (cfg) pkgs;
@@ -171,6 +177,9 @@
           inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
           extraPackages = cfg.devicePackages;
+          extraShellHook = ''
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          '';
         };
       }
     );
