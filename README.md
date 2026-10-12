@@ -1,5 +1,11 @@
 # Cenix
 
+<!-- simit:badges:start -->
+
+[![CI](https://img.shields.io/badge/CI-managed+extra-2088ff)](.github/workflows/ci.yaml) [![crates.io](https://img.shields.io/badge/crates.io-ready-f46623)](https://crates.io/crates/cenix-core)
+
+<!-- simit:badges:end -->
+
 Installable GrapheneOS-focused HOME launcher. First slice: list apps, filter them, launch them, survive process death, and keep working if native code fails.
 
 Device target: Pixel 10 Pro XL (`mustang`), GrapheneOS `2026081300` (Launcher3 `17` / `e5fde8f4368539554b07ee136abd27bc7b4284c1`). This tree builds an API 35 debug APK; the AOSP `x86_64` emulator is not GrapheneOS/`mustang`.

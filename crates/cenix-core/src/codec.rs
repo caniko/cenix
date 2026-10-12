@@ -1509,7 +1509,7 @@ fn write_payload(writer: &mut Writer, document: &BackupDocument) -> Result<(), C
             .then_with(|| a.item_id.cmp(&b.item_id))
     });
     let mut folders = document.workspace.folders.clone();
-    folders.sort_by(|a, b| a.folder_id.cmp(&b.folder_id));
+    folders.sort_by_key(|folder| folder.folder_id);
     let mut profiles = document.profiles.clone();
     profiles.sort_by_key(|profile| profile.profile_id);
     let mut widgets = document.widgets.clone();

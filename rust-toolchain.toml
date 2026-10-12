@@ -6,7 +6,4 @@ components = [
   "clippy",
   "rustc-codegen-cranelift-preview",
 ]
-targets = [
-  "aarch64-linux-android",
-  "x86_64-linux-android",
-]
+targets = ["aarch64-linux-android", "x86_64-linux-android"]

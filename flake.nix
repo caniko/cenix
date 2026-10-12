@@ -2,19 +2,17 @@
   description = "Cenix — installable GrapheneOS-focused HOME launcher";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=ed89d0b13fc61dd1b2217bf4bba97f32cec27ba7";
-    harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=6a794b412b62bc45309b2ac3a08d105bad1bffce";
+    harbor.url = "git+https://github.com/caniko/harbor.git?ref=feat/harbor-monorepo-components&rev=e8b1996580e4ecd51dd402edf4a16d9df88e3a1b";
 
-    nixpkgs.follows = "harbor-rs/nixpkgs";
-    rust-overlay.follows = "harbor-rs/rust-overlay";
-    crane.follows = "harbor-rs/crane";
+    nixpkgs.follows = "harbor/nixpkgs";
+    rust-overlay.follows = "harbor/rust-overlay";
+    crane.follows = "harbor/crane";
   };
 
   outputs = {
     self,
     nixpkgs,
-    harbor-rs,
-    harbor-android,
+    harbor,
     rust-overlay,
     ...
   }: let
@@ -30,19 +28,34 @@
           android_sdk.accept_license = true;
         };
       };
-      toolchain = harbor-rs.lib.mkToolchain {
+      toolchain = harbor.lib.rust.mkToolchain {
         inherit pkgs;
         toolchainFile = ./rust-toolchain.toml;
       };
       inherit (toolchain) craneLib rustToolchain;
-      cross = harbor-rs.lib.mkCross {inherit pkgs system;};
-      src = craneLib.cleanCargoSource ./.;
+      treefmtEval = harbor.inputs.treefmt-nix.lib.evalModule pkgs {
+        imports = [
+          harbor.treefmtModules.core-nix
+          harbor.treefmtModules.core-toml
+          harbor.treefmtModules.rust-rust
+        ];
+        projectRootFile = "flake.nix";
+        programs.rustfmt.package = rustToolchain;
+      };
+      cross = harbor.lib.rust.mkCross {inherit pkgs system;};
+      src = pkgs.lib.fileset.toSource {
+        root = ./.;
+        fileset = pkgs.lib.fileset.unions [
+          (craneLib.fileset.commonCargoSources ./.)
+          ./android/app/src/test/resources/backup
+        ];
+      };
       cargoArtifacts = craneLib.buildDepsOnly {
         inherit src;
         pname = "cenix";
         version = "0.1.0";
       };
-      androidComposition = harbor-android.lib.mkAndroidSdk {
+      androidComposition = harbor.lib.android.mkAndroidSdk {
         inherit pkgs;
         platformVersions = [androidPlatform];
         buildToolsVersions = ["35.0.0"];
@@ -50,7 +63,7 @@
         includeNDK = true;
       };
       androidSdk = androidComposition.androidsdk or androidComposition;
-      emulatorComposition = harbor-android.lib.mkAndroidSdk {
+      emulatorComposition = harbor.lib.android.mkAndroidSdk {
         inherit pkgs;
         platformVersions = [androidPlatform];
         buildToolsVersions = ["35.0.0"];
@@ -62,7 +75,7 @@
         abiVersions = ["x86_64"];
       };
       emulatorSdk = emulatorComposition.androidsdk or emulatorComposition;
-      emulatorAospComposition = harbor-android.lib.mkAndroidSdk {
+      emulatorAospComposition = harbor.lib.android.mkAndroidSdk {
         inherit pkgs;
         platformVersions = [androidPlatform];
         buildToolsVersions = ["35.0.0"];
@@ -74,10 +87,16 @@
         abiVersions = ["x86_64"];
       };
       emulatorAospSdk = emulatorAospComposition.androidsdk or emulatorAospComposition;
-      rustShells = harbor-rs.lib.mkDevShells {
+      rustShells = harbor.lib.rust.mkDevShells {
         inherit pkgs craneLib cross;
+        packages = [treefmtEval.config.build.wrapper];
       };
-      apkDebugBase = harbor-android.lib.mkAndroidApk {
+      # The SDK supplies its own build tools. Add the standalone nixpkgs
+      # aapt only on platforms for which that package is available.
+      devicePackages =
+        [pkgs.android-tools pkgs.cargo-deny pkgs.diffoscope pkgs.reuse (harbor.lib.android.mkAndroidDeviceTools {inherit pkgs;})]
+        ++ pkgs.lib.optional (pkgs.lib.meta.availableOn pkgs.stdenv.hostPlatform pkgs.aapt) pkgs.aapt;
+      apkDebugBase = harbor.lib.android.mkAndroidApk {
         inherit pkgs androidSdk rustToolchain;
         workspaceSrc = ./.;
         cargoPkg = "cenix-ffi";
@@ -92,15 +111,18 @@
       };
       apkDebug = apkDebugBase.overrideAttrs (old: {
         CENIX_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
-        preBuild = (old.preBuild or "") + ''
-          export ANDROID_USER_HOME="$HOME/.android"
-          mkdir -p "$ANDROID_USER_HOME"
-        '';
+        preBuild =
+          (old.preBuild or "")
+          + ''
+            export ANDROID_USER_HOME="$HOME/.android"
+            mkdir -p "$ANDROID_USER_HOME"
+          '';
       });
     in {
-      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug;
+      inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug devicePackages treefmtEval;
       checks = {
         fmt = craneLib.cargoFmt {inherit src;};
+        formatting = treefmtEval.config.build.check self;
         clippy = craneLib.cargoClippy {
           inherit src cargoArtifacts;
           cargoClippyExtraArgs = "--workspace --all-targets -- --deny warnings";
@@ -120,34 +142,35 @@
     });
 
     checks = nixpkgs.lib.genAttrs systems (system: (forSystem system).checks);
+    formatter = nixpkgs.lib.genAttrs systems (system: (forSystem system).treefmtEval.config.build.wrapper);
 
     devShells = nixpkgs.lib.genAttrs systems (
       system: let
         cfg = forSystem system;
       in {
-        default = harbor-android.lib.mkAndroidDevShell {
+        default = harbor.lib.android.mkAndroidDevShell {
           inherit (cfg) pkgs;
-          androidSdk = cfg.androidSdk;
+          inherit (cfg) androidSdk;
           ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
+          inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
+          extraPackages = cfg.devicePackages;
         };
-        emulator = harbor-android.lib.mkAndroidDevShell {
+        emulator = harbor.lib.android.mkAndroidDevShell {
           inherit (cfg) pkgs;
           androidSdk = cfg.emulatorSdk;
           ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
+          inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
+          extraPackages = cfg.devicePackages;
         };
-        emulator-aosp = harbor-android.lib.mkAndroidDevShell {
+        emulator-aosp = harbor.lib.android.mkAndroidDevShell {
           inherit (cfg) pkgs;
           androidSdk = cfg.emulatorAospSdk;
           ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
+          inherit (cfg) rustToolchain;
           base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
+          extraPackages = cfg.devicePackages;
         };
       }
     );

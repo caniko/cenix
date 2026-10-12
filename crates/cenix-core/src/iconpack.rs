@@ -136,17 +136,16 @@ pub fn parse_index(xml: &[u8]) -> Result<IconPackIndex, IconPackError> {
                     return Err(IconPackError::Bounds("too many items"));
                 }
             }
-            Event::Text(text) => {
-                // Element content is meaningless to the index; non-whitespace
-                // text outside the single root is not a document we accept.
+            // Element content is meaningless to the index; non-whitespace
+            // text outside the single root is not a document we accept.
+            Event::Text(text)
                 if depth == 0
                     && text
                         .decode()
                         .map(|content| content.chars().any(|c| !c.is_whitespace()))
-                        .unwrap_or(true)
-                {
-                    return Err(IconPackError::Malformed("text outside root"));
-                }
+                        .unwrap_or(true) =>
+            {
+                return Err(IconPackError::Malformed("text outside root"));
             }
             Event::Comment(_) | Event::CData(_) | Event::Decl(_) | Event::PI(_) => {}
             // DOCTYPE and any other declaration: rejected, never resolved.
