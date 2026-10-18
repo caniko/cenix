@@ -68,7 +68,9 @@ class DeviceSmokeTest {
             val field = device.findObject(By.res(PKG, "searchField"))
             field.click()
             field.setText("fixture")
-            assertTrue("fixture row never appeared", device.wait(Until.hasObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000))
+            assertTrue("fixture row never appeared", device.wait(Until.hasObject(By.desc("Cenix Fixture, Personal")), 5_000))
+            device.pressBack()
+            assertTrue("drawer closed instead of dismissing IME", device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
             device.pressBack()
             assertTrue("search still visible after back", device.wait(Until.gone(By.res(PKG, "searchField")), 5_000))
             openDrawer()
@@ -94,7 +96,9 @@ class DeviceSmokeTest {
             assertTrue(device.wait(Until.hasObject(By.res(PKG, "launcherRoot")), 10_000))
             val fixtureIntent = Intent(Intent.ACTION_MAIN).apply {
                 component = ComponentName(FIXTURE_PKG, "$FIXTURE_PKG.FixtureActivity")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // The full suite already seeded the fixture's dynamic shortcuts.
+                // Start a fresh task so Back cannot reveal that earlier activity.
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
             context.startActivity(fixtureIntent)
             assertTrue(device.wait(Until.hasObject(By.pkg(FIXTURE_PKG)), 10_000))

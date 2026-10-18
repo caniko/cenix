@@ -13,4 +13,13 @@ class ReloadGateTest {
         assertFalse(gate.isCurrent(stale))
         assertTrue(gate.isCurrent(current))
     }
+
+    @Test
+    fun closedActivityRejectsPendingAndLateReloads() {
+        val gate = ReloadGate()
+        val pending = gate.next()
+        gate.close()
+        assertFalse(gate.isCurrent(pending))
+        assertFalse(gate.isCurrent(gate.next()))
+    }
 }

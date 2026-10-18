@@ -118,7 +118,7 @@ avd_serial() {
   local wanted="${1:-$avd}" serial name
   while read -r serial _; do
     [[ -z "${serial:-}" ]] && continue
-    name="$("$adb" -s "$serial" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
+    name="$("$adb" -s "$serial" shell -n getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
     if [[ "$name" == "$wanted" ]]; then
       printf '%s\n' "$serial"
       return 0
@@ -604,8 +604,28 @@ set_fixture_wallpaper() {
   sleep 2
 }
 
+wait_launcher_settings() {
+  wait_resumed 'com.caniko.cenix/.LauncherSettingsActivity'
+}
+
+scroll_ui_to() {
+  local needle="$1" direction="${2:-up}" xml from=560 to=180
+  if [[ "$direction" == "down" ]]; then
+    from=180
+    to=560
+  fi
+  for _ in $(seq 1 10); do
+    xml="$(dump_ui)"
+    grep -q "$needle" <<<"$xml" && return 0
+    "$adb" -s "$serial" shell input swipe 160 "$from" 160 "$to" 400
+    sleep 1
+  done
+  fail "UI never showed after scrolling: $needle"
+}
+
 open_launcher_settings() {
   open_all_apps
+  scroll_ui_to 'resource-id="com.caniko.cenix:id/launcherSettings"'
   tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
   wait_launcher_settings
   "$adb" -s "$serial" shell input swipe 8 180 8 560 400
@@ -825,9 +845,7 @@ pass "discovery: nonempty catalog, Cenix hidden"
 go_home
 wait_ui 'content-desc="Cenix Fixture, page 1' 1
 pass "automatic placement: confirmed new install is placed without a duplicate callback path"
-open_all_apps
-tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-wait_launcher_settings
+open_launcher_settings
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 "$adb" -s "$serial" shell input swipe 160 560 160 180 400
 tap_pattern 'resource-id="com.caniko.cenix:id/resetLauncher"'
@@ -864,23 +882,19 @@ go_home
 pass "launch: KEYCODE_HOME returns to Cenix"
 
 if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notifications" || "$suite" == "full" ]]; then
-  open_all_apps
-  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_launcher_settings
-  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
-  "$adb" -s "$serial" shell input swipe 8 180 8 560 400
+  open_launcher_settings
   for control in wallpaper themedIcons notificationDots autoAddApps; do
-    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$control\""
+    scroll_ui_to "resource-id=\"com.caniko.cenix:id/$control\""
   done
   for grid in grid_2_by_2 grid_3_by_3 grid_4_by_4; do
-    scroll_settings_to "resource-id=\"com.caniko.cenix:id/$grid\""
+    scroll_ui_to "resource-id=\"com.caniko.cenix:id/$grid\""
   done
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'grid_4_by_5\|grid_5_by_5' && fail "incompatible phone grid was selectable"
-  scroll_settings_to "$CENIX_GIT_COMMIT"
+  scroll_ui_to "$CENIX_GIT_COMMIT"
   pass "settings: finite compatible phone grids and build identity are visible"
 
-  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"' down
+  scroll_ui_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"' down
   tap_pattern 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   wait_ui 'text="Grid applied"' 1
   device_settings_ui="$(dump_ui)"
@@ -888,10 +902,8 @@ if [[ "$suite" == "settings" || "$suite" == "appearance" || "$suite" == "notific
   "$adb" -s "$serial" shell am force-stop com.caniko.cenix
   go_home
   sleep 2
-  open_all_apps
-  tap_pattern 'resource-id="com.caniko.cenix:id/launcherSettings"'
-  wait_launcher_settings
-  scroll_settings_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
+  open_launcher_settings
+  scroll_ui_to 'resource-id="com.caniko.cenix:id/grid_3_by_3"'
   ui="$(dump_ui)"
   echo "$ui" | grep -q 'resource-id="com.caniko.cenix:id/grid_3_by_3"[^>]*checked="true"' || fail "grid selection did not survive recreation"
   pass "settings: selected grid survives process recreation"

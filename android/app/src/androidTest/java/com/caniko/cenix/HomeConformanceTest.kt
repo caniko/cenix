@@ -43,7 +43,7 @@ class HomeConformanceTest {
         val field = device.findObject(By.res(PKG, "searchField"))
         field.click()
         field.setText("fixture")
-        assertTrue(device.wait(Until.hasObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000))
+        assertTrue(device.wait(Until.hasObject(By.desc("Cenix Fixture, Personal")), 5_000))
 
         device.pressBack()
         assertTrue(device.wait(Until.hasObject(By.res(PKG, "searchField")), 5_000))
@@ -66,7 +66,7 @@ class HomeConformanceTest {
         val field = device.findObject(By.res(PKG, "searchField"))
         field.click()
         field.setText("fixture")
-        val app = device.wait(Until.findObject(By.res(PKG, "appLabel").text("Cenix Fixture")), 5_000)
+        val app = device.wait(Until.findObject(By.desc("Cenix Fixture, Personal")), 5_000)
         assertTrue(app != null)
         val bounds = app.visibleBounds
         device.executeShellCommand("input touchscreen swipe ${bounds.centerX()} ${bounds.centerY()} ${bounds.centerX()} ${bounds.centerY()} 800")
@@ -107,8 +107,8 @@ class HomeConformanceTest {
         assertTrue(device.hasObject(By.res(PKG, "themedIcons")))
         assertTrue(device.hasObject(By.res(PKG, "notificationDots")))
         assertTrue(device.hasObject(By.res(PKG, "autoAddApps")))
-        assertTrue(device.hasObject(By.res(PKG, "selectHomeRole")))
         device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 4, 20)
+        assertTrue(device.hasObject(By.res(PKG, "selectHomeRole")))
         assertTrue(device.hasObject(By.res(PKG, "exportDiagnostics")))
         assertTrue(device.hasObject(By.res(PKG, "exportBackup")))
         assertTrue(device.hasObject(By.res(PKG, "importBackup")))

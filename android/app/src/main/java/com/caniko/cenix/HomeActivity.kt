@@ -251,6 +251,7 @@ class HomeActivity : AppCompatActivity() {
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchField.windowToken, 0)
             searchField.clearFocus()
             allAppsLongPress.longPress()
+            appList.parent.requestDisallowInterceptTouchEvent(true)
             openContext(view, visible[position], null, null)
         }
         appList.setOnTouchListener { _, event ->
@@ -342,6 +343,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        reloadGate.close()
         closeFolder("lifecycle")
         closeContext("lifecycle")
         dragLayer.cancel("lifecycle")
@@ -356,6 +358,7 @@ class HomeActivity : AppCompatActivity() {
     private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
         reloadPending = true
         val reloadToken = reloadGate.next()
+        if (!reloadGate.isCurrent(reloadToken)) return
         if (reason == "profile") invalidatePrivateUi()
         if (reason in PACKAGE_INVALIDATIONS || reason in setOf("icons", "appearance", "profile")) iconPacks.invalidate()
         if (reason in PACKAGE_INVALIDATIONS) themedIcons.invalidate(packageKey)
@@ -416,6 +419,7 @@ class HomeActivity : AppCompatActivity() {
                 NotificationDotStore.removeProfiles(inaccessible)
                 themedIcons.invalidateProfiles(inaccessible)
                 dragLayer.post {
+                    if (!reloadGate.isCurrent(reloadToken)) return@post
                     val invalidating = reason in setOf(
                         "remove", "unavailable", "shortcuts", "profile", "change", "suspended", "loading", "session",
                     )
@@ -508,10 +512,13 @@ class HomeActivity : AppCompatActivity() {
                     }
                 }
             } catch (_: Throwable) {
+                if (!reloadGate.isCurrent(reloadToken)) return@io
                 clearReloadPending(reloadToken)
                 searchDirty = false
                 app.requestEmergency()
-                runOnUiThread(::applySurface)
+                runOnUiThread {
+                    if (reloadGate.isCurrent(reloadToken)) applySurface()
+                }
             }
         }
     }
@@ -1497,6 +1504,7 @@ class HomeActivity : AppCompatActivity() {
         allAppsContainer.animate().cancel()
         when (target) {
             LauncherSurface.HOME -> {
+                allAppsContainer.scrollTo(0, 0)
                 homeSurface.visibility = View.VISIBLE
                 homeSurface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 emergencyOverlay.visibility = View.GONE

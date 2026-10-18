@@ -26,6 +26,7 @@ android {
         versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["gitCommit"] = gitCommit
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")

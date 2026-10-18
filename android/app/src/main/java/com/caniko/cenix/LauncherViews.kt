@@ -38,6 +38,7 @@ import kotlin.math.abs
 class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs) {
     private var shellVelocity: VelocityTracker? = null
     private var shellDownY = 0f
+    private var shellMayDismiss = true
     var surface = LauncherSurface.HOME
     var onSurfaceRequested: ((LauncherSurface) -> Unit)? = null
 
@@ -55,7 +56,10 @@ class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeS
         }
         shellVelocity = (shellVelocity ?: VelocityTracker.obtain()).also { it.addMovement(event) }
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> shellDownY = event.y
+            MotionEvent.ACTION_DOWN -> {
+                shellDownY = event.y
+                shellMayDismiss = findViewById<AllAppsContainer>(R.id.allAppsContainer)?.canScrollVertically(-1) != true
+            }
             MotionEvent.ACTION_MOVE -> requestSurface(event.y - shellDownY, 0f)
             MotionEvent.ACTION_UP -> {
                 shellVelocity?.computeCurrentVelocity(1000)
@@ -72,6 +76,7 @@ class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeS
     }
 
     private fun requestSurface(deltaY: Float, velocityY: Float) {
+        if (surface == LauncherSurface.ALL_APPS && !shellMayDismiss) return
         LauncherShell.swipeTarget(surface, deltaY, velocityY, height)
             .takeIf { it != surface }
             ?.let {
@@ -83,7 +88,7 @@ class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeS
 
 class HomeSurface @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs)
 
-class AllAppsContainer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : FrameLayout(context, attrs)
+class AllAppsContainer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ScrollView(context, attrs)
 
 open class CellLayout @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : ViewGroup(context, attrs) {
     var columns = 1
