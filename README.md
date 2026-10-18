@@ -6,6 +6,9 @@ Device target: Pixel 10 Pro XL (`mustang`), GrapheneOS `2026081300` (Launcher3 `
 
 ## Build
 
+Android SDK, emulator shells and APK builds require an `x86_64-linux` build
+host. Native Rust shells and checks also support `aarch64-linux`.
+
 ```bash
 nix develop
 scripts/run-host-tests.sh

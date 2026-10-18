@@ -3,7 +3,7 @@
 
   inputs = {
     harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=ed89d0b13fc61dd1b2217bf4bba97f32cec27ba7";
-    harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=6a794b412b62bc45309b2ac3a08d105bad1bffce";
+    harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=2ca508176e7deeec67e753e39904d05a6f62585b";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
@@ -92,10 +92,12 @@
       };
       apkDebug = apkDebugBase.overrideAttrs (old: {
         CENIX_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
-        preBuild = (old.preBuild or "") + ''
-          export ANDROID_USER_HOME="$HOME/.android"
-          mkdir -p "$ANDROID_USER_HOME"
-        '';
+        preBuild =
+          (old.preBuild or "")
+          + ''
+            export ANDROID_USER_HOME="$HOME/.android"
+            mkdir -p "$ANDROID_USER_HOME"
+          '';
       });
     in {
       inherit pkgs toolchain craneLib rustToolchain cargoArtifacts androidSdk emulatorSdk emulatorAospSdk rustShells apkDebug;
@@ -114,42 +116,46 @@
   in {
     packages = nixpkgs.lib.genAttrs systems (system: let
       cfg = forSystem system;
-    in {
-      default = cfg.checks.test;
-      apk-debug-arm64 = cfg.apkDebug;
-    });
+    in
+      {default = cfg.checks.test;}
+      // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+        apk-debug-arm64 = cfg.apkDebug;
+      });
 
     checks = nixpkgs.lib.genAttrs systems (system: (forSystem system).checks);
 
     devShells = nixpkgs.lib.genAttrs systems (
       system: let
         cfg = forSystem system;
-      in {
-        default = harbor-android.lib.mkAndroidDevShell {
-          inherit (cfg) pkgs;
-          androidSdk = cfg.androidSdk;
-          ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
-          base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
-        };
-        emulator = harbor-android.lib.mkAndroidDevShell {
-          inherit (cfg) pkgs;
-          androidSdk = cfg.emulatorSdk;
-          ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
-          base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
-        };
-        emulator-aosp = harbor-android.lib.mkAndroidDevShell {
-          inherit (cfg) pkgs;
-          androidSdk = cfg.emulatorAospSdk;
-          ndkVersion = androidNdkVersion;
-          rustToolchain = cfg.rustToolchain;
-          base = cfg.rustShells.default;
-          extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools { inherit (cfg) pkgs; })];
-        };
-      }
+      in
+        if system != "x86_64-linux"
+        then cfg.rustShells
+        else {
+          default = harbor-android.lib.mkAndroidDevShell {
+            inherit (cfg) pkgs;
+            inherit (cfg) androidSdk;
+            ndkVersion = androidNdkVersion;
+            inherit (cfg) rustToolchain;
+            base = cfg.rustShells.default;
+            extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools {inherit (cfg) pkgs;})];
+          };
+          emulator = harbor-android.lib.mkAndroidDevShell {
+            inherit (cfg) pkgs;
+            androidSdk = cfg.emulatorSdk;
+            ndkVersion = androidNdkVersion;
+            inherit (cfg) rustToolchain;
+            base = cfg.rustShells.default;
+            extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools {inherit (cfg) pkgs;})];
+          };
+          emulator-aosp = harbor-android.lib.mkAndroidDevShell {
+            inherit (cfg) pkgs;
+            androidSdk = cfg.emulatorAospSdk;
+            ndkVersion = androidNdkVersion;
+            inherit (cfg) rustToolchain;
+            base = cfg.rustShells.default;
+            extraPackages = [cfg.pkgs.aapt cfg.pkgs.android-tools cfg.pkgs.cargo-deny cfg.pkgs.diffoscope cfg.pkgs.reuse (harbor-android.lib.mkAndroidDeviceTools {inherit (cfg) pkgs;})];
+          };
+        }
     );
   };
 }
