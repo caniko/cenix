@@ -23,6 +23,12 @@ Run only from `nix develop .#emulator-aosp`. `nix develop` (default) does not fe
 nix develop .#emulator-aosp --command scripts/emulator-conformance.sh
 ```
 
+The default-branch CI gate uses an ephemeral Ubuntu 24.04 GitHub runner with
+KVM, seeds locked Cargo dependencies, and requires the emulator's acceleration
+check before all five full-suite repetitions. Its artifacts are retained on
+failure too. A queued job, skipped job, or acceleration failure is not conformance
+evidence; the complete repeat summary must pass.
+
 That script:
 
 1. Creates isolated AVD `cenix-ci-$RUN_ID` (320×640 mdpi AOSP API 35; refuses shared `cenix-api35`)

@@ -51,11 +51,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   emulator-aosp:
-    # Never execute pull-request code on the persistent runner.
+    # Keep the full five-run gate on the trusted default branch.
     if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
+      - name: Prepare hardware acceleration on the ephemeral runner
+        run: |
+          test -c /dev/kvm
+          sudo chown "$(id -u)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - run: nix develop .#emulator-aosp -c cargo fetch --locked
+      - run: nix develop .#emulator-aosp -c sh -c "\"\$ANDROID_SDK_ROOT/emulator/emulator\" -accel-check"
       - run: CENIX_REPEAT=5 nix develop .#emulator-aosp -c scripts/repeat-conformance.sh
         env:
           CENIX_REPEAT_DIR: ${{ runner.temp }}/cenix-${{ github.run_id }}-${{ github.run_attempt }}
