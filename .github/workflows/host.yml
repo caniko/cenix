@@ -11,6 +11,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
       - run: git diff --check
+      - run: nix develop -c cargo fetch --locked
       - run: nix develop -c cargo build -p cenix-ffi --locked --offline
       - run: nix develop -c bash -lc 'cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug :fixture:assembleDebug'
       - run: nix develop -c cargo fmt --check
