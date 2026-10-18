@@ -377,11 +377,12 @@ class HomeActivity : AppCompatActivity() {
             }
             val workspace = WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
-                val profileChange = profiles.refresh()
+                // Reject stale work before consuming one-shot profile transitions.
                 if (!reloadGate.isCurrent(reloadToken)) {
                     clearReloadPending(reloadToken)
                     return@io
                 }
+                val profileChange = profiles.refresh()
                 completePendingRestore(database)
                 widgetHost.recover()
                 val availableProfileIds = profileChange.profiles
@@ -419,7 +420,8 @@ class HomeActivity : AppCompatActivity() {
                 NotificationDotStore.removeProfiles(inaccessible)
                 themedIcons.invalidateProfiles(inaccessible)
                 dragLayer.post {
-                    if (!reloadGate.isCurrent(reloadToken)) return@post
+                    // Cleanup survives supersession while this activity is alive.
+                    if (isDestroyed) return@post
                     val invalidating = reason in setOf(
                         "remove", "unavailable", "shortcuts", "profile", "change", "suspended", "loading", "session",
                     )
