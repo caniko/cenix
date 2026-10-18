@@ -5,13 +5,19 @@ import android.content.pm.PackageInstaller
 import android.os.Looper
 import android.os.Process
 import android.os.UserManager
+import android.view.MotionEvent
+import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.caniko.cenix.db.ApplicationItemEntity
 import com.caniko.cenix.db.WorkspaceItemEntity
+import com.caniko.cenix.uniffi.WorkspaceSnapshot
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +32,7 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowLauncherApps
+import org.robolectric.shadows.ShadowLog
 import org.robolectric.shadows.ShadowUserManager.UserState
 import org.robolectric.util.ReflectionHelpers
 
@@ -60,47 +67,154 @@ class HomeReloadTest {
             shadowOf(Looper.getMainLooper()).idle()
             val database = checkNotNull(app.database)
             val placed = WorkspaceItemEntity(1, "HOTSEAT", 0, 2, 0, 1, 1, WorkspaceItemEntity.ITEM_APPLICATION)
-            CenixExecutors.io.submit {
-                val state = database.dao().workspaceState()
-                database.dao().commitWorkspace(
-                    state.metadata.generation,
-                    state.metadata.copy(generation = state.metadata.generation + 1, nextItemId = 2),
-                    state.pages,
-                    listOf(placed),
-                    listOf(ApplicationItemEntity(1, key.packageName, "MainActivity", key.profileId)),
-                )
-            }.get(10, TimeUnit.SECONDS)
             assertFalse("workspace reconciliation must use the real native engine", app.emergency)
             val reload = HomeActivity::class.java.getDeclaredMethod(
                 "scheduleReload", String::class.java, PackageKey::class.java,
             ).apply { isAccessible = true }
-            for (winner in listOf("add", "start")) {
-                val entered = CountDownLatch(1)
-                val release = CountDownLatch(1)
-                val blocker = CenixExecutors.io.submit {
-                    entered.countDown()
-                    check(release.await(10, TimeUnit.SECONDS))
-                }
-                try {
-                    assertTrue("the serialized IO queue must be blocked", entered.await(10, TimeUnit.SECONDS))
-                    reload.invoke(activity, "remove", key)
-                    reload.invoke(activity, winner, if (winner == "add") key else null)
-                } finally {
-                    release.countDown()
-                }
-                blocker.get(10, TimeUnit.SECONDS)
-                CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
-                shadowOf(Looper.getMainLooper()).idle()
-                assertFalse("reload must not hide a native failure", app.emergency)
-                val remaining = CenixExecutors.io.submit<List<WorkspaceItemEntity>> {
-                    database.dao().workspaceItems()
+            for (duringMutation in listOf(false, true)) {
+                CenixExecutors.io.submit {
+                    val state = database.dao().workspaceState()
+                    database.dao().commitWorkspace(
+                        state.metadata.generation,
+                        state.metadata.copy(generation = state.metadata.generation + 1, nextItemId = 2),
+                        state.pages,
+                        listOf(placed),
+                        listOf(ApplicationItemEntity(1, key.packageName, "MainActivity", key.profileId)),
+                    )
                 }.get(10, TimeUnit.SECONDS)
-                if (winner == "add") {
-                    assertEquals("a superseded removal must preserve the reinstalled app's exact placement", listOf(placed), remaining)
-                } else {
-                    assertTrue("a generic winner must still apply a genuine package removal", remaining.isEmpty())
+                for (winner in listOf("add", "start")) {
+                    val entered = CountDownLatch(1)
+                    val release = CountDownLatch(1)
+                    val originalLog = ShadowLog.stream
+                    val armed = AtomicBoolean(true)
+                    if (duringMutation) ShadowLog.stream = object : PrintStream(ByteArrayOutputStream()) {
+                        override fun println(line: String?) {
+                            if (line?.contains("WORKSPACE_COMMAND category=drop-missing") == true && armed.compareAndSet(true, false)) {
+                                entered.countDown()
+                                check(release.await(10, TimeUnit.SECONDS))
+                            }
+                        }
+                    }
+                    val blocker = if (duringMutation) null else CenixExecutors.io.submit {
+                        entered.countDown()
+                        check(release.await(10, TimeUnit.SECONDS))
+                    }
+                    try {
+                        if (!duringMutation) assertTrue("the serialized IO queue must be blocked", entered.await(10, TimeUnit.SECONDS))
+                        reload.invoke(activity, "remove", key)
+                        if (duringMutation) assertTrue("the native mutation must pause after the entry guard", entered.await(10, TimeUnit.SECONDS))
+                        reload.invoke(activity, winner, if (winner == "add") key else null)
+                    } finally {
+                        release.countDown()
+                        ShadowLog.stream = originalLog
+                    }
+                    blocker?.get(10, TimeUnit.SECONDS)
+                    CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+                    shadowOf(Looper.getMainLooper()).idle()
+                    assertFalse("reload must not hide a native failure", app.emergency)
+                    val remaining = CenixExecutors.io.submit<List<WorkspaceItemEntity>> {
+                        database.dao().workspaceItems()
+                    }.get(10, TimeUnit.SECONDS)
+                    if (winner == "add") {
+                        assertEquals("a superseded removal must preserve the reinstalled app's exact placement (duringMutation=$duringMutation)", listOf(placed), remaining)
+                    } else {
+                        assertTrue("a generic winner must still apply a genuine package removal", remaining.isEmpty())
+                    }
                 }
             }
+        } finally {
+            controller.pause().stop().destroy()
+            CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+            NotificationDotStore.setEnabled(true)
+            NotificationDotStore.replace(emptyMap())
+            NotificationDotStore.setRefresher(null)
+        }
+    }
+
+    @Test fun dropWaitsForQueuedEdgePageAndItsLayout() {
+        val app = ApplicationProvider.getApplicationContext<CenixApplication>()
+        assertTrue(app.awaitReady())
+        shadowOf(app.getSystemService(UserManager::class.java)).apply {
+            setSerialNumberForUser(Process.myUserHandle(), 0)
+            setUserState(Process.myUserHandle(), UserState.STATE_RUNNING_UNLOCKED)
+            setUserUnlocked(true)
+        }
+        app.emergency = false
+        app.filterFactory = { EmergencyAppFilter }
+        val controller = Robolectric.buildActivity(HomeActivity::class.java).setup().visible()
+        val activity = controller.get()
+        try {
+            CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+            shadowOf(Looper.getMainLooper()).idle()
+            val database = checkNotNull(app.database)
+            val seeded = CenixExecutors.io.submit<WorkspaceSnapshot> {
+                val state = database.dao().workspaceState()
+                database.dao().commitWorkspace(
+                    state.metadata.generation,
+                    state.metadata.copy(generation = state.metadata.generation + 1, nextItemId = 2),
+                    state.pages.take(1),
+                    listOf(WorkspaceItemEntity(1, "WORKSPACE", state.pages.first().pageId, 0, 0)),
+                    listOf(ApplicationItemEntity(1, "com.caniko.cenix.fixture", "MainActivity", 0)),
+                )
+                LauncherRepository(database).snapshot()
+            }.get(10, TimeUnit.SECONDS)
+            val render = HomeActivity::class.java.getDeclaredMethod("render", WorkspaceSnapshot::class.java)
+                .apply { isAccessible = true }
+            render.invoke(activity, seeded)
+            val root = activity.findViewById<LauncherRoot>(R.id.launcherRoot)
+            fun layout() {
+                root.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(640, View.MeasureSpec.EXACTLY))
+                root.layout(0, 0, 320, 640)
+            }
+            layout()
+            val pager = activity.findViewById<WorkspacePager>(R.id.workspaceGrid)
+            val dragLayer = activity.findViewById<DragLayer>(R.id.dragLayer)
+            assertTrue(dragLayer.beginDrag(checkNotNull(pager.currentLayout?.viewAt(0, 0)), LauncherDrag(null, 1UL)))
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val blocker = CenixExecutors.io.submit {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                // An earlier mutation can have a main-thread render queued when the edge commits.
+                activity.runOnUiThread { render.invoke(activity, seeded) }
+            }
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                pager.edgeHover(pager.width - 1f)
+                assertEquals("the new page is still queued", 1, pager.childCount)
+                val origin = IntArray(2)
+                pager.getLocationOnScreen(origin)
+                val event = MotionEvent.obtain(0, 1, MotionEvent.ACTION_UP,
+                    origin[0] + pager.width * 0.75f, origin[1] + pager.height * 0.5f, 0)
+                dragLayer.handleMotionEvent(event)
+                event.recycle()
+            } finally {
+                release.countDown()
+            }
+            blocker.get(10, TimeUnit.SECONDS)
+            repeat(3) {
+                CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+                shadowOf(Looper.getMainLooper()).idle()
+                layout()
+            }
+            val state = CenixExecutors.io.submit<WorkspaceSnapshot> { LauncherRepository(database).snapshot() }
+                .get(10, TimeUnit.SECONDS)
+            assertFalse(app.emergency)
+            assertEquals("the drop must occupy the new page instead of pruning it", 2, state.pages.size)
+            assertEquals(com.caniko.cenix.uniffi.ContainerRef.Workspace(state.pages.last().pageId), state.items.single().container)
+            assertEquals(1, pager.currentPage)
+            assertFalse(dragLayer.isDragging)
+            assertTrue(dragLayer.beginDrag(checkNotNull(pager.currentLayout?.getChildAt(0)), LauncherDrag(null, 1UL)))
+            val event = MotionEvent.obtain(0, 1, MotionEvent.ACTION_UP, 100f, 200f, 0)
+            dragLayer.handleMotionEvent(event)
+            event.recycle()
+            dragLayer.cancel("profile-or-package")
+            CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals("cleanup must cancel a deferred drop", state, CenixExecutors.io.submit<WorkspaceSnapshot> {
+                LauncherRepository(database).snapshot()
+            }.get(10, TimeUnit.SECONDS))
         } finally {
             controller.pause().stop().destroy()
             CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)

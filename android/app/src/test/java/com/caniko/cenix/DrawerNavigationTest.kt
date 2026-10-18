@@ -154,6 +154,62 @@ class DrawerNavigationTest {
         controller.pause().stop().destroy()
     }
 
+    @Test fun compactDrawerRoutesOrdinaryDragsThroughBothAppGrids() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup().visible()
+        val activity = controller.get()
+        activity.setTheme(R.style.Theme_Cenix)
+        activity.setContentView(R.layout.activity_home)
+        val root = activity.findViewById<LauncherRoot>(R.id.launcherRoot)
+        root.surface = LauncherSurface.ALL_APPS
+        root.onSurfaceRequested = { root.surface = it }
+        val drawer = activity.findViewById<AllAppsContainer>(R.id.allAppsContainer)
+        drawer.visibility = View.VISIBLE
+        activity.findViewById<View>(R.id.workTab).visibility = View.VISIBLE
+        activity.findViewById<View>(R.id.privateSpaceContainer).visibility = View.VISIBLE
+        val grids = listOf(R.id.appList, R.id.privateAppList).map { activity.findViewById<AllAppsView>(it) }
+        for (grid in grids) {
+            grid.visibility = View.VISIBLE
+            grid.adapter = ArrayAdapter(activity, R.layout.app_grid_cell, R.id.appLabel, (1..60).map { "App $it" })
+        }
+        root.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(322, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 320, 322)
+        for (grid in grids) {
+            grid.requestRectangleOnScreen(Rect(0, 0, grid.width, grid.height), true)
+            val bounds = Rect()
+            assertTrue("the grid must be visible before the gesture", grid.getGlobalVisibleRect(bounds))
+            val origin = IntArray(2)
+            root.getLocationOnScreen(origin)
+            bounds.offset(-origin[0], -origin[1])
+            val x = bounds.exactCenterX()
+            val top = bounds.top + 8f
+            val bottom = bounds.bottom - 8f
+            fun drag(from: Float, to: Float) {
+                val down = android.os.SystemClock.uptimeMillis()
+                for (step in 0..8) {
+                    val action = when (step) {
+                        0 -> MotionEvent.ACTION_DOWN
+                        8 -> MotionEvent.ACTION_UP
+                        else -> MotionEvent.ACTION_MOVE
+                    }
+                    val event = MotionEvent.obtain(down, down + step * 30L, action, x, from + (to - from) * step / 8, 0)
+                    root.dispatchTouchEvent(event)
+                    event.recycle()
+                }
+            }
+            assertTrue("fixture must have offscreen app rows", grid.canScrollVertically(1))
+            val outerScroll = drawer.scrollY
+            val lastRow = grid.lastVisiblePosition
+            drag(bottom, top)
+            assertTrue("ordinary swipes must reach app rows beyond the first viewport: ${grid.id}, bounds=$bounds, " +
+                "rows=$lastRow..${grid.lastVisiblePosition}, outer=$outerScroll..${drawer.scrollY}", grid.lastVisiblePosition > lastRow)
+            assertEquals("inner scrolling must not move the surrounding chrome", outerScroll, drawer.scrollY)
+            drag(top, bottom)
+            assertEquals("scrolling back within an app grid must not dismiss All Apps", LauncherSurface.ALL_APPS, root.surface)
+        }
+        controller.pause().stop().destroy()
+    }
+
     @Test fun rebuildKeepsFocusOnSameTagAndNeverStealsIt() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()

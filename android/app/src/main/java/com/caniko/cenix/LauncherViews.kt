@@ -58,7 +58,14 @@ class LauncherRoot @JvmOverloads constructor(context: Context, attrs: AttributeS
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 shellDownY = event.y
-                shellMayDismiss = findViewById<AllAppsContainer>(R.id.allAppsContainer)?.canScrollVertically(-1) != true
+                shellMayDismiss = listOf(R.id.allAppsContainer, R.id.appList, R.id.privateAppList).none { id ->
+                    findViewById<View>(id)?.let { view ->
+                        val bounds = Rect()
+                        view.getDrawingRect(bounds)
+                        offsetDescendantRectToMyCoords(view, bounds)
+                        view.isShown && view.canScrollVertically(-1) && bounds.contains(event.x.toInt(), event.y.toInt())
+                    } == true
+                }
             }
             MotionEvent.ACTION_MOVE -> requestSurface(event.y - shellDownY, 0f)
             MotionEvent.ACTION_UP -> {
@@ -327,6 +334,7 @@ class PageIndicator @JvmOverloads constructor(context: Context, attrs: Attribute
 
 class AllAppsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : android.widget.GridView(context, attrs) {
     init {
+        isNestedScrollingEnabled = true
         numColumns = AUTO_FIT
         columnWidth = (80 * resources.displayMetrics.density).toInt()
         stretchMode = STRETCH_COLUMN_WIDTH
@@ -813,6 +821,7 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
     var removeTarget: View? = null
     var folderPopup: FolderPopup? = null
     var onDrop: ((LauncherDrag, DropDestination) -> Unit)? = null
+    var deferDrop: ((() -> Unit) -> Unit) = { it() }
     var onFolderHover: ((ULong) -> Unit)? = null
     private var drag: LauncherDrag? = null
     private var source: View? = null
@@ -841,9 +850,15 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
                 updateFolderTarget(payload, event.rawX, event.rawY)
             }
             MotionEvent.ACTION_UP -> {
-                val destination = destination(payload, event.rawX, event.rawY)
-                finishDrag()
-                onDrop?.invoke(payload, destination)
+                val x = event.rawX
+                val y = event.rawY
+                deferDrop {
+                    if (drag === payload) {
+                        val destination = destination(payload, x, y)
+                        finishDrag()
+                        onDrop?.invoke(payload, destination)
+                    }
+                }
             }
             MotionEvent.ACTION_CANCEL -> cancel("touch")
         }

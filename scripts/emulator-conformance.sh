@@ -803,7 +803,16 @@ export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 "$adb" -s "$serial" install -r -t "$root/android/fixture/build/outputs/apk/debug/fixture-debug.apk"
 "$adb" -s "$serial" shell am start -n com.caniko.cenix.fixture/.FixtureActivity >/dev/null
 "$adb" -s "$serial" shell input keyevent KEYCODE_HOME
-(cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || fail "instrumentation failed"
+instrumentation_reports="$root/android/app/build/outputs/androidTest-results/connected/debug"
+rm -f "$instrumentation_reports"/TEST-*.xml
+instrumentation_status=0
+(cd "$root/android" && ./gradlew :app:connectedDebugAndroidTest) || instrumentation_status=$?
+mkdir -p "$art/instrumentation"
+for report in "$instrumentation_reports"/TEST-*.xml; do
+  [[ ! -f "$report" ]] || cp "$report" "$art/instrumentation/"
+done
+[[ "$instrumentation_status" == "0" ]] || fail "instrumentation failed"
+compgen -G "$art/instrumentation/TEST-*.xml" >/dev/null || fail "instrumentation reports missing"
 pass "instrumentation: HomeConformanceTest"
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 "$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"

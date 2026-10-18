@@ -29,6 +29,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.doOnLayout
 import com.caniko.cenix.uniffi.ContainerRef
 import com.caniko.cenix.uniffi.ComponentId
 import com.caniko.cenix.uniffi.Folder
@@ -202,6 +203,10 @@ class HomeActivity : AppCompatActivity() {
         dragLayer.hotseat = hotseat
         dragLayer.removeTarget = findViewById(R.id.removeTarget)
         dragLayer.onDrop = ::onDrop
+        dragLayer.deferDrop = { release ->
+            // Earlier edge mutations must reach the pager before drop hit-testing.
+            CenixExecutors.io { runOnUiThread { pager.doOnLayout { release() } } }
+        }
         dragLayer.onFolderHover = ::openFolder
         root.onSurfaceRequested = { target ->
             if (target != LauncherSurface.HOME || !appList.canScrollVertically(-1)) setSurface(target)
@@ -212,9 +217,7 @@ class HomeActivity : AppCompatActivity() {
             pageIndicator.current = page
         }
         pager.onBeyondEdge = {
-            mutate { workspace ->
-                workspace.addPage()?.also { transition -> selectedPageId = transition.createdPageIds.lastOrNull() }
-            }
+            mutate(selectCreatedPage = true) { it.addPage() }
         }
         findViewById<Button>(R.id.retryNative).setOnClickListener { retryNative() }
         findViewById<Button>(R.id.resetState).setOnClickListener { resetState() }
@@ -435,17 +438,23 @@ class HomeActivity : AppCompatActivity() {
                 workspace.removeProfiles(profileChange.removedProfileIds)
                 // Consume terminal profile removals and UI cleanup, but not an obsolete catalog.
                 if (!reloadGate.isCurrent(reloadToken)) return@io
-                workspace.dropMissing(loaded, availableProfileIds)
-                var state = workspace.snapshot()
-                if (reason !in setOf("remove", "shortcuts")) shortcutCatalog.pin(state.shortcutIds())
-                val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
-                    .filterKeys { PackageKey(it.`package`, it.profileId.toLong()) !in removedPackages }
-                val authoritativePackage = packageKey?.takeIf { reason == "remove" || reason == "shortcuts" }
-                val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), authoritativePackage)
-                    .filterNot { PackageKey(it.`package`, it.profileId.toLong()) in removedPackages }
-                state = workspace.reconcileShortcuts(liveShortcuts, availableProfileIds)?.asSnapshot()?.also {
-                    CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
-                } ?: state
+                val (state, resolvedShortcuts) = database.runInTransaction(java.util.concurrent.Callable {
+                    workspace.dropMissing(loaded, availableProfileIds)
+                    var state = workspace.snapshot()
+                    if (reason !in setOf("remove", "shortcuts")) shortcutCatalog.pin(state.shortcutIds())
+                    val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
+                        .filterKeys { PackageKey(it.`package`, it.profileId.toLong()) !in removedPackages }
+                    val authoritativePackage = packageKey?.takeIf { reason == "remove" || reason == "shortcuts" }
+                    val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), authoritativePackage)
+                        .filterNot { PackageKey(it.`package`, it.profileId.toLong()) in removedPackages }
+                    state = workspace.reconcileShortcuts(liveShortcuts, availableProfileIds)?.asSnapshot()?.also {
+                        CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
+                    } ?: state
+                    // Roll back both transitions if superseded during their native/Room work.
+                    // Requests after this commit decision belong to the next transaction.
+                    check(reloadGate.isCurrent(reloadToken))
+                    state to resolvedShortcuts
+                })
                 shortcutCatalog.pin(state.shortcutIds())
                 if (database.dao().pendingRestore()?.phase != RestorePhase.PLATFORM_RECONCILE &&
                     (workspace.consumeDeferredRestore() || pendingAutoPlace.isNotEmpty())
@@ -1173,7 +1182,7 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun mutate(block: (WorkspaceController) -> com.caniko.cenix.uniffi.WorkspaceTransition?) {
+    private fun mutate(selectCreatedPage: Boolean = false, block: (WorkspaceController) -> com.caniko.cenix.uniffi.WorkspaceTransition?) {
         CenixExecutors.io {
             val workspace = controller ?: return@io
             val result = block(workspace)
@@ -1185,7 +1194,10 @@ class HomeActivity : AppCompatActivity() {
                 }
                 scheduleReload("restore-retry")
             } else {
-                result?.let { state -> runOnUiThread { render(state.asSnapshot()) } }
+                result?.let { state -> runOnUiThread {
+                    if (selectCreatedPage) selectedPageId = state.createdPageIds.lastOrNull()
+                    render(state.asSnapshot())
+                } }
             }
         }
     }
