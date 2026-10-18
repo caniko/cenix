@@ -94,6 +94,7 @@ class HomeActivity : AppCompatActivity() {
     private var activeProfileSection = ProfileKind.PERSONAL
     private var uncertainProfileIds = emptySet<Long>()
     private val pendingAutoPlace = mutableSetOf<PackageKey>()
+    private val removedPackages = java.util.concurrent.ConcurrentHashMap.newKeySet<PackageKey>()
     @Volatile private var reloadPending = false
     @Volatile private var searchDirty = false
     // True until the first successful reload publishes: destructive profile
@@ -357,6 +358,11 @@ class HomeActivity : AppCompatActivity() {
 
     private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
         if (!reloadGate.isOpen()) return
+        // Package authority survives a generic successor; a re-add cancels removal.
+        if (packageKey != null) when (reason) {
+            "remove" -> removedPackages.add(packageKey)
+            "add" -> removedPackages.remove(packageKey)
+        }
         reloadPending = true
         val reloadToken = reloadGate.next()
         if (reason == "profile") invalidatePrivateUi()
@@ -409,10 +415,7 @@ class HomeActivity : AppCompatActivity() {
                     } catch (_: Exception) { null }
                     item.copy(icon = packed ?: themed)
                 }
-                    .filterNot {
-                        reason == "remove" && packageKey != null &&
-                            it.packageName == packageKey.packageName && it.profileId == packageKey.profileId
-                    }
+                    .filterNot { PackageKey(it.packageName, it.profileId) in removedPackages }
                 val inaccessible = profileChange.newlyInaccessibleProfileIds + profileChange.removedProfileIds
                 NotificationDotStore.removeProfiles(inaccessible)
                 themedIcons.invalidateProfiles(inaccessible)
@@ -430,12 +433,16 @@ class HomeActivity : AppCompatActivity() {
                     widgetHost.invalidateProfiles(inaccessible, widgetBindings)
                 }
                 workspace.removeProfiles(profileChange.removedProfileIds)
+                // Consume terminal profile removals and UI cleanup, but not an obsolete catalog.
+                if (!reloadGate.isCurrent(reloadToken)) return@io
                 workspace.dropMissing(loaded, availableProfileIds)
                 var state = workspace.snapshot()
                 if (reason !in setOf("remove", "shortcuts")) shortcutCatalog.pin(state.shortcutIds())
                 val resolvedShortcuts = shortcutCatalog.resolve(state.shortcutIds())
+                    .filterKeys { PackageKey(it.`package`, it.profileId.toLong()) !in removedPackages }
                 val authoritativePackage = packageKey?.takeIf { reason == "remove" || reason == "shortcuts" }
                 val liveShortcuts = resolvedShortcuts.keys + retainedShortcutIds(state.shortcutIds(), authoritativePackage)
+                    .filterNot { PackageKey(it.`package`, it.profileId.toLong()) in removedPackages }
                 state = workspace.reconcileShortcuts(liveShortcuts, availableProfileIds)?.asSnapshot()?.also {
                     CenixLog.event(EventId.SHORTCUT_RECONCILE, Severity.INFO, mapOf("count" to resolvedShortcuts.size.toString()))
                 } ?: state
