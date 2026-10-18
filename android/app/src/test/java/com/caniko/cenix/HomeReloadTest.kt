@@ -5,6 +5,7 @@ import android.content.pm.PackageInstaller
 import android.os.Looper
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertNull
@@ -56,6 +57,28 @@ class HomeReloadTest {
             CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
             shadowOf(Looper.getMainLooper()).idle()
             assertNull("a newer catalog must not discard package-removal cleanup", popup.parent)
+            assertNull(ReflectionHelpers.getField<ContextPopup?>(activity, "contextPopup"))
+
+            activity.findViewById<DragLayer>(R.id.dragLayer).addView(popup,
+                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            ReflectionHelpers.setField(activity, "contextPopup", popup)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val blocker = CenixExecutors.io.submit {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            try {
+                assertTrue("the serialized IO queue must be blocked", entered.await(10, TimeUnit.SECONDS))
+                reload.invoke(activity, "remove", PackageKey("com.caniko.cenix.fixture", 0))
+                reload.invoke(activity, "start", null)
+            } finally {
+                release.countDown()
+            }
+            blocker.get(10, TimeUnit.SECONDS)
+            CenixExecutors.io.submit {}.get(10, TimeUnit.SECONDS)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull("superseding before IO must retain package-removal cleanup", popup.parent)
             assertNull(ReflectionHelpers.getField<ContextPopup?>(activity, "contextPopup"))
         } finally {
             controller.pause().stop().destroy()

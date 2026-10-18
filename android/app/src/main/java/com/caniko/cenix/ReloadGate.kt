@@ -9,7 +9,9 @@ internal class ReloadGate {
 
     fun next(): Int = current.incrementAndGet()
 
-    fun isCurrent(token: Int): Boolean = !closed && token == current.get()
+    fun isOpen(): Boolean = !closed
+
+    fun isCurrent(token: Int): Boolean = isOpen() && token == current.get()
 
     fun close() {
         closed = true

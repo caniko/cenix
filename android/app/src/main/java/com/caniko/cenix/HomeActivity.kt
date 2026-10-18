@@ -356,9 +356,9 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
+        if (!reloadGate.isOpen()) return
         reloadPending = true
         val reloadToken = reloadGate.next()
-        if (!reloadGate.isCurrent(reloadToken)) return
         if (reason == "profile") invalidatePrivateUi()
         if (reason in PACKAGE_INVALIDATIONS || reason in setOf("icons", "appearance", "profile")) iconPacks.invalidate()
         if (reason in PACKAGE_INVALIDATIONS) themedIcons.invalidate(packageKey)
@@ -377,11 +377,8 @@ class HomeActivity : AppCompatActivity() {
             }
             val workspace = WorkspaceController(LauncherRepository(database)) { !app.emergency }.also { controller = it }
             try {
-                // Reject stale work before consuming one-shot profile transitions.
-                if (!reloadGate.isCurrent(reloadToken)) {
-                    clearReloadPending(reloadToken)
-                    return@io
-                }
+                // Every queued reason keeps its one-shot invalidations while this activity is alive.
+                if (!reloadGate.isOpen()) return@io
                 val profileChange = profiles.refresh()
                 completePendingRestore(database)
                 widgetHost.recover()
@@ -421,7 +418,7 @@ class HomeActivity : AppCompatActivity() {
                 themedIcons.invalidateProfiles(inaccessible)
                 dragLayer.post {
                     // Cleanup survives supersession while this activity is alive.
-                    if (isDestroyed) return@post
+                    if (!reloadGate.isOpen()) return@post
                     val invalidating = reason in setOf(
                         "remove", "unavailable", "shortcuts", "profile", "change", "suspended", "loading", "session",
                     )
