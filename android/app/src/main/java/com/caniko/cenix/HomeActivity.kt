@@ -208,9 +208,7 @@ class HomeActivity : AppCompatActivity() {
             CenixExecutors.io { runOnUiThread { pager.doOnLayout { release() } } }
         }
         dragLayer.onFolderHover = ::openFolder
-        root.onSurfaceRequested = { target ->
-            if (target != LauncherSurface.HOME || !appList.canScrollVertically(-1)) setSurface(target)
-        }
+        root.onSurfaceRequested = { setSurface(it) }
         addRootAccessibilityActions()
         pager.onPageChanged = { page ->
             rendered.pages.getOrNull(page)?.let { selectedPageId = it.pageId }
@@ -361,13 +359,13 @@ class HomeActivity : AppCompatActivity() {
 
     private fun scheduleReload(reason: String, packageKey: PackageKey? = null) {
         if (!reloadGate.isOpen()) return
+        val reloadToken = reloadGate.next()
         // Package authority survives a generic successor; a re-add cancels removal.
         if (packageKey != null) when (reason) {
             "remove" -> removedPackages.add(packageKey)
             "add" -> removedPackages.remove(packageKey)
         }
         reloadPending = true
-        val reloadToken = reloadGate.next()
         if (reason == "profile") invalidatePrivateUi()
         if (reason in PACKAGE_INVALIDATIONS || reason in setOf("icons", "appearance", "profile")) iconPacks.invalidate()
         if (reason in PACKAGE_INVALIDATIONS) themedIcons.invalidate(packageKey)

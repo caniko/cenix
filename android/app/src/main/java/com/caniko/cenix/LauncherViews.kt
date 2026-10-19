@@ -850,6 +850,7 @@ class DragLayer @JvmOverloads constructor(context: Context, attrs: AttributeSet?
                 updateFolderTarget(payload, event.rawX, event.rawY)
             }
             MotionEvent.ACTION_UP -> {
+                handler.removeCallbacks(openFolder)
                 val x = event.rawX
                 val y = event.rawY
                 deferDrop {

@@ -210,6 +210,48 @@ class DrawerNavigationTest {
         controller.pause().stop().destroy()
     }
 
+    @Test fun pointerReleaseCancelsFolderHoverWhileDropIsDeferred() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup().visible()
+        val activity = controller.get()
+        val hotseat = HotseatView(activity)
+        val folder = View(activity).apply { tag = CellTarget(2UL, 9UL) }
+        hotseat.addCell(folder, 0, 0, 1, 1)
+        val layer = DragLayer(activity).apply { this.hotseat = hotseat }
+        val root = FrameLayout(activity).apply {
+            addView(hotseat, FrameLayout.LayoutParams(320, 320))
+            addView(layer, FrameLayout.LayoutParams(320, 320))
+        }
+        activity.setContentView(root)
+        root.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 320, 320)
+        val opened = mutableListOf<ULong>()
+        layer.onFolderHover = { opened.add(it) }
+        var release: (() -> Unit)? = null
+        var destination: DropDestination? = null
+        layer.deferDrop = { release = it }
+        layer.onDrop = { _, target -> destination = target }
+        assertTrue(layer.beginDrag(View(activity), LauncherDrag(null, 1UL)))
+        val origin = IntArray(2)
+        hotseat.getLocationOnScreen(origin)
+        fun touch(action: Int) {
+            val event = MotionEvent.obtain(0, 1, action, origin[0] + 160f, origin[1] + 160f, 0)
+            layer.handleMotionEvent(event)
+            event.recycle()
+        }
+        touch(MotionEvent.ACTION_MOVE)
+        assertTrue("the folder must be the live hover target", folder.isActivated)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(700))
+        touch(MotionEvent.ACTION_UP)
+        assertTrue("hit-testing must still wait for the queued drop", layer.isDragging)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(200))
+        assertTrue("pointer release must stop hover even while IO delays the drop", opened.isEmpty())
+        checkNotNull(release).invoke()
+        assertEquals(9UL, destination?.folderId)
+        assertFalse(layer.isDragging)
+        controller.pause().stop().destroy()
+    }
+
     @Test fun rebuildKeepsFocusOnSameTagAndNeverStealsIt() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
