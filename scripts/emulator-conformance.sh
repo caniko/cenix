@@ -812,7 +812,8 @@ for report in "$instrumentation_reports"/TEST-*.xml; do
   [[ ! -f "$report" ]] || cp "$report" "$art/instrumentation/"
 done
 [[ "$instrumentation_status" == "0" ]] || fail "instrumentation failed"
-compgen -G "$art/instrumentation/TEST-*.xml" >/dev/null || fail "instrumentation reports missing"
+instrumentation_xml=("$art/instrumentation"/TEST-*.xml)
+[[ -f "${instrumentation_xml[0]}" ]] || fail "instrumentation reports missing"
 pass "instrumentation: HomeConformanceTest"
 "$adb" -s "$serial" uninstall com.caniko.cenix.fixture >/dev/null
 "$adb" -s "$serial" install -r -t "$apk" || fail "reinstall after instrumentation failed"
