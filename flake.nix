@@ -2,7 +2,7 @@
   description = "Cenix — installable GrapheneOS-focused HOME launcher";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=fb035f4b1ec7e82fcae22a1a1cc74c1221a9310c";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk";
     harbor-android.url = "git+https://github.com/caniko/harbor-android.git?ref=trunk&rev=2ca508176e7deeec67e753e39904d05a6f62585b";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
