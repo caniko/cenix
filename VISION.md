@@ -29,12 +29,15 @@ typed boundaries is the way to get parity without inheriting the tree.
   proof.
 - Typed boundaries between layers. `cenix-core` is safe filter/rank with
   `#![forbid(unsafe_code)]`; `cenix-ffi` exposes typed UniFFI operations; the
-  Android app owns Room as the only durable store.
+  Android app owns Room for workspace and settings state, and drawer-category
+  and icon-pack preferences live in separate SharedPreferences stores.
 - Degrade, do not crash. The launcher stays usable if native code fails;
   emergency mode never imports generated UniFFI types; an unwritable diagnostics
   directory cannot take the app down.
-- One storage authority. Room is the only durable state, with tested migrations
-  through the current schema version.
+- Room is the durable store for workspace and settings state, with tested
+  migrations through the current schema version; drawer-category and icon-pack
+  preferences are separate stores, journaled with the workspace snapshot so a
+  restore keeps both.
 - Privacy by omission. No internet, WebView or JS runtime; no
   `QUERY_ALL_PACKAGES` (the app uses `<queries>` MAIN+LAUNCHER); private and
   unknown per-app customizations are rejected rather than leaked.
